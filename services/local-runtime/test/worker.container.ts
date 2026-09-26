@@ -341,7 +341,8 @@ test('installed Claude SDK executes its real Bash tool through the credential-fr
   const job = fixture(archive, {
     mode: 'live',
     fixtureCommand: undefined,
-    model: 'claude-fixture',
+    // Exercise the selected model's SDK request shape against a synthetic provider.
+    model: 'claude-opus-5-5',
     maxTurns: 4,
     timeoutMs: 45_000,
   });
@@ -370,6 +371,7 @@ test('installed Claude SDK executes its real Bash tool through the credential-fr
   assert.ok(Number(output.outcome.model.turns) > 0);
   evidence.push({
     check: 'real SDK tool execution through synthetic API transport',
+    model: job.model,
     paidApi: false,
     subtype: output.outcome.model.subtype,
     turns: output.outcome.model.turns,

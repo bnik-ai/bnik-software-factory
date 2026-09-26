@@ -7,7 +7,7 @@ No `node_modules` directory or container image is part of this candidate.
 The Claude adapter uses two distinct dependencies:
 
 - `@anthropic-ai/sdk` is the API client (MIT metadata in the lockfile).
-- `@anthropic-ai/claude-agent-sdk` and its platform packages at version 0.3.161
+- `@anthropic-ai/claude-agent-sdk` and its platform packages at version 0.3.283
   carry vendor-specific terms. They must not be represented as Apache-licensed
   project code. Inspect the installed SDK's `LICENSE.md` and `README.md` and each
   platform package's license before use or distribution.

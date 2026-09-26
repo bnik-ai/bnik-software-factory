@@ -1,10 +1,10 @@
 // coding "brain". Headless wrapper around `@anthropic-ai/claude-agent-sdk`
-// `query()` (pinned 0.3.161). The SDK's Write/Edit/Bash tools make REAL
+// `query()` (pinned 0.3.283). The SDK's Write/Edit/Bash tools make REAL
 // persistent filesystem changes at `cwd` (the cloned repo working dir), so
 // callers MUST scope `cwd` to a sandboxed clone.
 // Invariants:
 //   - `permissionMode: 'bypassPermissions'` — non-interactive Container Apps
-//     Job has no human to approve tool use. This SDK version (0.3.161)
+//     Job has no human to approve tool use. This SDK version (0.3.283)
 //     REQUIRES `allowDangerouslySkipPermissions: true` alongside it (sdk.d.ts:
 //     "'bypassPermissions' … requires allowDangerouslySkipPermissions"); without
 //     it the run cannot enter non-interactive mode and Write/Edit/Bash are

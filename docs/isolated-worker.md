@@ -58,6 +58,13 @@ starting Docker/model work. Authorization expires one hour after the comment was
 created. Edit the Task or move the default branch and a new approval is required.
 A revoked permission, deleted/edited comment or unsupported installation stops work.
 
+The Agent SDK is pinned to **0.3.283** (Claude Code 2.1.283). Model metadata
+access alone does not prove compatibility with the bundled execution client. A
+provider may reject an older client for a newer model before producing a result;
+record that failure and its unknown billing rather than treating it as a successful
+zero-cost run. Review and test SDK upgrades, then obtain a fresh activation for
+an intentional retry. No model is silently substituted.
+
 The supervisor uses an immutable `activation-<receipt UUID>` job ID. A duplicate
 submission can return a saved result without another model run; conflicting job
 contents fail. A fresh approval is needed for an intentional new run. Leases and
