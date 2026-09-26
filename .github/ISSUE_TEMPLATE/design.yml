@@ -1,0 +1,63 @@
+name: "Design — architecture scope for a Spec"
+description: "Normally created by DesignAgent in response to a ratified Spec. Human authorship allowed for v0 bootstrap. Paired markdown lives at /docs/design/<slug>.md."
+title: "[Design] "
+labels:
+  - "kind:design"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Designs follow the FSM: `drafting → ready_for_review → ratified` (or `abandoned`, or `superseded`).
+
+        Decomposition: the Design explicitly states the `infra delta` (what changes need to land in platform-overlay first) and the `service delta` (what changes land in the application/factory repo). PlannerAgent uses this to fan out into the cross-repo Task chain per ADR-0003.
+
+  - type: input
+    id: parent_goal
+    attributes:
+      label: parent-goal
+      description: "Cross-repo reference of the parent Goal."
+      placeholder: "example-org/software-factory#NN"
+    validations:
+      required: true
+
+  - type: input
+    id: spec_ref
+    attributes:
+      label: spec-ref
+      description: "Issue reference of the Spec this Design realizes."
+      placeholder: "example-org/software-factory#NN"
+    validations:
+      required: true
+
+  - type: input
+    id: design_doc
+    attributes:
+      label: design-doc
+      description: "Path to the paired markdown at /docs/design/<slug>.md (must exist by the time the Design transitions to `ratified`)."
+      placeholder: "docs/design/issue-forms.md"
+
+  - type: textarea
+    id: infra_delta
+    attributes:
+      label: Infra delta — what changes in platform-overlay
+      description: "List the platform-overlay Terraform changes needed. Empty if Spec is application-only."
+      placeholder: |
+        - None (this Design is software-factory-only)
+        - OR: add an `azurerm_servicebus_queue` ... in `infrastructure/factory/dev/application/`
+    validations:
+      required: true
+
+  - type: textarea
+    id: service_delta
+    attributes:
+      label: Service delta — what changes in this/an application repo
+      description: "List code/config changes outside platform-overlay."
+      placeholder: |
+        - Add `.github/ISSUE_TEMPLATE/*.yml` forms in this repo
+        - Update `docs/decisions/0006-issue-types-deferred.md`
+
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks and mitigations
+      description: "What could go wrong; how Design mitigates."

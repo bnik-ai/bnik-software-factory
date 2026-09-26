@@ -1,0 +1,29 @@
+{
+  "name": "@sfac/validator",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "lint": "biome check .",
+    "type-check": "tsc --noEmit",
+    "migrate": "tsx src/migrate.ts"
+  },
+  "dependencies": {
+    "@azure/identity": "^4.4.0",
+    "@azure/service-bus": "^7.9.0",
+    "pg": "8.21.0",
+    "tsx": "^4.19.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/node": "^20.12.0",
+    "@types/pg": "8.20.0",
+    "pg-mem": "3.0.14",
+    "typescript": "^5.4.0",
+    "vitest": "^4.1.0"
+  }
+}

@@ -1,0 +1,48 @@
+name: "Spec — acceptance criteria derived from a Goal"
+description: "Normally created by SpecAgent in response to an accepted Goal. Human authorship is allowed for v0 bootstrap / manual factory operation."
+title: "[Spec] "
+labels:
+  - "kind:spec"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Specs follow the FSM: `drafting → ready_for_review → ratified` (or `abandoned`, or `superseded`).
+
+        Ownership: SpecAgent writes; the FSM rule blocks SpecAgent from self-ratifying — ratification requires a human or designated reviewer agent (NEVER the proposing agent). See `docs/design/validator-bot.md`.
+
+  - type: input
+    id: parent_goal
+    attributes:
+      label: parent-goal
+      description: "Issue reference of the parent Goal in `<owner>/<repo>#<number>` form. Validator rejects Specs without a parent-goal once the field-level policy lands in B3."
+      placeholder: "example-org/software-factory#NN"
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance criteria
+      description: "Bulleted, testable, each one verifiable post-merge. The Design and Tasks derive from these."
+      placeholder: |
+        - [ ] `kind:goal` label is applied automatically to all issues opened via the goal.yml form
+        - [ ] Validator rejects any non-system actor attempting to write `committed_*` fields
+        - [ ] Existing Issue Types are NOT touched (Issue Types proper deferred per ADR-0006)
+    validations:
+      required: true
+
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Explicitly out of scope
+      description: "Anything a reasonable reader might assume is included but isn't. Cuts review surface."
+      placeholder: |
+        - Issue Types proper — deferred per ADR-0006
+        - Environments — separate B1 PR
+
+  - type: textarea
+    id: open_questions
+    attributes:
+      label: Open questions for Design
+      description: "Questions DesignAgent should resolve. Each item with a recommendation if you have one."

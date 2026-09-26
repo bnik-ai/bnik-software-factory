@@ -1,0 +1,60 @@
+name: node-ci
+# Reusable workflow: runs the standard Node CI gate (install + test + lint
+# + type-check) against one workspace path. Caller chooses workspace per
+# package so monorepo-style repos can call this once per workspace.
+#
+# IMPORTANT: working-directory is set per-step, NOT in `defaults.run`.
+# GitHub Actions does NOT evaluate `${{ inputs.* }}` expressions in
+# `defaults.run.working-directory` — that field is statically parsed at
+# workflow-load time, before inputs resolve, so the expression would
+# fail validation (PR #56 codex finding caught this).
+#
+# setup-node + cache is inlined (was a composite action in rev0; cross-
+# repo `uses: ./...` refs resolve to the CALLER's checkout which doesn't
+# have the path, so the step would fail for downstream consumers).
+
+on:
+  workflow_call:
+    inputs:
+      workspace_path:
+        description: Workspace path containing package.json (e.g. services/validator)
+        required: true
+        type: string
+      node_version:
+        description: Node.js major version
+        required: false
+        type: string
+        default: '20'
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node ${{ inputs.node_version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.workspace_path }}/package-lock.json
+
+      - name: Install
+        working-directory: ${{ inputs.workspace_path }}
+        run: npm ci
+
+      - name: Test
+        working-directory: ${{ inputs.workspace_path }}
+        run: npm test
+
+      - name: Lint
+        working-directory: ${{ inputs.workspace_path }}
+        run: npm run lint
+
+      - name: Type-check
+        working-directory: ${{ inputs.workspace_path }}
+        run: npm run type-check

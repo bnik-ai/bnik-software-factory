@@ -1,0 +1,54 @@
+name: "Task — unit of buildable work"
+description: "Normally created by PlannerAgent fanning out a ratified Design. Human authorship allowed for v0 bootstrap. One Task ↔ one PR."
+title: "[Task] "
+labels:
+  - "kind:task"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Tasks follow the FSM: `proposed → ready → in_progress → in_review → done` (or `abandoned`).
+
+        Hard rule: one Task ↔ one PR. The PR closes the Task via `Closes #N`. The Validator blocks merge of any PR not linked to a Task.
+
+  - type: input
+    id: parent_goal
+    attributes:
+      label: parent-goal
+      description: "Cross-repo reference of the parent Goal."
+      placeholder: "example-org/software-factory#NN"
+    validations:
+      required: true
+
+  - type: input
+    id: design_ref
+    attributes:
+      label: design-ref
+      description: "Issue reference of the parent Design."
+      placeholder: "example-org/software-factory#NN"
+    validations:
+      required: true
+
+  - type: input
+    id: blocked_by
+    attributes:
+      label: blocked-by
+      description: "Cross-repo Task reference(s) this Task depends on. Comma-separated if more than one. Validator blocks `proposed → ready` until all blocked-by Tasks are `done`."
+      placeholder: "example-owner/platform-overlay#NN"
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: "What this Task does. Single concern. Bullets allowed."
+    validations:
+      required: true
+
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: "How a reviewer confirms the Task is done. Reference Spec acceptance criteria where possible."
+      placeholder: |
+        - `gh api repos/example-org/software-factory/labels/kind:goal` returns 200
+        - Issue opened from goal.yml form has `kind:goal` label applied automatically

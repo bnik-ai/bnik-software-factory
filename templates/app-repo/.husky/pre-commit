@@ -1,0 +1,6 @@
+#!/usr/bin/env sh
+# Generated from {{FACTORY_REPO}}/templates/app-repo/.husky/pre-commit
+# Runs format/lint on staged files only (fast). Full lint runs in CI.
+. "$(dirname -- "$0")/_/husky.sh"
+
+npx lint-staged

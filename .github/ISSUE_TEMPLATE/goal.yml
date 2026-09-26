@@ -1,0 +1,90 @@
+name: "Goal — what you want to be true"
+description: "A human-authored Goal targeting the factory itself (software-factory substrate, runtime, or factory-produced template). For Goals targeting an application repo, open the Goal in that repo per ADR-0003."
+title: "[Goal] "
+labels:
+  - "kind:goal"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## What is a Goal?
+        A Goal is a single statement of intended outcome — what you want to be true after this work lands. Not a task list, not a design — just the outcome.
+
+        The factory's SpecAgent (or combined Spec/Design step) picks this up and produces a `Spec` sub-issue. Review and approve the Spec (or push back) before the factory proceeds to Design and Tasks.
+
+        **Hard rule:** A Goal does not become `accepted` until a human explicitly transitions it. Until then, no factory work fires.
+
+        For Goals about an *application* the factory builds (e.g. sample-app), open the Goal in that application repo — not here. See `docs/decisions/0003-cross-repo-delivery.md`.
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome (what should be true)
+      description: One paragraph. Imagine the state of the world after this lands.
+      placeholder: "After this is done, the SF substrate enforces ... / the validator rejects ... / the orchestrator routes ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Important constraints
+      description: Non-negotiables — backward compatibility, ADR alignment, deadlines, blast radius. The factory uses these as Spec inputs.
+      placeholder: |
+        - Must not break the rev1 substrate Terraform import sequence
+        - ADR-0002 trunk-based main is non-negotiable
+        - Apply NOT authorized in the implementing PR — manual operator step required
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: What part of the factory does this touch?
+      description: "Helps SpecAgent route the Spec to the right concern."
+      options:
+        - "Substrate (terraform/substrate/, labels, rulesets, issue forms)"
+        - "Runtime (Container Apps, Service Bus, Postgres, Redis, KV)"
+        - "Templates (templates/app-repo/)"
+        - "Validator / Orchestrator / Agents (services/)"
+        - "Cross-cutting (docs, ADRs, sources-of-truth)"
+        - "Unsure — let DesignAgent decide"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: requires_platform_change
+    attributes:
+      label: Does this likely require a paired platform-overlay change?
+      description: "If yes, the Spec/Design will fan out into a cross-repo Task chain per ADR-0003 with an infra Task in example-owner/platform-overlay."
+      options:
+        - "No — software-factory-only"
+        - "Yes — paired platform-overlay Task expected"
+        - "Unsure — let DesignAgent decide"
+    validations:
+      required: true
+
+  - type: input
+    id: deadline
+    attributes:
+      label: External deadline (if any)
+      description: "Format: YYYY-MM-DD. Populates `committed_end`. Agents cannot write this field; only humans can. It is a constraint, not a target."
+      placeholder: "2026-06-15"
+
+  - type: textarea
+    id: links
+    attributes:
+      label: Related work
+      description: Links to related Goals, Designs, Incidents, prior Decisions. The factory uses these for context retrieval.
+      placeholder: |
+        - Related Goal: example-org/software-factory#NN
+        - Prior Decision: docs/decisions/0004-runtime-stack-azure.md
+        - Tracked follow-up: docs/sources-of-truth.md → "..."
+
+  - type: checkboxes
+    id: ack
+    attributes:
+      label: Before submitting
+      options:
+        - label: "I am a human. Goals are not opened by agents in routine operation."
+          required: true
+        - label: "I have read the Outcome and Constraints back to myself and they are accurate."
+          required: true

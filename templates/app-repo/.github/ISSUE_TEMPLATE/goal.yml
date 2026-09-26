@@ -1,0 +1,84 @@
+name: "Goal — what you want to be true"
+description: "A human-authored Goal. The factory's SpecAgent (or combined Spec/Design step) picks this up and produces a Spec."
+title: "[Goal] "
+labels:
+  - "kind:goal"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## What is a Goal?
+        A Goal is a single statement of intended outcome — what you want to be true after this work lands. Not a task list, not a design — just the outcome.
+
+        After you open this issue, the factory's SpecAgent will create a `Spec` sub-issue with acceptance criteria. Review and approve the Spec (or push back) before the factory proceeds to Design and Tasks.
+
+        **Hard rule:** A Goal does not become `accepted` until a human explicitly transitions it. Until then, no factory work fires.
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome (what should be true)
+      description: One paragraph. Imagine the state of the world after this lands.
+      placeholder: "After this is done, users can ... / the system supports ... / we have ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Important constraints
+      description: Non-negotiables — security, performance, compatibility, deadlines, data sensitivity. The factory uses these as Spec inputs.
+      placeholder: |
+        - Must preserve PII redaction defaults
+        - Stgx-only for v0; no PHI processing
+        - Must not exceed $50/mo additional infrastructure cost
+
+  - type: dropdown
+    id: data_classification_changes
+    attributes:
+      label: Does this change touch sensitive data classification?
+      description: If yes, the factory's DesignAgent will require an updated `docs/data-classification.md` before producing the Spec.
+      options:
+        - "No"
+        - "Yes — new data type introduced or existing classification changed"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: requires_infra_changes
+    attributes:
+      label: Does this likely require new platform infrastructure?
+      description: "Heuristic only — DesignAgent makes the actual determination. 'Yes' means: new database, new queue, new storage container, new external endpoint, increased compute capacity. If yes, the work will fan out into a cross-repo Task chain (per ADR 0003 in example-org/software-factory)."
+      options:
+        - "No — code/config changes only"
+        - "Yes — likely needs new platform-overlay infra"
+        - "Unsure — let DesignAgent decide"
+    validations:
+      required: true
+
+  - type: input
+    id: deadline
+    attributes:
+      label: External deadline (if any)
+      description: "Use the format YYYY-MM-DD. This populates the Goal's `committed_end` field — agents cannot write this; only humans can. It is a constraint, not a target."
+      placeholder: "2026-06-15"
+
+  - type: textarea
+    id: links
+    attributes:
+      label: Related work
+      description: Links to related Goals, Designs, Incidents, prior Decisions. The factory uses these for context retrieval.
+      placeholder: |
+        - Related Goal: example-org/sample-app#42
+        - Prior Decision: docs/decisions/0003-cross-repo-delivery.md
+        - Incident this resolves: example-org/sample-app#88
+
+  - type: checkboxes
+    id: ack
+    attributes:
+      label: Before submitting
+      options:
+        - label: "I am a human (or a human-authorized agent for v0+ bootstrap exceptions). Goals are not opened by agents in routine operation."
+          required: true
+        - label: "I have read the Outcome and Constraints back to myself and they are accurate."
+          required: true

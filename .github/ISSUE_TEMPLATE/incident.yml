@@ -1,0 +1,66 @@
+name: "Incident — production deviation"
+description: "A software-factory production deviation requiring response. Opened by humans, SREAgent (post-v0), or alerting integration."
+title: "[Incident] "
+labels:
+  - "kind:incident"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Incidents follow the FSM: `triggered → investigating → mitigated → resolved → closed` (or `false_positive`). Severity controls auto-paging behavior once the validator is live.
+
+        For incidents in an *application* the factory built (e.g. sample-app), open the Incident in that application's repo, not here.
+
+        **Severity label is intentionally NOT auto-applied by this form.** The dropdown below is the authoritative source for the selected severity until B3 ships and the Validator reads the dropdown answer to apply the matching `severity:*` label. Until then, the human reporter or first responder applies the correct `severity:*` label by hand from the issue UI after creation. This avoids the failure mode of every form-created incident silently carrying `severity:medium` regardless of the dropdown choice.
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: "high = factory cannot route work (orchestrator/validator down); medium = degraded but operating; low = internal issue, no human-visible impact"
+      options:
+        - "high"
+        - "medium"
+        - "low"
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: One-line summary
+      placeholder: "Validator dropping webhook events since 14:23 UTC — Service Bus session lock leak"
+    validations:
+      required: true
+
+  - type: textarea
+    id: detection
+    attributes:
+      label: How was this detected?
+      placeholder: "Azure Monitor alert / user report / smoke check failure / audit-ledger gap"
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: User-visible impact
+      placeholder: "All cross-repo Task transitions blocked; ~N Goals stalled; audit ledger has Y-second gap"
+    validations:
+      required: true
+
+  - type: textarea
+    id: timeline
+    attributes:
+      label: Timeline (append as you investigate)
+      placeholder: |
+        - 14:23 UTC: alert fired
+        - 14:25 UTC: investigating
+        - 14:30 UTC: identified cause (...)
+        - 14:35 UTC: mitigation deployed (...)
+
+  - type: input
+    id: linked_deployment
+    attributes:
+      label: Linked Deployment (if regression)
+      description: "GitHub Deployment ID or commit SHA that introduced the issue, if known."

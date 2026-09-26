@@ -1,0 +1,65 @@
+name: "Decision — recorded judgment with rationale"
+description: "An ADR (Architecture Decision Record). Paired with a markdown file at docs/decisions/NNNN-<slug>.md."
+title: "[Decision] "
+labels:
+  - "kind:decision"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Decisions follow the FSM: `drafting → proposed → approved | rejected | superseded`. A Decision Issue tracks the lifecycle; the paired markdown file at `docs/decisions/NNNN-<slug>.md` carries the content. The authoring PR that adds the markdown closes this Issue (or transitions it to `approved`).
+
+        Use ADR-0001 in `docs/decisions/0001-substrate-choice.md` as a style reference.
+
+  - type: input
+    id: number
+    attributes:
+      label: ADR number
+      description: "Next sequential number after the highest currently merged file in this repo's docs/decisions/."
+      placeholder: "00NN"
+    validations:
+      required: true
+
+  - type: input
+    id: slug
+    attributes:
+      label: ADR slug
+      description: "Kebab-case slug for the markdown file."
+      placeholder: "policy-table-format"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context — what is the question
+      placeholder: "Brief context for what is being decided and why now."
+    validations:
+      required: true
+
+  - type: textarea
+    id: options
+    attributes:
+      label: Options considered
+      placeholder: |
+        ### A. ...
+        ### B. ...
+        ### C. ...
+
+  - type: textarea
+    id: recommendation
+    attributes:
+      label: Recommendation (this Issue's author's view)
+      description: "Other reviewers may push back; that's normal. State your view clearly."
+
+  - type: dropdown
+    id: review_needed
+    attributes:
+      label: Who must approve?
+      options:
+        - "Repo maintainer (any)"
+        - "Repo maintainer + platform owner (platform-overlay)"
+        - "Repo maintainer + software-factory owner"
+        - "All of the above"
+    validations:
+      required: true

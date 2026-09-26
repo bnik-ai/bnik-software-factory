@@ -1,0 +1,17 @@
+# Force common source-file extensions to be treated as text so git
+# never falls back to binary classification (e.g. after an accidental
+# NUL byte was committed and then removed).
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.cjs text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.tf text eol=lf
+*.tfvars text eol=lf
+*.sh text eol=lf
+Dockerfile text eol=lf
+

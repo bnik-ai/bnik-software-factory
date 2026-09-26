@@ -1,0 +1,36 @@
+# Node / TypeScript
+node_modules/
+dist/
+*.log
+*.tsbuildinfo
+
+# Cloudflare Workers / Wrangler
+.wrangler/
+.dev.vars
+.dev.vars.*
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+# .terraform.lock.hcl is intentionally NOT ignored — commit it for reproducible provider versions
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp

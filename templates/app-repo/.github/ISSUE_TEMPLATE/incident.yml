@@ -1,0 +1,63 @@
+name: "Incident — production deviation"
+description: "A production issue requiring response. Opened by humans, SREAgent (post-v0), or alerting integration."
+title: "[Incident] "
+labels:
+  - "kind:incident"
+  - "severity:medium"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Incidents follow the FSM: `triggered → investigating → mitigated → resolved → closed`. Severity controls auto-paging behavior (configured per-repo in the software-factory Validator).
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: "high = user-impacting now; medium = degraded but operating; low = internal issue, no user impact"
+      options:
+        - "high"
+        - "medium"
+        - "low"
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: One-line summary
+      placeholder: "API returning 502 for /api/health since 14:23 UTC"
+    validations:
+      required: true
+
+  - type: textarea
+    id: detection
+    attributes:
+      label: How was this detected?
+      placeholder: "Azure Monitor alert / user report / smoke check failure / manual observation"
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: User-visible impact
+      placeholder: "All API requests failing; ~N users affected; data ingestion paused"
+    validations:
+      required: true
+
+  - type: textarea
+    id: timeline
+    attributes:
+      label: Timeline (append as you investigate)
+      placeholder: |
+        - 14:23 UTC: alert fired
+        - 14:25 UTC: investigating
+        - 14:30 UTC: identified cause (...)
+        - 14:35 UTC: mitigation deployed (...)
+
+  - type: input
+    id: linked_deployment
+    attributes:
+      label: Linked Deployment (if regression)
+      description: "GitHub Deployment ID or commit SHA that introduced the issue, if known."
