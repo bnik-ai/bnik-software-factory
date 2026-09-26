@@ -135,3 +135,76 @@ describe('runCodingAgent — option mapping into query()', () => {
     expect(options.model).toBe('claude-opus-4-8');
   });
 });
+
+describe('isolated execution contract', () => {
+  test('preserves terminal SDK errors when its CLI exits nonzero but never masks transport failure as success', async () => {
+    const stream =
+      (subtype?: string): QueryFn =>
+      () =>
+        (async function* () {
+          if (subtype) yield { type: 'result', subtype, num_turns: 1, total_cost_usd: 0.01 };
+          throw new Error('CLI exited nonzero');
+        })();
+    const request = { cwd: '/workspace/repo', prompt: 'fixture' };
+    const result = await runCodingAgent(request, stream('error_max_turns'));
+    expect(result).toMatchObject({ ok: false, subtype: 'error_max_turns', numTurns: 1 });
+    await expect(runCodingAgent(request, stream('success'))).rejects.toThrow('CLI exited');
+    await expect(runCodingAgent(request, stream())).rejects.toThrow('CLI exited');
+  });
+  test('forwards only declared environment and disables external settings, plugins and MCP', async () => {
+    const { fn, calls } = makeFakeQuery([
+      { type: 'result', subtype: 'success', num_turns: 1, total_cost_usd: 0, result: 'ok' },
+    ]);
+    const controller = new AbortController();
+    await runCodingAgent(
+      {
+        cwd: '/workspace/repo',
+        prompt: 'fixture',
+        maxTurns: 2,
+        isolation: { signal: controller.signal, environment: { HOME: '/tmp/worker-home' } },
+      },
+      fn,
+    );
+    expect(calls[0]?.options.env).toEqual({ HOME: '/tmp/worker-home' });
+    expect(calls[0]?.options.settingSources).toEqual([]);
+    expect(calls[0]?.options.plugins).toEqual([]);
+    expect(calls[0]?.options.skills).toEqual([]);
+    expect(calls[0]?.options.mcpServers).toEqual({});
+    expect(calls[0]?.options.strictMcpConfig).toBe(true);
+    expect(calls[0]?.options.persistSession).toBe(false);
+  });
+  test('cancellation reaches the SDK and invalid turn limits start no query', async () => {
+    const controller = new AbortController();
+    const fn: QueryFn = ({ options }) =>
+      (async function* () {
+        controller.abort();
+        expect((options.abortController as AbortController).signal.aborted).toBe(true);
+        yield { type: 'result', subtype: 'interrupted', num_turns: 0, total_cost_usd: 0 };
+      })();
+    const result = await runCodingAgent(
+      {
+        cwd: '/workspace/repo',
+        prompt: 'fixture',
+        isolation: { signal: controller.signal, environment: {} },
+      },
+      fn,
+    );
+    expect(result.ok).toBe(false);
+    const never = makeFakeQuery([]);
+    for (const maxTurns of [0, -1, 61, 1.5])
+      await expect(
+        runCodingAgent({ cwd: '/workspace/repo', prompt: 'fixture', maxTurns }, never.fn),
+      ).rejects.toThrow('invalid_coding_turn_limit');
+    await expect(
+      runCodingAgent(
+        {
+          cwd: '/workspace/repo',
+          prompt: 'fixture',
+          isolation: { signal: controller.signal, environment: {} },
+        },
+        never.fn,
+      ),
+    ).rejects.toThrow();
+    expect(never.calls).toHaveLength(0);
+  });
+});

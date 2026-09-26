@@ -9,11 +9,13 @@ The release license and distribution notices are still being finalized.
 The intended initial workflow starts from a Task, creates an implementation PR,
 runs agent review and required CI, and waits for a human to approve and merge.
 It targets one explicitly configured repository with the operator's own GitHub
-and Claude credentials. The isolated coding worker, onboarding, and
-enforcement of that complete workflow are still under development.
+and Claude credentials. An explicit isolated coding executor is available;
+onboarding and enforcement of the complete workflow remain under development.
 
 Run the [local demo and durable-runtime checks](docs/local-runtime.md). Live mode
 authenticates GitHub reads and persists agent jobs; it does not execute them.
+Run the separate [isolated worker example](docs/isolated-worker.md) to produce a
+patch and actual test-command receipts from a disposable container.
 
 ## Explore the source
 

@@ -3,7 +3,8 @@
 This private development candidate runs authenticated intake, validation, audit and
 routing with durable PostgreSQL queues. The packaged demo uses synthetic GitHub
 reads and a receipt-only worker. Live mode supports the control plane and leaves
-agent jobs queued. Live coding, human merge enforcement and onboarding remain
+agent jobs queued. The separate [isolated executor](isolated-worker.md) accepts
+explicit operator requests. Automatic workflow integration, human merge enforcement and onboarding remain
 under development; this is not a complete end-to-end alpha installation.
 
 ## Verified environment and dependencies
@@ -79,7 +80,8 @@ or database configuration before opening the service. It does not silently choos
 fixtures. This configuration check is not a live credential/permission test. App
 permissions, activation and real workflow verification must be completed separately.
 Live mode does not invoke legacy in-process agents, merge/deploy handlers or demo
-workers; agent jobs wait durably for a supported isolated worker adapter.
+workers; agent jobs wait durably for activation and isolated-worker integration.
+The separately invoked coding executor does not consume or settle these jobs.
 
 The generic service can also run natively after installing its four sibling/source
 packages and its own lockfile. Use explicit `POSTGRES_HOST`, `POSTGRES_PORT`,

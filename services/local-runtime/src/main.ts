@@ -50,7 +50,7 @@ async function main() {
       if (command === 'compact') {
         const days = Number(process.argv[3]);
         let count = 0;
-        for (const queue of ['validator', 'orchestrator', ...AGENT_ROLES])
+        for (const queue of ['validator', 'orchestrator', 'CodingJob', ...AGENT_ROLES])
           count += await new PostgresQueue(pool, queue).compactDone(days);
         console.log(JSON.stringify({ compacted: count, retainedDays: days }));
       } else

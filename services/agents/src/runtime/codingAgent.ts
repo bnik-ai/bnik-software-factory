@@ -46,6 +46,8 @@ export interface CodingAgentRequest {
   // Optional model override (e.g. a specific claude-* id). Omitted →
   // SDK default.
   model?: string;
+  // Required by the isolated worker: no inherited host settings or environment.
+  isolation?: { environment: Record<string, string>; signal: AbortSignal };
 }
 
 export interface CodingAgentResult {
@@ -91,9 +93,32 @@ export async function runCodingAgent(
   req: CodingAgentRequest,
   queryFn: QueryFn = sdkQuery as unknown as QueryFn,
 ): Promise<CodingAgentResult> {
+  if (
+    !Number.isInteger(req.maxTurns ?? DEFAULT_MAX_TURNS) ||
+    (req.maxTurns ?? DEFAULT_MAX_TURNS) < 1 ||
+    (req.maxTurns ?? DEFAULT_MAX_TURNS) > 60
+  )
+    throw new Error('invalid_coding_turn_limit');
+  req.isolation?.signal.throwIfAborted();
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  req.isolation?.signal.addEventListener('abort', abort, { once: true });
   const toolset = req.allowedTools ?? [...DEFAULT_CODING_TOOLS];
   const options: Record<string, unknown> = {
     cwd: req.cwd,
+    ...(req.isolation
+      ? {
+          env: { ...req.isolation.environment },
+          abortController: controller,
+          settingSources: [],
+          plugins: [],
+          skills: [],
+          mcpServers: {},
+          strictMcpConfig: true,
+          persistSession: false,
+          stderr: () => {},
+        }
+      : {}),
     permissionMode: 'bypassPermissions',
     allowDangerouslySkipPermissions: true,
     // `tools` restricts the available built-in tool surface; `allowedTools`
@@ -105,14 +130,24 @@ export async function runCodingAgent(
   };
 
   let resultMessage: ResultMessageLike | undefined;
-  for await (const message of queryFn({ prompt: req.prompt, options })) {
-    // The terminal `result` message carries the run summary + accounting.
-    // Assistant/tool-use messages stream before it; we don't need their
-    // contents for the result mapping (the GitTool layer inspects the
-    // filesystem the SDK already mutated).
-    if (message.type === 'result') {
-      resultMessage = message as ResultMessageLike;
+  try {
+    for await (const message of queryFn({ prompt: req.prompt, options })) {
+      // The terminal `result` message carries the run summary + accounting.
+      // Assistant/tool-use messages stream before it; we don't need their
+      // contents for the result mapping (the GitTool layer inspects the
+      // filesystem the SDK already mutated).
+      if (message.type === 'result') {
+        resultMessage = message as ResultMessageLike;
+      }
     }
+  } catch (error) {
+    // The pinned SDK emits its terminal error result, then rejects the stream
+    // when the CLI exits nonzero. Preserve that typed failure and accounting.
+    // A transport failure after success (or without a result) remains a failure.
+    if (!resultMessage || resultMessage.subtype === 'success' || req.isolation?.signal.aborted)
+      throw error;
+  } finally {
+    req.isolation?.signal.removeEventListener('abort', abort);
   }
 
   if (resultMessage === undefined) {

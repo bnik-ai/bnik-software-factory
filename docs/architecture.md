@@ -22,8 +22,11 @@ runtime adapters. The existing Azure implementation is experimental; the [local 
 It commits authenticated intake and its receipt atomically. Validator audit, verdict,
 outgoing work and acknowledgement share a transaction; orchestration likewise
 commits agent jobs and settlement together. Renewable leases and fencing guard
-queue ownership. Live agent jobs await an isolated worker; the explicit demo uses
-a synthetic receipt-only worker.
+queue ownership. Live agent jobs await activation and worker integration; the
+explicit control-plane demo uses a synthetic receipt-only worker. A separate
+[isolated coding executor](isolated-worker.md) uses the existing SDK adapter and
+durable CodingJob leases to return patches and command receipts from disposable
+containers. It accepts explicit operator requests and does not publish PRs.
 
 ### Records
 
@@ -58,7 +61,7 @@ immutable anchor or proof that every remote effect happened exactly once.
 The intended supported flow is Task to Build to Review to CI to human merge.
 The current source also contains broader planning and operations handlers. Their
 presence does not establish a supported autonomous lifecycle. Human review and
-merge enforcement, worker isolation, and live installation checks must be completed
+merge enforcement, workflow integration, and live installation checks must be completed
 before this candidate can become a usable alpha.
 
 See [generated diagrams](architecture-diagrams.md) for source-derived counts,

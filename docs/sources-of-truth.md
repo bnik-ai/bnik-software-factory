@@ -6,6 +6,7 @@
 | Record policy and audit schema | `services/validator/src` and `services/validator/migrations` |
 | Local queue schema, leases and transactional handoffs | `services/local-runtime` |
 | Local launcher and operational instructions | `runtime/compose.yaml` and [local runtime](local-runtime.md) |
+| Isolated execution and credential boundary | `services/local-runtime/src/worker`, `runtime/worker` and [worker guide](isolated-worker.md) |
 | Dispatch decisions | `services/orchestrator/src/routingTable.ts` |
 | Agent contracts and implementation | `services/agents/src/types.ts` and `services/agents/src/agents` |
 | Dependency versions | Each service's `package-lock.json` |

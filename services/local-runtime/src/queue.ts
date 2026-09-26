@@ -114,7 +114,7 @@ export class PostgresQueue {
     return client ? insert(client) : transaction(this.pool, insert);
   }
 
-  async claim(): Promise<Work | undefined> {
+  async claim(deliveryKey?: string): Promise<Work | undefined> {
     return transaction(this.pool, async (client) => {
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 606))', [this.name]);
       await client.query(
@@ -125,11 +125,12 @@ export class PostgresQueue {
       );
       const selected = await client.query<{ id: string }>(
         `SELECT w.id FROM factory_work w WHERE w.queue_name=$1 AND w.attempts<w.max_attempts
+         AND ($2::text IS NULL OR w.delivery_key=$2)
          AND ((w.state='pending' AND w.available_at<=clock_timestamp()) OR (w.state='running' AND w.lease_until<=clock_timestamp()))
          AND NOT EXISTS (SELECT 1 FROM factory_work earlier WHERE earlier.queue_name=w.queue_name
            AND earlier.record_key=w.record_key AND earlier.id<w.id AND earlier.state IN ('pending','running'))
          ORDER BY w.id FOR UPDATE OF w SKIP LOCKED LIMIT 1`,
-        [this.name],
+        [this.name, deliveryKey ?? null],
       );
       if (!selected.rows[0]) return undefined;
       const result = await client.query<Work>(

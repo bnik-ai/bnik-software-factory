@@ -1,0 +1,5 @@
+# Opt-in native supervisor access. Never mount this database or the Docker socket
+# in a coding worker. Only a trusted local operator should run the supervisor.
+services:
+  db:
+    ports: ["127.0.0.1:${FACTORY_DATABASE_PORT:-55432}:5432"]
