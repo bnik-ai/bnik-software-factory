@@ -1,0 +1,11 @@
+# Explicit overlay for live control-plane intake/routing. No live worker runs.
+services:
+  runtime:
+    environment:
+      GITHUB_APP_ID: ${GITHUB_APP_ID:?App ID required}
+      GITHUB_APP_PRIVATE_KEY_FILE: /run/secrets/app_private_key
+      ANTHROPIC_API_KEY_FILE: /run/secrets/model_key
+    secrets: [app_private_key, model_key]
+secrets:
+  app_private_key: {file: ./secrets/app_private_key}
+  model_key: {file: ./secrets/model_key}

@@ -1,0 +1,75 @@
+name: software-factory
+services:
+  db:
+    image: postgres:17-bookworm@sha256:639ab7ceb90e13123085b741fb31ef493fba25463002f6da665352e7b534b652
+    environment:
+      POSTGRES_USER: factory_migrator
+      POSTGRES_DB: software_factory
+      POSTGRES_PASSWORD_FILE: /run/secrets/admin_password
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    secrets: [admin_password]
+    volumes: [database:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U factory_migrator -d software_factory"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    stop_grace_period: 30s
+  migrate:
+    build: {context: .., dockerfile: runtime/Dockerfile}
+    image: software-factory-local:development
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_TLS: disable
+      POSTGRES_DATABASE: software_factory
+      POSTGRES_USER: factory_migrator
+      POSTGRES_PASSWORD_FILE: /run/secrets/admin_password
+      FACTORY_DB_PASSWORD_FILE: /run/secrets/database_password
+    secrets: [admin_password, database_password]
+    depends_on:
+      db: {condition: service_healthy}
+    command: [node, --import, tsx, src/migrate.ts]
+    init: true
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  runtime:
+    image: software-factory-local:development
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    environment:
+      FACTORY_MODE: ${FACTORY_MODE:?Run configure.py with an explicit mode}
+      FACTORY_REPOSITORY: ${FACTORY_REPOSITORY:?Repository required}
+      GITHUB_INSTALLATION_ID: ${GITHUB_INSTALLATION_ID:?Installation required}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:?App slug required}
+      GITHUB_WEBHOOK_SECRET_FILE: /run/secrets/webhook_secret
+      POSTGRES_HOST: db
+      POSTGRES_TLS: disable
+      POSTGRES_DATABASE: software_factory
+      POSTGRES_USER: factory_runtime
+      POSTGRES_PASSWORD_FILE: /run/secrets/database_password
+      FACTORY_HOST: 0.0.0.0
+      FACTORY_PORT: '8787'
+    secrets: [database_password, webhook_secret]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    ports: ["127.0.0.1:${FACTORY_PORT:-8787}:8787"]
+    init: true
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 15s
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8787/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+secrets:
+  admin_password: {file: ./secrets/admin_password}
+  database_password: {file: ./secrets/database_password}
+  webhook_secret: {file: ./secrets/webhook_secret}
+volumes:
+  database:

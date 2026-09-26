@@ -1,0 +1,29 @@
+{
+  "name": "@sfac/local-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <27"
+  },
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "migrate": "tsx src/migrate.ts",
+    "test": "tsx --test test/*.test.ts",
+    "test:integration": "tsx --test --test-concurrency=1 test/*.integration.ts",
+    "lint": "biome check .",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "1.19.14",
+    "hono": "4.12.23",
+    "pg": "8.21.0",
+    "tsx": "4.22.3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "@types/node": "20.19.41",
+    "@types/pg": "8.20.0",
+    "typescript": "5.9.3"
+  }
+}

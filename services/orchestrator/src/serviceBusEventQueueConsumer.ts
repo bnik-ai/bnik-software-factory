@@ -229,7 +229,7 @@ export class ServiceBusDispatchQueueConsumer {
 // (services/validator/src/outgoingPublisher.ts serializePublishedMessage). The
 // SB SDK JSON-deserializes a body sent as application/json, so `body` may
 // arrive as an object OR a JSON string — handle both.
-function deserializeDispatchMessage(
+export function deserializeDispatchMessage(
   body: unknown,
   lockToken: string,
 ): ParsedTransitionMessage | undefined {

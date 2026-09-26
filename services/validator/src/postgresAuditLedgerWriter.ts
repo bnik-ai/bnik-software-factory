@@ -97,55 +97,9 @@ export class PostgresAuditLedgerWriter implements AuditLedgerWriter, AuditLedger
     const client: PgClient = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      // Serialize ALL appenders for the duration of the transaction. Row-level
-      // FOR UPDATE on the tail does not block a concurrent INSERT of a NEW tail
-      // row, so two executions could both read the same predecessor and compute
-      // the same next seq. The transaction-scoped advisory lock makes the
-      // tail-read + insert atomic across executions; it auto-releases on
-      // COMMIT/ROLLBACK.
-      await client.query('SELECT pg_advisory_xact_lock($1)', [APPEND_ADVISORY_LOCK_KEY]);
-      // FOR UPDATE is retained as defense-in-depth (locks the predecessor row
-      // against an UPDATE; the chain is append-only so this is belt-and-braces).
-      const tail = await client.query<{ this_hash: Buffer; seq: string | number }>(
-        'SELECT this_hash, seq FROM audit_ledger ORDER BY seq DESC LIMIT 1 FOR UPDATE',
-      );
-      const previous = tail.rows[0];
-      const prevHash =
-        previous !== undefined ? Buffer.from(previous.this_hash) : Buffer.from(GENESIS_PREV_HASH);
-      const seq = previous !== undefined ? Number(previous.seq) + 1 : 1;
-      const payloadHash = Buffer.from(args.payloadHash);
-      const thisHash = computeRowHash({ payloadHash, prevHash, seq });
-
-      const inserted = await client.query<AuditLedgerDbRow>(
-        `INSERT INTO audit_ledger (
-           seq, delivery_id, event_type, actor, record_type, record_kind,
-           record_id, from_state, to_state, verdict,
-           payload_hash, prev_hash, this_hash, received_at
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-         RETURNING *`,
-        [
-          seq,
-          args.deliveryId,
-          args.eventType,
-          args.actor,
-          args.recordType,
-          args.recordKind ?? null,
-          args.recordId,
-          args.fromState ?? null,
-          args.toState ?? null,
-          args.verdict,
-          payloadHash,
-          prevHash,
-          thisHash,
-          args.receivedAt,
-        ],
-      );
+      const row = await this.appendInTransaction(client, args, true);
       await client.query('COMMIT');
-      const row = inserted.rows[0];
-      if (row === undefined) {
-        throw new Error('INSERT ... RETURNING * returned no row');
-      }
-      return mapDbRow(row);
+      return row;
     } catch (err) {
       await client.query('ROLLBACK').catch(() => undefined);
       if (isDeliveryIdDuplicate(err)) {
@@ -155,6 +109,67 @@ export class PostgresAuditLedgerWriter implements AuditLedgerWriter, AuditLedger
     } finally {
       client.release();
     }
+  }
+
+  // Caller owns BEGIN/COMMIT/ROLLBACK. Used by durable transports to commit
+  // the audit row, outgoing work and incoming settlement as one transaction.
+  // Do not catch SQL errors and continue using an aborted transaction.
+  async appendInTransaction(
+    client: PgClient,
+    args: AppendArgs,
+    lockTail = false,
+  ): Promise<AuditLedgerRow> {
+    // Serialize ALL appenders for the duration of the transaction. Row-level
+    // FOR UPDATE on the tail does not block a concurrent INSERT of a NEW tail
+    // row, so two executions could both read the same predecessor and compute
+    // the same next seq. The transaction-scoped advisory lock makes the
+    // tail-read + insert atomic across executions; it auto-releases on
+    // COMMIT/ROLLBACK.
+    await client.query('SELECT pg_advisory_xact_lock($1)', [APPEND_ADVISORY_LOCK_KEY]);
+    // The standalone/cloud writer retains its legacy tail lock. Local append-only
+    // roles use the same advisory lock without requiring UPDATE permission.
+    const tail = await client.query<{
+      this_hash: Buffer;
+      seq: string | number;
+    }>(
+      `SELECT this_hash, seq FROM audit_ledger ORDER BY seq DESC LIMIT 1${lockTail ? ' FOR UPDATE' : ''}`,
+    );
+    const previous = tail.rows[0];
+    const prevHash =
+      previous !== undefined ? Buffer.from(previous.this_hash) : Buffer.from(GENESIS_PREV_HASH);
+    const seq = previous !== undefined ? Number(previous.seq) + 1 : 1;
+    const payloadHash = Buffer.from(args.payloadHash);
+    const thisHash = computeRowHash({ payloadHash, prevHash, seq });
+
+    const inserted = await client.query<AuditLedgerDbRow>(
+      `INSERT INTO audit_ledger (
+       seq, delivery_id, event_type, actor, record_type, record_kind,
+       record_id, from_state, to_state, verdict,
+       payload_hash, prev_hash, this_hash, received_at
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+     RETURNING *`,
+      [
+        seq,
+        args.deliveryId,
+        args.eventType,
+        args.actor,
+        args.recordType,
+        args.recordKind ?? null,
+        args.recordId,
+        args.fromState ?? null,
+        args.toState ?? null,
+        args.verdict,
+        payloadHash,
+        prevHash,
+        thisHash,
+        args.receivedAt,
+      ],
+    );
+    const row = inserted.rows[0];
+    if (row === undefined) {
+      throw new Error('INSERT ... RETURNING * returned no row');
+    }
+    return mapDbRow(row);
   }
 
   async getByDeliveryId(deliveryId: string): Promise<AuditLedgerRow | undefined> {

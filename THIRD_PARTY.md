@@ -18,6 +18,9 @@ its notices and any conditions applicable to the artifact you build.
 
 Local installation obtains unmodified dependencies from their registries. A future
 prebuilt worker image would also contain vendor runtime and OS components, so its
-redistribution rights, notices and inventory require a separate review. Existing
-Dockerfiles are experimental and are not a cleared image distribution recipe.
+redistribution rights, notices and inventory require a separate review. The local
+control-plane Dockerfile installs its four locked packages without lifecycle
+scripts and excludes the installed Agent SDK. Node/PostgreSQL base images pin
+manifest digests; their OS/runtime notices and the full built-image inventory need
+review before distribution. Legacy service Dockerfiles remain experimental.
 The project license is not yet finalized; no license here overrides vendor terms.

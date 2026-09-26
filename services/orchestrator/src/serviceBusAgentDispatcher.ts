@@ -243,7 +243,7 @@ export class InMemoryServiceBusAgentDispatcher implements AgentDispatcher {
 // string. Per-role consumers MUST deserialize symmetrically. Identical to
 // the deprecated HttpAgentDispatcher's serializeMessage so the same parser
 // works on both sides during migration.
-function serializeMessage(message: DispatchRequest['message']): Record<string, unknown> {
+export function serializeMessage(message: DispatchRequest['message']): Record<string, unknown> {
   // Optional review-trigger fields. Emitted only when defined so the wire
   // shape stays unchanged for non-PR transitions (b3-pr11 payloadParser
   // accepts string|undefined). The branch-sync gate (ADR 0010 / 0012)
@@ -273,6 +273,7 @@ function serializeMessage(message: DispatchRequest['message']): Record<string, u
   // the wire shape is unchanged for transitions lacking them.
   if (message.repoFullName !== undefined) out.repoFullName = message.repoFullName;
   if (message.installationId !== undefined) out.installationId = message.installationId;
+  if (message.reReviewMode !== undefined) out.reReviewMode = message.reReviewMode;
   return out;
 }
 

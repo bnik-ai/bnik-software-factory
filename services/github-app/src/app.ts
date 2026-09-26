@@ -2,13 +2,19 @@ import { Hono } from 'hono';
 import { type AuditLedger, InMemoryAuditLedger } from './auditLedger.js';
 import { WEBHOOK_SECRET_ENV } from './constants.js';
 import { GITHUB_WEBHOOK_EVENTS, NOISE_DROP_EVENTS } from './eventAllowlist.js';
-import { type EventQueue, InMemoryEventQueue } from './eventQueue.js';
+import { type EnqueueArgs, type EventQueue, InMemoryEventQueue } from './eventQueue.js';
 import { PostgresAuditLedger } from './postgresAuditLedger.js';
 import { POSTGRES_HOST_ENV, buildPostgresPool } from './postgresClient.js';
 import { ServiceBusEventQueue, resolveEventQueueBootConfig } from './serviceBusEventQueue.js';
 import { handleWebhook } from './webhook.js';
 
+export interface AtomicDeliveryAcceptor {
+  accept(args: EnqueueArgs): Promise<{ seq: number; idempotent: boolean }>;
+}
+
 export interface AppConfig {
+  // Durable local intake commits its receipt and raw event together.
+  deliveryAcceptor?: AtomicDeliveryAcceptor;
   // The HMAC secret used to verify GitHub webhook deliveries.
   // Required — there is no safe default.
   webhookSecret: string;
@@ -32,6 +38,7 @@ export function buildApp(config: AppConfig): Hono {
     allowedEvents = GITHUB_WEBHOOK_EVENTS,
     auditLedger = new InMemoryAuditLedger(),
     eventQueue = new InMemoryEventQueue(),
+    deliveryAcceptor,
   } = config;
   const app = new Hono();
 
@@ -77,6 +84,29 @@ export function buildApp(config: AppConfig): Hono {
     // never fails the webhook (the raw payload is the canonical carrier).
     const { repoFullName, installationId, recordNodeId } = parseRepoAndInstallation(rawBodyBuffer);
 
+    if (deliveryAcceptor) {
+      try {
+        const accepted = await deliveryAcceptor.accept({
+          deliveryId,
+          event,
+          payload: rawBodyBuffer.toString('utf8'),
+          repoFullName,
+          installationId,
+          sessionId: recordNodeId,
+        });
+        return c.json({ ok: true, deliveryId, event, ...accepted }, 200);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : '';
+        if (reason === 'repository_not_configured' || reason === 'installation_not_configured') {
+          return c.json({ ok: false, reason }, 403);
+        }
+        if (reason === 'delivery_key_payload_conflict') {
+          return c.json({ ok: false, reason }, 409);
+        }
+        return c.json({ ok: false, reason: 'enqueue_failed' }, 503);
+      }
+    }
+
     // Two-phase ledger contract: see src/auditLedger.ts for the rationale.
     // `beginDelivery` reserves a row by `delivery_id`; `confirmEnqueued`
     // marks it processed AFTER the queue write succeeds. If `enqueue`
@@ -85,7 +115,16 @@ export function buildApp(config: AppConfig): Hono {
     const ledgerResult = await auditLedger.beginDelivery({ deliveryId, event });
 
     if (ledgerResult.alreadyEnqueued) {
-      return c.json({ ok: true, deliveryId, event, seq: ledgerResult.seq, idempotent: true }, 200);
+      return c.json(
+        {
+          ok: true,
+          deliveryId,
+          event,
+          seq: ledgerResult.seq,
+          idempotent: true,
+        },
+        200,
+      );
     }
 
     try {
@@ -189,7 +228,10 @@ export function readWebhookSecretFromEnv(): string {
 // env is set (connection string or namespace FQDN), else the in-memory impl
 // so the v0 boot + existing tests keep working with no SB env. The chosen
 // impl name is returned for boot logging (never logs secrets).
-export function resolveEventQueueFromEnv(): { queue: EventQueue; impl: string } {
+export function resolveEventQueueFromEnv(): {
+  queue: EventQueue;
+  impl: string;
+} {
   const boot = resolveEventQueueBootConfig();
   switch (boot.kind) {
     case 'connection-string':
@@ -233,10 +275,16 @@ function lazyManagedIdentityServiceBusQueue(
 // Env-driven AuditLedger resolution. Returns a Postgres-backed ledger when
 // POSTGRES_HOST is set, else the in-memory impl. The chosen impl name is
 // returned for boot logging.
-export function resolveAuditLedgerFromEnv(): { ledger: AuditLedger; impl: string } {
+export function resolveAuditLedgerFromEnv(): {
+  ledger: AuditLedger;
+  impl: string;
+} {
   const host = process.env[POSTGRES_HOST_ENV];
   if (host !== undefined && host !== '') {
-    return { ledger: new PostgresAuditLedger(buildPostgresPool()), impl: `postgres(${host})` };
+    return {
+      ledger: new PostgresAuditLedger(buildPostgresPool()),
+      impl: `postgres(${host})`,
+    };
   }
   return { ledger: new InMemoryAuditLedger(), impl: 'in-memory' };
 }

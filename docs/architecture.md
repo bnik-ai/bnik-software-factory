@@ -18,9 +18,12 @@ flowchart LR
 ```
 
 Queue, consumer, ledger, and dispatcher interfaces separate the policy logic from
-runtime adapters. The existing Azure implementation is experimental; the local
-PostgreSQL queue implementation is being developed behind these interfaces.
-Durable handoff and worker isolation must be validated in the assembled runtime.
+runtime adapters. The existing Azure implementation is experimental; the [local PostgreSQL runtime](local-runtime.md) implements these interfaces.
+It commits authenticated intake and its receipt atomically. Validator audit, verdict,
+outgoing work and acknowledgement share a transaction; orchestration likewise
+commits agent jobs and settlement together. Renewable leases and fencing guard
+queue ownership. Live agent jobs await an isolated worker; the explicit demo uses
+a synthetic receipt-only worker.
 
 ### Records
 
@@ -55,7 +58,7 @@ immutable anchor or proof that every remote effect happened exactly once.
 The intended supported flow is Task to Build to Review to CI to human merge.
 The current source also contains broader planning and operations handlers. Their
 presence does not establish a supported autonomous lifecycle. Human review and
-merge enforcement, local packaging, and installation checks must be completed
+merge enforcement, worker isolation, and live installation checks must be completed
 before this candidate can become a usable alpha.
 
 See [generated diagrams](architecture-diagrams.md) for source-derived counts,

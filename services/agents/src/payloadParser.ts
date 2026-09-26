@@ -175,6 +175,26 @@ export function parseAgentRunPayload(raw: string): PayloadParseResult {
     baseBranch,
   };
 
+  if (m.repoFullName !== undefined) {
+    if (typeof m.repoFullName !== 'string' || !/^[^/]+\/[^/]+$/.test(m.repoFullName))
+      return { ok: false, reason: 'invalid_repoFullName' };
+    message.repoFullName = m.repoFullName;
+  }
+  if (m.installationId !== undefined) {
+    if (
+      typeof m.installationId !== 'number' ||
+      !Number.isSafeInteger(m.installationId) ||
+      m.installationId <= 0
+    )
+      return { ok: false, reason: 'invalid_installationId' };
+    message.installationId = m.installationId;
+  }
+  if (m.reReviewMode !== undefined) {
+    if (m.reReviewMode !== 'bounce' && m.reReviewMode !== 'claim')
+      return { ok: false, reason: 'invalid_reReviewMode' };
+    message.reReviewMode = m.reReviewMode;
+  }
+
   return {
     ok: true,
     value: {

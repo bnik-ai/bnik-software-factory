@@ -59,5 +59,8 @@ export interface ParsedTransitionMessage {
   // Issue #192/#119: on the rebase-for-review message, 'bounce' (PR ledger at
   // in_review → drive the syncing micro-state) vs 'claim' (PR unclaimed at open →
   // apply status:in_review). Set by the orchestrator from the original trigger.
+  // Repository/installation context must survive the queue boundary.
+  repoFullName?: string;
+  installationId?: number;
   reReviewMode?: 'bounce' | 'claim';
 }

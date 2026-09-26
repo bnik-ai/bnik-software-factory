@@ -2,15 +2,18 @@
 
 GitHub-native workflows for coding agents.
 
-**Private development candidate.** This tree contains the governance core and
-experimental adapters. It is not a released or supported local installation.
+**Private development candidate.** This tree includes a packaged PostgreSQL control plane
+and an explicit, credential-free demo. It is not a released end-to-end alpha.
 The release license and distribution notices are still being finalized.
 
 The intended initial workflow starts from a Task, creates an implementation PR,
 runs agent review and required CI, and waits for a human to approve and merge.
 It targets one explicitly configured repository with the operator's own GitHub
-and Claude credentials. The packaged local runtime, isolated worker, onboarding,
-and enforcement of that complete workflow are still under development.
+and Claude credentials. The isolated coding worker, onboarding, and
+enforcement of that complete workflow are still under development.
+
+Run the [local demo and durable-runtime checks](docs/local-runtime.md). Live mode
+authenticates GitHub reads and persists agent jobs; it does not execute them.
 
 ## Explore the source
 
@@ -19,6 +22,7 @@ and enforcement of that complete workflow are still under development.
 | `services/github-app` | Webhook authentication, intake, and GitHub App surfaces |
 | `services/validator` | Record transitions, policy, audit ledger, and verdicts |
 | `services/orchestrator` | Verdict-gated routing to agent roles |
+| `services/local-runtime` | PostgreSQL queues, atomic handoffs, local authentication and packaging |
 | `services/agents` | Build/review handlers, tools, and model adapters |
 
 See [architecture](docs/architecture.md), [source authority](docs/sources-of-truth.md),
@@ -29,7 +33,7 @@ See [architecture](docs/architecture.md), [source authority](docs/sources-of-tru
 From the repository root, with Node and npm installed:
 
 ```sh
-for service in agents github-app orchestrator validator; do
+for service in agents github-app orchestrator validator local-runtime; do
   (cd "services/$service" && npm ci --ignore-scripts --no-audit --no-fund && npm test && npm run lint && npm run type-check) || exit 1
 done
 node --test scripts/*.test.mjs
@@ -38,7 +42,8 @@ node scripts/gen-architecture-diagrams.mjs --check
 
 These checks use fixtures; they do not start a factory or contact a live coding
 model. The preparation checks ran on macOS arm64 with Node 26. The supported
-container/platform matrix has not been established. Dependency installation
+container target is Linux arm64 with Node 24.21.0/PostgreSQL 17.11, verified on
+macOS Docker Desktop. Other hosts and architectures remain unverified. Dependency installation
 fetches packages under their own terms; see [third-party components](THIRD_PARTY.md).
 
 Existing Azure entrypoints and Dockerfiles are experimental source references.

@@ -1,0 +1,9 @@
+.git
+**/node_modules
+**/.env
+**/.env.*
+runtime/secrets
+runtime/backups
+**/__pycache__
+internal
+*.log
