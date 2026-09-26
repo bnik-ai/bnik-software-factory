@@ -10,6 +10,7 @@ import {
 } from '../github/activation.js';
 import { GitHubFailure, InstallationClient } from '../github/client.js';
 import { authorizeApprovedJob, loadActivation } from '../github/intake.js';
+import { HumanMergeGate } from '../github/reconcile.js';
 import { checkSchema } from '../migrate.js';
 import { type CodingJob, parseJob, sha256 } from './protocol.js';
 import { githubArchive } from './source.js';
@@ -27,6 +28,9 @@ async function main() {
       'github-check',
       'prepare-task',
       'activations',
+      'track-pr',
+      'review-scan',
+      'review-status',
     ].includes(command ?? '')
   )
     throw new Error('worker_command_required');
@@ -50,6 +54,29 @@ async function main() {
     }
     const config = resolveConfig();
     const github = new InstallationClient(config, controller.signal);
+    if (command === 'track-pr' || command === 'review-scan' || command === 'review-status') {
+      const gate = new HumanMergeGate(pool, config, github);
+      try {
+        if (command === 'track-pr')
+          console.log(
+            JSON.stringify(
+              await gate.track(
+                Number(process.argv[3]),
+                Number(process.argv[4]),
+                process.argv[5] ?? '',
+              ),
+            ),
+          );
+        if (command === 'review-scan') {
+          await gate.schedule();
+          for (let i = 0; i < 100 && (await gate.step()); i++) controller.signal.throwIfAborted();
+        }
+        console.log(JSON.stringify(await gate.status()));
+      } finally {
+        await gate.close();
+      }
+      return;
+    }
     if (command === 'github-check') {
       if (config.mode !== 'live') throw new Error('live_configuration_required');
       console.log(JSON.stringify(await github.check()));

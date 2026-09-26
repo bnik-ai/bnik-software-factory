@@ -14,6 +14,8 @@ for key in ['FACTORY_MODE', 'FACTORY_REPOSITORY', 'GITHUB_INSTALLATION_ID', 'GIT
 env.update(POSTGRES_HOST='127.0.0.1', POSTGRES_PORT=settings.get('FACTORY_DATABASE_PORT', '55432'), POSTGRES_DATABASE='software_factory', POSTGRES_USER='factory_runtime', POSTGRES_TLS='disable', POSTGRES_PASSWORD_FILE=str(root / 'secrets/database_password'), GITHUB_WEBHOOK_SECRET_FILE=str(root / 'secrets/webhook_secret'))
 if settings.get('FACTORY_MODE') == 'live':
     env['GITHUB_APP_PRIVATE_KEY_FILE'] = str(root / 'secrets/app_private_key')
+    if (root / 'merge-policy.json').exists():
+        env['FACTORY_MERGE_POLICY_FILE'] = str(root / 'merge-policy.json')
     if settings.get('FACTORY_EXECUTION') == 'manual':
         env['ANTHROPIC_API_KEY_FILE'] = str(root / 'secrets/model_key')
 service = root.parent / 'services/local-runtime'

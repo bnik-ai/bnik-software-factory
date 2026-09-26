@@ -1,0 +1,7 @@
+# Add after compose.live.yaml only when the restricted review App is configured.
+services:
+  runtime:
+    environment:
+      FACTORY_MERGE_POLICY_FILE: /run/config/merge-policy.json
+    volumes:
+      - ./merge-policy.json:/run/config/merge-policy.json:ro

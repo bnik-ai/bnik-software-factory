@@ -4,8 +4,10 @@ This private development candidate runs authenticated intake, validation, audit 
 routing with durable PostgreSQL queues. The packaged demo uses synthetic GitHub
 reads and a receipt-only worker. Live mode verifies GitHub installation and human Task activation, storing durable
 authorization receipts. The separate [isolated executor](isolated-worker.md) accepts
-explicit requests bound to those receipts. Automatic workflow integration and human
-merge enforcement remain under development; this is not a complete end-to-end alpha installation.
+explicit requests bound to those receipts. Automatic Task-to-PR workflow integration remains under development; this is not a complete end-to-end alpha installation.
+
+For explicitly paired PRs, the optional [human merge profile](human-merge.md) checks
+native protection, human review and required CI, then reconciles verified human merges.
 
 ## Verified environment and dependencies
 

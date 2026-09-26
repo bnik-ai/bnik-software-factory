@@ -18,6 +18,8 @@ Live intake verifies the configured installation and stores authorized Task rece
 Execution requires a separate, explicit local command and current human authorization.
 Run the separate [isolated worker example](docs/isolated-worker.md) to produce a
 patch and actual test-command receipts from a disposable container.
+For explicitly paired PRs, the [human merge profile](docs/human-merge.md) verifies
+GitHub protection, human approval and required CI, then reconciles the Task.
 
 ## Explore the source
 

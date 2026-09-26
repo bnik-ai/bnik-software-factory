@@ -9,6 +9,11 @@ export const INTAKE_PERMISSIONS = {
   statuses: 'read',
   metadata: 'read',
 } as const;
+export const REVIEW_PERMISSIONS = {
+  ...INTAKE_PERMISSIONS,
+  administration: 'read',
+  issues: 'write',
+} as const;
 export const INTAKE_EVENTS = [
   'issues',
   'issue_comment',
@@ -32,6 +37,10 @@ export interface Repository {
   default_branch: string;
   archived: boolean;
   disabled: boolean;
+  allow_auto_merge?: boolean;
+  allow_squash_merge?: boolean;
+  allow_merge_commit?: boolean;
+  allow_rebase_merge?: boolean;
 }
 export interface Issue {
   id: number;
@@ -71,6 +80,9 @@ export class InstallationClient implements GitHubReads {
     if (!this.config.appId || !this.config.appPrivateKey)
       throw new GitHubFailure('app_identity_missing');
     return signAppJwt(this.config.appId, this.config.appPrivateKey);
+  }
+  private permissions() {
+    return this.config.mergePolicy ? REVIEW_PERMISSIONS : INTAKE_PERMISSIONS;
   }
   private async call(
     path: string,
@@ -161,9 +173,87 @@ export class InstallationClient implements GitHubReads {
   }
   async read<T>(path: string): Promise<T> {
     const prefix = `/repos/${this.config.repository}/`;
-    if (!path.startsWith(prefix) || path.includes('..') || path.includes('?') || path.includes('#'))
+    if (
+      (path !== prefix.slice(0, -1) && !path.startsWith(prefix)) ||
+      path.includes('..') ||
+      path.includes('?') ||
+      path.includes('#')
+    )
       throw new GitHubFailure('github_read_not_scoped');
-    return this.withToken(INTAKE_PERMISSIONS, async (token) => (await this.call(path, token)) as T);
+    return this.withToken(
+      { ...this.permissions(), issues: 'read' },
+      async (token) => (await this.call(path, token)) as T,
+    );
+  }
+  async list<T>(resource: 'reviews' | 'checks' | 'tasks', ref: string): Promise<T[]> {
+    if (!this.config.mergePolicy) throw new GitHubFailure('merge_policy_not_configured');
+    const path =
+      resource === 'reviews' && /^[1-9]\d*$/.test(ref)
+        ? `/pulls/${ref}/reviews`
+        : resource === 'checks' && /^[0-9a-f]{40}$/.test(ref)
+          ? `/commits/${ref}/check-runs`
+          : resource === 'tasks' && ref === 'all'
+            ? '/issues'
+            : undefined;
+    if (!path) throw new GitHubFailure('github_list_not_scoped');
+    return this.withToken({ ...this.permissions(), issues: 'read' }, async (token) => {
+      const all: T[] = [];
+      for (let page = 1; page <= 5; page++) {
+        const data = await this.call(
+          `/repos/${this.config.repository}${path}?per_page=100&page=${page}${resource === 'tasks' ? '&state=all&labels=kind%3Atask' : resource === 'checks' ? '&filter=all' : ''}`,
+          token,
+        );
+        const rows =
+          resource === 'checks' ? (data as { check_runs: T[] }).check_runs : (data as T[]);
+        if (!Array.isArray(rows)) throw new GitHubFailure('github_list_invalid');
+        all.push(...rows);
+        if (rows.length < 100) return all;
+      }
+      throw new GitHubFailure('github_list_limit_exceeded');
+    });
+  }
+  async codeowners(commit: string): Promise<string> {
+    if (!/^[0-9a-f]{40}$/.test(commit)) throw new GitHubFailure('commit_invalid');
+    return this.withToken({ contents: 'read', metadata: 'read' }, async (token) => {
+      const file = (await this.call(
+        `/repos/${this.config.repository}/contents/.github/CODEOWNERS?ref=${commit}`,
+        token,
+      )) as { type: string; encoding: string; content: string; size: number };
+      if (file.type !== 'file' || file.encoding !== 'base64' || file.size > 10000)
+        throw new GitHubFailure('codeowners_unreadable');
+      return Buffer.from(file.content, 'base64').toString('utf8');
+    });
+  }
+  async finishTask(
+    number: number,
+    oldStatuses: string[],
+    assertCurrent: () => Promise<void>,
+  ): Promise<void> {
+    if (
+      !this.config.mergePolicy ||
+      !Number.isSafeInteger(number) ||
+      number < 1 ||
+      oldStatuses.some((s) => !['status:ready', 'status:in_review'].includes(s))
+    )
+      throw new GitHubFailure('task_write_not_scoped');
+    await this.withToken({ issues: 'write', metadata: 'read' }, async (token) => {
+      const path = `/repos/${this.config.repository}/issues/${number}`;
+      await assertCurrent();
+      await this.call(`${path}/labels`, token, 'POST', { labels: ['status:done'] });
+      for (const status of oldStatuses) {
+        await assertCurrent();
+        // Retried deletes must treat a label already removed as success, but not arbitrary 404s.
+        const labels = (await this.call(`${path}/labels?per_page=100`, token)) as {
+          name: string;
+        }[];
+        if (!Array.isArray(labels) || labels.length >= 100)
+          throw new GitHubFailure('task_labels_unreadable');
+        if (labels.some((label) => label.name === status))
+          await this.call(`${path}/labels/${encodeURIComponent(status)}`, token, 'DELETE');
+      }
+      await assertCurrent();
+      await this.call(path, token, 'PATCH', { state: 'closed', state_reason: 'completed' });
+    });
   }
   async check() {
     const app = (await this.call('/app', this.jwt())) as { id: number; slug: string };
@@ -191,8 +281,10 @@ export class InstallationClient implements GitHubReads {
     )
       throw new GitHubFailure('installation_scope_invalid');
     if (
-      Object.keys(INTAKE_PERMISSIONS).some((key) => installation.permissions?.[key] !== 'read') ||
-      Object.keys(installation.permissions ?? {}).some((key) => !(key in INTAKE_PERMISSIONS)) ||
+      Object.entries(this.permissions()).some(
+        ([key, value]) => installation.permissions?.[key] !== value,
+      ) ||
+      Object.keys(installation.permissions ?? {}).some((key) => !(key in this.permissions())) ||
       INTAKE_EVENTS.some((event) => !installation.events?.includes(event))
     )
       throw new GitHubFailure('installation_permissions_or_events_invalid');

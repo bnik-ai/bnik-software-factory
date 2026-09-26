@@ -3,7 +3,8 @@
 This candidate supports one explicitly configured GitHub.com repository. Start with
 a disposable repository containing synthetic data. Live intake records events and
 human activation receipts; it never automatically invokes a model. The complete
-PR, review, CI and human-merge workflow remains under development.
+PR publication remains under development. The optional [human merge profile](human-merge.md)
+adds protected review, CI verification and Task reconciliation for explicitly paired PRs.
 
 ## Register a dedicated App
 

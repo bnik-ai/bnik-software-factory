@@ -34,3 +34,6 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# Operator-owned human merge policy
+/runtime/merge-policy.json

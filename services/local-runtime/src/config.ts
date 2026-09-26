@@ -1,6 +1,7 @@
 import { createPrivateKey } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { DatabaseConfig } from './database.js';
+import { type MergePolicy, parseMergePolicy } from './github/merge-policy.js';
 import type { QueueOptions } from './queue.js';
 
 type Env = Record<string, string | undefined>;
@@ -10,6 +11,7 @@ export interface RuntimeConfig {
   repositoryId?: number;
   webhookUrl?: string;
   operators?: readonly string[];
+  mergePolicy?: MergePolicy;
   database: DatabaseConfig;
   queue: QueueOptions;
   repository: string;
@@ -146,6 +148,10 @@ export function resolveConfig(env: Env = process.env): RuntimeConfig {
     if (execution !== 'disabled' && execution !== 'manual')
       throw new Error('FACTORY_EXECUTION_must_be_disabled_or_manual');
     config.execution = execution;
+    if (env.FACTORY_MERGE_POLICY_FILE)
+      config.mergePolicy = parseMergePolicy(
+        JSON.parse(readFileSync(env.FACTORY_MERGE_POLICY_FILE, 'utf8')),
+      );
     if (execution === 'manual') config.modelKey = secret(env, 'ANTHROPIC_API_KEY');
     else if (env.ANTHROPIC_API_KEY || env.ANTHROPIC_API_KEY_FILE)
       throw new Error('disabled_execution_must_not_receive_model_credentials');

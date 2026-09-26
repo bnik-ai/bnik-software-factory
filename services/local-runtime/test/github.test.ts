@@ -7,7 +7,12 @@ import {
   taskSnapshot,
   verifyActivation,
 } from '../src/github/activation.js';
-import { INTAKE_EVENTS, INTAKE_PERMISSIONS, InstallationClient } from '../src/github/client.js';
+import {
+  INTAKE_EVENTS,
+  INTAKE_PERMISSIONS,
+  InstallationClient,
+  REVIEW_PERMISSIONS,
+} from '../src/github/client.js';
 import {
   FixtureGitHub,
   commit,
@@ -17,6 +22,7 @@ import {
   repository,
   task,
 } from './github-fixtures.js';
+import { policy } from './merge-fixtures.js';
 
 test('live intake requires explicit immutable repository, HTTPS endpoint, human operators and execution selection', () => {
   for (const missing of [
@@ -245,4 +251,48 @@ test('token grant expansion and revocation failure stop protected reads and fore
     ),
   );
   assert.equal(calls.length, 0);
+});
+
+test('review App is restricted to issues write and administration read; contents/PR write grants are rejected', async () => {
+  const config = { ...liveConfig(), mergePolicy: policy };
+  const { request, calls } = transport({ installation: { permissions: REVIEW_PERMISSIONS } });
+  const client = new InstallationClient(config, new AbortController().signal, request);
+  await client.check();
+  await client.read('/repos/example/factory-demo/branches/main/protection');
+  assert.deepEqual(calls.filter((c) => c.path.endsWith('/access_tokens')).at(-1)?.body, {
+    repository_ids: [42],
+    permissions: { ...REVIEW_PERMISSIONS, issues: 'read' },
+  });
+  for (const extra of [
+    { contents: 'write' },
+    { pull_requests: 'write' },
+    { checks: 'write' },
+    { administration: 'write' },
+  ]) {
+    const t = transport({ installation: { permissions: { ...REVIEW_PERMISSIONS, ...extra } } });
+    await assert.rejects(
+      new InstallationClient(config, new AbortController().signal, t.request).check(),
+    );
+  }
+});
+test('Task mutation validates target/status before any request and has no merge or deployment surface', async () => {
+  const config = { ...liveConfig(), mergePolicy: policy };
+  const { request, calls } = transport();
+  const client = new InstallationClient(config, new AbortController().signal, request);
+  for (const number of [0, -1, 1.5, Number.NaN])
+    await assert.rejects(client.finishTask(number, [], async () => {}));
+  await assert.rejects(client.finishTask(1, ['status:abandoned'], async () => {}));
+  assert.equal(calls.length, 0);
+  await assert.rejects(
+    client.finishTask(1, [], async () => {
+      throw new Error('changed');
+    }),
+    /changed/,
+  );
+  assert.deepEqual(calls[0]?.body, {
+    repository_ids: [42],
+    permissions: { issues: 'write', metadata: 'read' },
+  });
+  assert.equal(calls.at(-1)?.method, 'DELETE');
+  assert.equal(calls.filter((c) => c.path.startsWith('/repos/')).length, 0);
 });

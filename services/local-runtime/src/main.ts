@@ -10,6 +10,7 @@ import { type RuntimeConfig, databaseConfig, resolveConfig } from './config.js';
 import { createLocalPool } from './database.js';
 import { GitHubFailure, InstallationClient } from './github/client.js';
 import { GitHubIntake, LIVE_EVENTS } from './github/intake.js';
+import { HumanMergeGate } from './github/reconcile.js';
 import { checkSchema } from './migrate.js';
 import { PostgresQueue } from './queue.js';
 import { LocalRuntime } from './runtime.js';
@@ -89,6 +90,7 @@ async function main() {
           'orchestrator',
           'CodingJob',
           'GitHubIntake',
+          'HumanMergeGate',
           ...AGENT_ROLES,
         ])
           count += await new PostgresQueue(pool, queue).compactDone(days);
@@ -119,6 +121,7 @@ async function main() {
   }
   const controller = new AbortController();
   let intake: GitHubIntake | undefined;
+  let mergeGate: HumanMergeGate | undefined;
   if (config.mode === 'live') {
     const github = new InstallationClient(config, controller.signal);
     try {
@@ -128,6 +131,7 @@ async function main() {
       throw error;
     }
     intake = new GitHubIntake(pool, config, github);
+    if (config.mergePolicy) mergeGate = new HumanMergeGate(pool, config, github);
   }
   const runtime = new LocalRuntime(pool, config, runtimeDependencies(config));
   const server = serve({
@@ -153,6 +157,7 @@ async function main() {
   const running = Promise.all([
     config.mode === 'demo' ? runtime.run(controller.signal) : undefined,
     intake?.run(controller.signal),
+    mergeGate?.run(controller.signal),
   ]);
   let stopping = false;
   const stop = async () => {
@@ -169,6 +174,7 @@ async function main() {
       await running;
       await runtime.close();
       await intake?.close();
+      await mergeGate?.close();
       await pool.end();
       clearTimeout(timeout);
     } catch {

@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "baseBranch": "main",
+  "reviewers": ["example-maintainer"],
+  "mergers": ["example-maintainer"],
+  "requiredChecks": [{ "name": "test", "appId": 12345 }]
+}
