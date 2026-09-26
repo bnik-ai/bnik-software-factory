@@ -134,6 +134,7 @@ function transport(
     listed?: object;
     token?: object;
     revokeFails?: boolean;
+    graphql?: object;
   } = {},
 ) {
   const calls: {
@@ -189,6 +190,8 @@ function transport(
       });
     if (path === '/installation/token')
       return new Response(null, { status: change.revokeFails ? 500 : 204 });
+    if (path === '/repos/example/factory-demo') return Response.json(repository);
+    if (path === '/graphql') return Response.json(change.graphql ?? {});
     return Response.json({ fixture: 'read' });
   }) as typeof fetch;
   return { request, calls };
@@ -206,6 +209,60 @@ test('installation preflight verifies App, selected single repository, read-only
     permissions: INTAKE_PERMISSIONS,
     repository_ids: [42],
   });
+});
+
+test('review repository settings use scoped read-only GraphQL when REST omits them', async () => {
+  const settings = {
+    databaseId: 42,
+    nameWithOwner: 'example/factory-demo',
+    autoMergeAllowed: false,
+    squashMergeAllowed: true,
+    mergeCommitAllowed: false,
+    rebaseMergeAllowed: false,
+  };
+  const config = { ...liveConfig(), mergePolicy: policy };
+  const { request, calls } = transport({ graphql: { data: { repository: settings } } });
+  const result = await new InstallationClient(config, new AbortController().signal, request).read(
+    '/repos/example/factory-demo',
+  );
+  assert.deepEqual(result, {
+    ...repository,
+    allow_auto_merge: false,
+    allow_squash_merge: true,
+    allow_merge_commit: false,
+    allow_rebase_merge: false,
+  });
+  assert.deepEqual(calls[0]?.body, {
+    repository_ids: [42],
+    permissions: { ...REVIEW_PERMISSIONS, issues: 'read' },
+  });
+  assert.deepEqual(
+    (calls.find((c) => c.path === '/graphql')?.body as { variables: unknown }).variables,
+    { owner: 'example', name: 'factory-demo' },
+  );
+  assert.equal(calls.at(-1)?.method, 'DELETE');
+  for (const graphql of [
+    {},
+    { errors: [{ message: 'permission denied' }], data: { repository: settings } },
+    { data: { repository: null } },
+    ...[
+      { databaseId: 99 },
+      { nameWithOwner: 'other/repository' },
+      { autoMergeAllowed: null },
+      { squashMergeAllowed: undefined },
+      { mergeCommitAllowed: 'false' },
+      { rebaseMergeAllowed: 0 },
+    ].map((change) => ({ data: { repository: { ...settings, ...change } } })),
+  ]) {
+    const t = transport({ graphql });
+    await assert.rejects(
+      new InstallationClient(config, new AbortController().signal, t.request).read(
+        '/repos/example/factory-demo',
+      ),
+      /repository_merge_settings_unreadable/,
+    );
+    assert.equal(t.calls.at(-1)?.method, 'DELETE');
+  }
 });
 test('preflight rejects all-repository installations, excess grants, missing events, wrong App/repo and insecure/mismatched endpoints', async () => {
   for (const change of [

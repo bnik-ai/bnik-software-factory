@@ -180,10 +180,47 @@ export class InstallationClient implements GitHubReads {
       path.includes('#')
     )
       throw new GitHubFailure('github_read_not_scoped');
-    return this.withToken(
-      { ...this.permissions(), issues: 'read' },
-      async (token) => (await this.call(path, token)) as T,
-    );
+    return this.withToken({ ...this.permissions(), issues: 'read' }, async (token) => {
+      const result = await this.call(path, token);
+      if (this.config.mergePolicy && path === prefix.slice(0, -1)) {
+        // REST omits merge settings for read-only installation tokens. GraphQL
+        // exposes them with the same grants; never infer missing values as safe.
+        const [owner, name] = this.config.repository.split('/');
+        const response = (await this.call('/graphql', token, 'POST', {
+          query:
+            'query RepositoryMergeSettings($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { databaseId nameWithOwner autoMergeAllowed squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed } }',
+          variables: { owner, name },
+        })) as {
+          errors?: unknown[];
+          data?: { repository?: Record<string, unknown> | null };
+        };
+        const settings = response.data?.repository;
+        const repo = result as Repository;
+        if (
+          response.errors?.length ||
+          !settings ||
+          settings.databaseId !== this.config.repositoryId ||
+          repo.id !== this.config.repositoryId ||
+          typeof settings.nameWithOwner !== 'string' ||
+          settings.nameWithOwner.toLowerCase() !== this.config.repository.toLowerCase() ||
+          [
+            'autoMergeAllowed',
+            'squashMergeAllowed',
+            'mergeCommitAllowed',
+            'rebaseMergeAllowed',
+          ].some((key) => typeof settings[key] !== 'boolean')
+        )
+          throw new GitHubFailure('repository_merge_settings_unreadable');
+        return {
+          ...repo,
+          allow_auto_merge: settings.autoMergeAllowed,
+          allow_squash_merge: settings.squashMergeAllowed,
+          allow_merge_commit: settings.mergeCommitAllowed,
+          allow_rebase_merge: settings.rebaseMergeAllowed,
+        } as T;
+      }
+      return result as T;
+    });
   }
   async list<T>(resource: 'reviews' | 'checks' | 'tasks', ref: string): Promise<T[]> {
     if (!this.config.mergePolicy) throw new GitHubFailure('merge_policy_not_configured');
