@@ -35,8 +35,11 @@ jobs:
         run: |
           node --test scripts/*.test.mjs
           node scripts/gen-architecture-diagrams.mjs --check
-      - name: Install fixture supervisor
-        run: npm ci --prefix services/local-runtime --ignore-scripts --no-audit --no-fund
+      - name: Install fixture supervisor and cross-package imports
+        run: |
+          for service in agents github-app orchestrator validator local-runtime; do
+            npm ci --prefix "services/$service" --ignore-scripts --no-audit --no-fund
+          done
       - name: Durable runtime integration and recovery
         run: python3 runtime/test.py
       - name: Isolated worker integration (synthetic provider only)
