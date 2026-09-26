@@ -1,4 +1,4 @@
-# Experimental template: replace command placeholders and pin action revisions.
+# Experimental template: review command placeholders; never add deployment or model secrets.
 name: CI
 on:
   pull_request:
@@ -6,12 +6,18 @@ permissions:
   contents: read
 jobs:
   source-checks:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      NPM_CONFIG_IGNORE_SCRIPTS: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: '24'
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.21.0'
+          package-manager-cache: false
       - run: {{INSTALL_CMD}}
       - run: {{LINT_CMD}}
       - run: {{TYPECHECK_CMD}}

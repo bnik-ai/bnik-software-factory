@@ -1,0 +1,37 @@
+name: Candidate source artifact
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Full 40-character commit SHA to package (source only, no publication)
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  source-artifact:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Validate immutable input
+        env:
+          CANDIDATE_COMMIT: ${{ inputs.commit }}
+        run: '[[ "$CANDIDATE_COMMIT" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit }}
+          persist-credentials: false
+      - name: Package the pinned source twice and compare
+        env:
+          CANDIDATE_COMMIT: ${{ inputs.commit }}
+        run: |
+          python3 scripts/build-candidate.py --commit "$CANDIDATE_COMMIT" --output dist/first
+          python3 scripts/build-candidate.py --commit "$CANDIDATE_COMMIT" --output dist/second
+          diff -r dist/first dist/second
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: candidate-source-${{ inputs.commit }}
+          path: dist/first/*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0

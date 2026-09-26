@@ -47,9 +47,9 @@ node scripts/gen-architecture-diagrams.mjs --check
 ```
 
 These checks use fixtures; they do not start a factory or contact a live coding
-model. The preparation checks ran on macOS arm64 with Node 26. The supported
-container target is Linux arm64 with Node 24.21.0/PostgreSQL 17.11, verified on
-macOS Docker Desktop. Other hosts and architectures remain unverified. Dependency installation
+model. [Contributor CI and source artifacts](docs/contributor-ci.md) select Linux x64 and
+Node 24.21.0. Linux arm64 runtime containers are also verified on macOS Docker
+Desktop; local source checks have run on macOS arm64 with Node 26. Dependency installation
 fetches packages under their own terms; see [third-party components](THIRD_PARTY.md).
 
 Existing Azure entrypoints and Dockerfiles are experimental source references.

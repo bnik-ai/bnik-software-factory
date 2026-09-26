@@ -1,60 +1,41 @@
-name: node-ci
-# Reusable workflow: runs the standard Node CI gate (install + test + lint
-# + type-check) against one workspace path. Caller chooses workspace per
-# package so monorepo-style repos can call this once per workspace.
-#
-# IMPORTANT: working-directory is set per-step, NOT in `defaults.run`.
-# GitHub Actions does NOT evaluate `${{ inputs.* }}` expressions in
-# `defaults.run.working-directory` — that field is statically parsed at
-# workflow-load time, before inputs resolve, so the expression would
-# fail validation (PR #56 codex finding caught this).
-#
-# setup-node + cache is inlined (was a composite action in rev0; cross-
-# repo `uses: ./...` refs resolve to the CALLER's checkout which doesn't
-# have the path, so the step would fail for downstream consumers).
-
+name: Node source checks
 on:
   workflow_call:
     inputs:
       workspace_path:
-        description: Workspace path containing package.json (e.g. services/validator)
         required: true
         type: string
-      node_version:
-        description: Node.js major version
-        required: false
-        type: string
-        default: '20'
-
 permissions:
   contents: read
-
 jobs:
   ci:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node ${{ inputs.node_version }}
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: ${{ inputs.node_version }}
-          cache: npm
-          cache-dependency-path: ${{ inputs.workspace_path }}/package-lock.json
-
-      - name: Install
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.21.0'
+          package-manager-cache: false
+      - name: Check workspace input
+        env:
+          WORKSPACE_PATH: ${{ inputs.workspace_path }}
+        run: |
+          case "$WORKSPACE_PATH" in
+            services/agents|services/github-app|services/orchestrator|services/validator|services/local-runtime) ;;
+            *) exit 1 ;;
+          esac
+      - name: Install locked dependencies without lifecycle scripts
         working-directory: ${{ inputs.workspace_path }}
-        run: npm ci
-
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Test
         working-directory: ${{ inputs.workspace_path }}
         run: npm test
-
       - name: Lint
         working-directory: ${{ inputs.workspace_path }}
         run: npm run lint
-
-      - name: Type-check
+      - name: Type check
         working-directory: ${{ inputs.workspace_path }}
         run: npm run type-check

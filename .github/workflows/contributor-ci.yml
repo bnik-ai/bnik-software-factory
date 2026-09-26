@@ -1,0 +1,55 @@
+name: Contributor CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: contributor-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  source:
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [agents, github-app, orchestrator, validator, local-runtime]
+    uses: ./.github/workflows/node-ci.yml
+    with:
+      workspace_path: services/${{ matrix.service }}
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.21.0'
+          package-manager-cache: false
+      - name: Verify contributor credential boundary
+        run: node scripts/ci-boundary.mjs
+      - name: Generated docs and build contracts
+        run: |
+          node --test scripts/*.test.mjs
+          node scripts/gen-architecture-diagrams.mjs --check
+      - name: Install fixture supervisor
+        run: npm ci --prefix services/local-runtime --ignore-scripts --no-audit --no-fund
+      - name: Durable runtime integration and recovery
+        run: python3 runtime/test.py
+      - name: Isolated worker integration (synthetic provider only)
+        run: python3 runtime/worker/test.py
+  contributor-ci:
+    if: always()
+    needs: [source, integration]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - name: Require every check
+        env:
+          SOURCE_RESULT: ${{ needs.source.result }}
+          INTEGRATION_RESULT: ${{ needs.integration.result }}
+        run: test "$SOURCE_RESULT" = success && test "$INTEGRATION_RESULT" = success
