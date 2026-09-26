@@ -30,6 +30,12 @@ jobs:
       - name: Install locked dependencies without lifecycle scripts
         working-directory: ${{ inputs.workspace_path }}
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install local-runtime cross-package type dependencies
+        if: inputs.workspace_path == 'services/local-runtime'
+        run: |
+          for service in agents github-app orchestrator validator; do
+            npm ci --prefix "services/$service" --ignore-scripts --no-audit --no-fund
+          done
       - name: Test
         working-directory: ${{ inputs.workspace_path }}
         run: npm test
