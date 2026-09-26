@@ -2,7 +2,7 @@
 
 The local executor runs an explicitly submitted coding job in a disposable Docker
 container and returns a patch with command receipts. It uses the existing Claude
-Agent SDK adapter. Webhook-created `BuildAgent` work remains queued: activation,
+Agent SDK adapter. Live jobs require a verified human Task activation and a separate local command.
 PR publication, review, required CI and human merge enforcement are separate work.
 This candidate does not yet provide the complete Task-to-merge workflow.
 
@@ -42,40 +42,35 @@ local Docker context intended for this machine before running these commands.
 
 ## Live request contract
 
-Use the explicit [live configuration](local-runtime.md#configuration-and-live-control-plane-mode)
-and both `compose.live.yaml` and `compose.worker.yaml` overrides. Live calls spend
-the operator's provider quota; the runtime never starts them automatically. Create
-a JSON request with exactly these fields and submit it with `worker.py run JOB_JSON
-NEW_OUTPUT_DIRECTORY` (no archive argument):
+First complete [GitHub installation and human activation](github-installation.md).
+The live CLI accepts only `run-activation ACTIVATION_ID NEW_OUTPUT_DIRECTORY`;
+arbitrary `run JOB_JSON` requests are demo-only. Before running, set
+`FACTORY_EXECUTION=manual` in ignored `runtime/.env` and supply your own Anthropic
+key as private `runtime/secrets/model_key`. The Compose service remains intake-only.
+Live calls spend your provider quota and must use an exact model ID you selected
+and can access; the executor never substitutes a model.
 
-```json
-{
-  "id": "operator-request-001",
-  "mode": "live",
-  "repository": "OWNER/REPOSITORY",
-  "sourceCommit": "1111111111111111111111111111111111111111",
-  "prompt": "Describe the bounded change and acceptance criteria here.",
-  "model": "claude-EXACT-OPERATOR-SELECTED-MODEL-ID",
-  "maxTurns": 10,
-  "timeoutMs": 300000,
-  "tests": ["node --test"]
-}
-```
+An activation binds an open Task's title, body, labels and identity, its explicit
+prompt/tests/model/limits, and the current default-branch commit. The native
+supervisor rechecks the installation, unchanged comment, current human permission,
+Task and source before downloading and again under the execution lease before
+starting Docker/model work. Authorization expires one hour after the comment was
+created. Edit the Task or move the default branch and a new approval is required.
+A revoked permission, deleted/edited comment or unsupported installation stops work.
 
-Replace the illustrative commit/model with real values; the executor does not select
-or substitute a model. The repository and mode must match local configuration.
-`sourceCommit` must be a full 40-character commit SHA. An optional `archiveSha256`
-can pin the downloaded archive. IDs deduplicate durable submissions: a conflicting
-payload with the same ID fails; a completed request can return its saved result
-without another model run. Use a new ID only for an intentional new attempt.
+The supervisor uses an immutable `activation-<receipt UUID>` job ID. A duplicate
+submission can return a saved result without another model run; conflicting job
+contents fail. A fresh approval is needed for an intentional new run. Leases and
+receipts do not make external model effects exactly once. GitHub can change after
+the final check; use cancellation to stop a running job if authorization is revoked.
 
-The supervisor mints a GitHub installation token restricted to that one repository,
-with `contents:read` and `metadata:read`, validates its returned scope/expiry,
-fetches the pinned snapshot and revokes the token before execution. Unexpected
-scope, redirect, source identity or revocation failure stops the run. The App must
-already be installed with these permissions; installation/activation verification
-is not established by the mocked source tests. No GitHub token is sent to the
-worker. There is no Git remote, push capability, merge credential or App key there.
+The supervisor mints a GitHub installation token restricted to the configured
+repository with `contents:read` and `metadata:read`, validates its returned
+scope/expiry, fetches the pinned snapshot and revokes the token before execution.
+Unexpected scope, redirect, source identity or revocation failure stops the run.
+No GitHub token reaches the worker. There is no Git remote, push capability, merge
+credential or App key there. This produces local patch/test artifacts; it does
+not publish a PR or change Task status.
 
 The snapshot is transferred through stdin and unpacked inside the container only.
 Compressed input is limited to 8 MiB, expanded input to 64 MiB and 4,096 entries.

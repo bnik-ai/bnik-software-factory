@@ -6,6 +6,10 @@ import type { QueueOptions } from './queue.js';
 type Env = Record<string, string | undefined>;
 export interface RuntimeConfig {
   mode: 'demo' | 'live';
+  execution?: 'disabled' | 'manual';
+  repositoryId?: number;
+  webhookUrl?: string;
+  operators?: readonly string[];
   database: DatabaseConfig;
   queue: QueueOptions;
   repository: string;
@@ -114,7 +118,37 @@ export function resolveConfig(env: Env = process.env): RuntimeConfig {
     } catch {
       throw new Error('GITHUB_APP_PRIVATE_KEY_must_be_an_RSA_private_key');
     }
-    config.modelKey = secret(env, 'ANTHROPIC_API_KEY');
+    config.repositoryId = integer(env, 'FACTORY_REPOSITORY_ID', 0, 1, Number.MAX_SAFE_INTEGER);
+    const url = new URL(required(env, 'FACTORY_WEBHOOK_URL'));
+    if (
+      url.protocol !== 'https:' ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      url.pathname !== '/webhook' ||
+      url.port ||
+      !url.hostname.includes('.') ||
+      /^(localhost|127\.|0\.|\[)/.test(url.hostname)
+    )
+      throw new Error('FACTORY_WEBHOOK_URL_requires_public_HTTPS_webhook_path');
+    config.webhookUrl = url.href;
+    config.operators = required(env, 'FACTORY_OPERATORS')
+      .split(',')
+      .map((v) => v.trim().toLowerCase());
+    if (
+      config.operators.length > 20 ||
+      config.operators.some((v) => !/^[a-z0-9][a-z0-9-]{0,38}$/.test(v)) ||
+      new Set(config.operators).size !== config.operators.length
+    )
+      throw new Error('FACTORY_OPERATORS_is_invalid');
+    const execution = required(env, 'FACTORY_EXECUTION');
+    if (execution !== 'disabled' && execution !== 'manual')
+      throw new Error('FACTORY_EXECUTION_must_be_disabled_or_manual');
+    config.execution = execution;
+    if (execution === 'manual') config.modelKey = secret(env, 'ANTHROPIC_API_KEY');
+    else if (env.ANTHROPIC_API_KEY || env.ANTHROPIC_API_KEY_FILE)
+      throw new Error('disabled_execution_must_not_receive_model_credentials');
   } else if (
     ['GITHUB_APP_ID', 'GITHUB_APP_PRIVATE_KEY', 'ANTHROPIC_API_KEY'].some(
       (key) => env[key] || env[`${key}_FILE`],

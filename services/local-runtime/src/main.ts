@@ -4,15 +4,18 @@ import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import type { Pool } from 'pg';
 import { buildApp } from '../../github-app/src/app.js';
+import { handleWebhook } from '../../github-app/src/webhook.js';
 import { AGENT_ROLES, PostgresDeliveryAcceptor, RAW_QUEUE } from './adapters.js';
 import { type RuntimeConfig, databaseConfig, resolveConfig } from './config.js';
 import { createLocalPool } from './database.js';
+import { GitHubFailure, InstallationClient } from './github/client.js';
+import { GitHubIntake, LIVE_EVENTS } from './github/intake.js';
 import { checkSchema } from './migrate.js';
 import { PostgresQueue } from './queue.js';
 import { LocalRuntime } from './runtime.js';
 import { runtimeDependencies } from './substrate.js';
 
-export function localApp(pool: Pool, config: RuntimeConfig): Hono {
+export function localApp(pool: Pool, config: RuntimeConfig, intake?: GitHubIntake): Hono {
   const app = new Hono();
   app.use('/webhook', bodyLimit({ maxSize: 1_048_576 }));
   app.get('/readyz', async (c) => {
@@ -27,6 +30,37 @@ export function localApp(pool: Pool, config: RuntimeConfig): Hono {
       return c.json({ ready: false }, 503);
     }
   });
+  if (config.mode === 'live') {
+    const live =
+      intake ??
+      new GitHubIntake(pool, config, new InstallationClient(config, new AbortController().signal));
+    app.post('/webhook', async (c) => {
+      const rawBody = Buffer.from(await c.req.arrayBuffer());
+      const headers = Object.fromEntries(c.req.raw.headers.entries());
+      const verified = handleWebhook({
+        headers,
+        rawBody,
+        secret: config.webhookSecret,
+        allowedEvents: LIVE_EVENTS,
+      });
+      if (verified.status !== 200) return c.json(verified.body, verified.status);
+      try {
+        const result = await live.accept(
+          verified.body.deliveryId,
+          verified.body.event,
+          rawBody.toString('utf8'),
+        );
+        return c.json({ ...result, deliveryId: verified.body.deliveryId }, 202);
+      } catch (error) {
+        if (error instanceof GitHubFailure) return c.json({ ok: false, reason: error.reason }, 403);
+        if (error instanceof Error && error.message === 'delivery_key_payload_conflict')
+          return c.json({ ok: false, reason: error.message }, 409);
+        return c.json({ ok: false, reason: 'intake_unavailable' }, 503);
+      }
+    });
+    app.get('/healthz', (c) => c.json({ status: 'ok' }));
+    return app;
+  }
   app.route(
     '/',
     buildApp({
@@ -50,7 +84,13 @@ async function main() {
       if (command === 'compact') {
         const days = Number(process.argv[3]);
         let count = 0;
-        for (const queue of ['validator', 'orchestrator', 'CodingJob', ...AGENT_ROLES])
+        for (const queue of [
+          'validator',
+          'orchestrator',
+          'CodingJob',
+          'GitHubIntake',
+          ...AGENT_ROLES,
+        ])
           count += await new PostgresQueue(pool, queue).compactDone(days);
         console.log(JSON.stringify({ compacted: count, retainedDays: days }));
       } else
@@ -77,10 +117,21 @@ async function main() {
     await pool.end();
     throw error;
   }
-  const runtime = new LocalRuntime(pool, config, runtimeDependencies(config));
   const controller = new AbortController();
+  let intake: GitHubIntake | undefined;
+  if (config.mode === 'live') {
+    const github = new InstallationClient(config, controller.signal);
+    try {
+      await github.check();
+    } catch (error) {
+      await pool.end();
+      throw error;
+    }
+    intake = new GitHubIntake(pool, config, github);
+  }
+  const runtime = new LocalRuntime(pool, config, runtimeDependencies(config));
   const server = serve({
-    fetch: localApp(pool, config).fetch,
+    fetch: localApp(pool, config, intake).fetch,
     hostname: config.host,
     port: config.port,
   });
@@ -99,7 +150,10 @@ async function main() {
     process.exitCode = 1;
     controller.abort();
   });
-  const running = runtime.run(controller.signal);
+  const running = Promise.all([
+    config.mode === 'demo' ? runtime.run(controller.signal) : undefined,
+    intake?.run(controller.signal),
+  ]);
   let stopping = false;
   const stop = async () => {
     if (stopping) return;
@@ -114,6 +168,7 @@ async function main() {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await running;
       await runtime.close();
+      await intake?.close();
       await pool.end();
       clearTimeout(timeout);
     } catch {
@@ -139,7 +194,11 @@ async function main() {
   await stop();
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
-  main().catch(() => {
-    console.error('local_runtime_start_failed_check_configuration_and_database');
+  main().catch((error) => {
+    console.error(
+      error instanceof GitHubFailure
+        ? error.reason
+        : 'local_runtime_start_failed_check_configuration_and_database',
+    );
     process.exitCode = 1;
   });

@@ -15,6 +15,7 @@ export interface SupervisorOptions {
   signal: AbortSignal;
   queue?: Partial<QueueOptions>;
   execute?: Executor;
+  authorize?: (job: CodingJob) => Promise<void>;
   docker?: Docker;
 }
 export class CodingSupervisor {
@@ -146,6 +147,15 @@ export class CodingSupervisor {
         timer.unref();
       };
       schedule();
+      if (job.mode === 'live') {
+        try {
+          if (!this.options.authorize) throw new Error('live_activation_authorizer_required');
+          await this.options.authorize(job);
+          signal.throwIfAborted();
+        } catch {
+          throw new WorkerFailure('worker_activation_denied');
+        }
+      }
       const result = await (this.options.execute ?? executeIsolated)({
         job,
         archive,

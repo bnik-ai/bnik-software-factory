@@ -50,6 +50,10 @@ test('partial live credentials fail before database or model activity', () => {
     ...live,
     GITHUB_APP_ID: '1',
     GITHUB_APP_PRIVATE_KEY: privateKey,
+    FACTORY_REPOSITORY_ID: '42',
+    FACTORY_WEBHOOK_URL: 'https://factory.example.com/webhook',
+    FACTORY_OPERATORS: 'example-maintainer',
+    FACTORY_EXECUTION: 'manual',
   };
   assert.throws(() => resolveConfig(keyed), /ANTHROPIC_API_KEY/);
   assert.equal(resolveConfig({ ...keyed, ANTHROPIC_API_KEY: 'synthetic-model-key' }).mode, 'live');

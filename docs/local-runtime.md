@@ -2,10 +2,10 @@
 
 This private development candidate runs authenticated intake, validation, audit and
 routing with durable PostgreSQL queues. The packaged demo uses synthetic GitHub
-reads and a receipt-only worker. Live mode supports the control plane and leaves
-agent jobs queued. The separate [isolated executor](isolated-worker.md) accepts
-explicit operator requests. Automatic workflow integration, human merge enforcement and onboarding remain
-under development; this is not a complete end-to-end alpha installation.
+reads and a receipt-only worker. Live mode verifies GitHub installation and human Task activation, storing durable
+authorization receipts. The separate [isolated executor](isolated-worker.md) accepts
+explicit requests bound to those receipts. Automatic workflow integration and human
+merge enforcement remain under development; this is not a complete end-to-end alpha installation.
 
 ## Verified environment and dependencies
 
@@ -62,26 +62,22 @@ sandbox; the image starts no model-executed shell.
 Passwords/keys accept either `NAME` or `NAME_FILE`, never both. Demo rejects live
 model/App credentials. The local profile rejects Azure/Service Bus configuration.
 
-For a fresh live configuration:
+Follow the [GitHub installation guide](github-installation.md) for the exact read-only
+App permissions, event subscriptions, single-repository selection, HTTPS endpoint,
+operator list and credentials. Live mode additionally requires immutable repository
+ID, App ID/key, webhook URL and explicit `FACTORY_EXECUTION=disabled|manual`.
+`disabled` rejects a model key; `manual` requires one only in the native supervisor.
+The Compose live service is always intake-only and receives no model credential.
 
-```sh
-python3 runtime/configure.py --mode live --repository OWNER/REPOSITORY --installation-id INSTALLATION_ID --app-slug APP_SLUG --app-id APP_ID
-```
-
-Put your RSA App private key in `runtime/secrets/app_private_key` and model API key
-in `runtime/secrets/model_key`, readable only by your user. Then use both files:
-
-```sh
-docker compose -f runtime/compose.yaml -f runtime/compose.live.yaml up --build -d --wait
-```
-
-Live startup rejects missing or invalid App identity, installation, webhook, model
-or database configuration before opening the service. It does not silently choose
-fixtures. This configuration check is not a live credential/permission test. App
-permissions, activation and real workflow verification must be completed separately.
-Live mode does not invoke legacy in-process agents, merge/deploy handlers or demo
-workers; agent jobs wait durably for activation and isolated-worker integration.
-The separately invoked coding executor does not consume or settle these jobs.
+Live startup authenticates the App and verifies the installation, permissions,
+repository selection and webhook settings before listening. Unsupported settings
+fail closed without a default repository or fixture fallback. Ordinary issues,
+comments and PR events do not dispatch paid work. Only a current, unchanged command
+from a configured human with current repository write permission can create an
+activation receipt. A separate local command rechecks that authorization before
+isolated execution. Live intake does not run the legacy validator/agent pipeline;
+the demo exercises that pipeline separately. Existing raw and `BuildAgent` jobs
+are not consumed by live intake or by the isolated executor.
 
 The generic service can also run natively after installing its four sibling/source
 packages and its own lockfile. Use explicit `POSTGRES_HOST`, `POSTGRES_PORT`,
@@ -136,7 +132,8 @@ of days while delivery hashes/keys remain to prevent duplicate execution:
 docker compose -f runtime/compose.yaml exec runtime node --import tsx src/main.ts compact 30
 ```
 
-Pending/running/dead-letter bodies and the hash-chained audit ledger are retained.
+Pending/running/dead-letter bodies, Task activation proofs and the hash-chained
+audit ledger are retained.
 Compaction is explicit, not a background deletion policy. Plan storage and backup
 retention for the volume and receipt indexes.
 

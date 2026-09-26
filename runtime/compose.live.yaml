@@ -1,11 +1,13 @@
-# Explicit overlay for live control-plane intake/routing. No live worker runs.
+# GitHub intake only; the model key is never mounted in the control plane.
 services:
   runtime:
     environment:
       GITHUB_APP_ID: ${GITHUB_APP_ID:?App ID required}
       GITHUB_APP_PRIVATE_KEY_FILE: /run/secrets/app_private_key
-      ANTHROPIC_API_KEY_FILE: /run/secrets/model_key
-    secrets: [app_private_key, model_key]
+      FACTORY_REPOSITORY_ID: ${FACTORY_REPOSITORY_ID:?Numeric repository ID required}
+      FACTORY_WEBHOOK_URL: ${FACTORY_WEBHOOK_URL:?User-controlled HTTPS webhook URL required}
+      FACTORY_OPERATORS: ${FACTORY_OPERATORS:?Explicit human operators required}
+      FACTORY_EXECUTION: disabled
+    secrets: [app_private_key]
 secrets:
   app_private_key: {file: ./secrets/app_private_key}
-  model_key: {file: ./secrets/model_key}

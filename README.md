@@ -10,10 +10,12 @@ The intended initial workflow starts from a Task, creates an implementation PR,
 runs agent review and required CI, and waits for a human to approve and merge.
 It targets one explicitly configured repository with the operator's own GitHub
 and Claude credentials. An explicit isolated coding executor is available;
-onboarding and enforcement of the complete workflow remain under development.
+enforcement of the complete workflow remains under development.
 
-Run the [local demo and durable-runtime checks](docs/local-runtime.md). Live mode
-authenticates GitHub reads and persists agent jobs; it does not execute them.
+Run the [local demo and durable-runtime checks](docs/local-runtime.md), then follow
+the [GitHub App installation and human activation guide](docs/github-installation.md).
+Live intake verifies the configured installation and stores authorized Task receipts.
+Execution requires a separate, explicit local command and current human authorization.
 Run the separate [isolated worker example](docs/isolated-worker.md) to produce a
 patch and actual test-command receipts from a disposable container.
 

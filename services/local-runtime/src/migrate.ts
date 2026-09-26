@@ -12,6 +12,7 @@ const migrations = [
   ],
   ['0002_durable_work', new URL('../migrations/0002_durable_work.sql', import.meta.url)],
   ['0003_worker_runs', new URL('../migrations/0003_worker_runs.sql', import.meta.url)],
+  ['0004_task_activations', new URL('../migrations/0004_task_activations.sql', import.meta.url)],
 ] as const;
 export function migrationFiles() {
   return migrations.map(([version, path]) => {
@@ -83,7 +84,7 @@ export async function migrate(pool: Pool, runtimePassword: string): Promise<void
       'GRANT SELECT,INSERT,UPDATE ON webhook_deliveries,factory_work,factory_worker_runs TO factory_runtime',
     );
     await client.query(
-      'GRANT SELECT,INSERT ON audit_ledger,factory_demo_effects TO factory_runtime',
+      'GRANT SELECT,INSERT ON audit_ledger,factory_demo_effects,factory_task_activations TO factory_runtime',
     );
     await client.query('GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO factory_runtime');
   });
