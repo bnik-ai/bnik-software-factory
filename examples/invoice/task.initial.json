@@ -1,0 +1,7 @@
+{
+  "prompt": "Fix subtotal in invoice.mjs to sum unitPriceCents * quantity for each line. Assume valid nonnegative integer prices and positive integer quantities. Preserve the empty invoice behavior. Add regression tests for quantity greater than one and multiple lines. Change only invoice.mjs and invoice.test.mjs. Do not change workflow or governance files. Run node --test invoice.test.mjs and report what changed.",
+  "tests": ["node --test invoice.test.mjs"],
+  "model": "REPLACE_WITH_YOUR_EXACT_CLAUDE_MODEL_ID",
+  "maxTurns": 8,
+  "timeoutMs": 180000
+}

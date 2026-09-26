@@ -8,8 +8,8 @@ This candidate does not yet provide the complete Task-to-merge workflow.
 
 ## Run the credential-free example
 
-Requirements: Docker/Compose, Python 3, and host Node 24–26 with npm. The verified
-worker is Linux arm64 on macOS arm64 Docker Desktop; other platforms are unverified.
+Requirements: Docker/Compose, Python 3, and host Node 24–26 with npm. Verified worker containers cover Linux x64 in contributor CI and Linux arm64
+on macOS arm64 Docker Desktop; other platforms are unqualified.
 From the repository root, configure a fresh demo once (preserve existing settings):
 
 ```sh

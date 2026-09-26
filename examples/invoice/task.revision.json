@@ -1,0 +1,7 @@
+{
+  "prompt": "Implement the invoice subtotal requirements from the pinned baseline: sum unitPriceCents * quantity for all lines, with empty input returning zero. Incorporate the human review request: reject non-array input, non-object/null lines, unitPriceCents that is not a nonnegative safe integer, quantity that is not a positive safe integer, and any product or accumulated total outside safe integer range. Throw TypeError for shape/type errors and RangeError for numeric range/integrality errors. Add tests for valid quantities/multiple lines and each rejection, including overflow. Change only invoice.mjs and invoice.test.mjs. This rerun starts from the unchanged default branch, not the previous PR head, so deliver the complete implementation. Do not change workflow or governance files. Run node --test invoice.test.mjs.",
+  "tests": ["node --test invoice.test.mjs"],
+  "model": "REPLACE_WITH_YOUR_EXACT_CLAUDE_MODEL_ID",
+  "maxTurns": 12,
+  "timeoutMs": 240000
+}

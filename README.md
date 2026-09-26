@@ -57,3 +57,5 @@ They are not an installation quickstart. Some entrypoints fall back to stubs
 when credentials are absent; a successful process start does not prove a live run.
 Goal/Spec/Design, Ops, SRE, Terraform and deployment surfaces are also experimental.
 Never enable autonomous merge or deployment for the intended initial profile.
+
+For a real model and human-review pilot, see the [end-to-end walkthrough](docs/end-to-end-pilot.md). Its live execution evidence is a separate requirement; examples alone do not establish completion.
