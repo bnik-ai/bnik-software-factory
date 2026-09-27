@@ -8,17 +8,32 @@
     "installationId": 200000001,
     "baseBranch": "main"
   },
-  "allowedPaths": ["src", "test", "docs", "README.md"],
-  "criticalPaths": [{ "path": "src/billing", "category": "infrastructure_spend" }],
+  "allowedPaths": [
+    "src",
+    "test",
+    "docs",
+    "README.md"
+  ],
+  "criticalPaths": [
+    {
+      "path": "src/billing",
+      "category": "infrastructure_spend"
+    }
+  ],
   "execution": {
-    "models": ["claude-sonnet-5"],
+    "models": [
+      "claude-sonnet-5"
+    ],
     "maxTurns": 40,
     "maxRunMs": 900000,
     "maxRunMicrousd": 5000000,
     "maxScopeMicrousd": 20000000,
     "maxTaskRuns": 3
   },
-  "changeLimits": { "maxChangedFiles": 50, "maxChangedBytes": 200000 },
+  "changeLimits": {
+    "maxChangedFiles": 50,
+    "maxChangedBytes": 200000
+  },
   "mergeEffect": "none",
   "verification": {
     "acceptanceSuiteSha256": "0000000000000000000000000000000000000000000000000000000000000001",
@@ -26,8 +41,32 @@
     "acceptanceRunnerImage": "sha256:0000000000000000000000000000000000000000000000000000000000000003",
     "reviewerConfigSha256": "0000000000000000000000000000000000000000000000000000000000000004",
     "evalProtocolSha256": "0000000000000000000000000000000000000000000000000000000000000005",
-    "protectedPaths": ["acceptance"],
+    "protectedPaths": [
+      "acceptance"
+    ],
     "receiptTtlMs": 3600000
   },
-  "approvers": { "githubUserIds": [300000001] }
+  "approvers": {
+    "githubUserIds": [
+      300000001
+    ]
+  },
+  "dependencies": {
+    "scanner": {
+      "adapter": "trivy",
+      "image": "sha256:0000000000000000000000000000000000000000000000000000000000000007",
+      "databaseMaxAgeMs": 172800000
+    },
+    "holdSeverity": "critical",
+    "licenseAllowlist": [
+      "Apache-2.0",
+      "MIT",
+      "BSD-2-Clause",
+      "BSD-3-Clause",
+      "ISC",
+      "0BSD"
+    ],
+    "allowNewDependencies": false,
+    "allowMajorUpgrades": false
+  }
 }

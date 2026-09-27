@@ -10,6 +10,7 @@ import type {
   AcceptanceReceipt,
   ApprovalRecord,
   CandidateSubject,
+  DependencyReceipt,
   MergeGateObservation,
   ReviewReceipt,
 } from '../src/autonomy/evidence.js';
@@ -56,6 +57,17 @@ export function policyFixture(overrides: Partial<AutonomyPolicy> = {}): Autonomy
       receiptTtlMs: 3_600_000,
     },
     approvers: { githubUserIds: [APPROVER_ID] },
+    dependencies: {
+      scanner: {
+        adapter: 'trivy',
+        image: `sha256:${'6'.repeat(64)}`,
+        databaseMaxAgeMs: 172_800_000,
+      },
+      holdSeverity: 'critical',
+      licenseAllowlist: ['Apache-2.0', 'MIT', 'BSD-3-Clause', 'ISC'],
+      allowNewDependencies: false,
+      allowMajorUpgrades: false,
+    },
     ...overrides,
   };
 }
@@ -230,6 +242,51 @@ export function approvalFor(
     approver: { githubUserId: APPROVER_ID, type: 'User' },
     source: 'github_review',
     approvedAt: NOW - 5_000,
+    ...overrides,
+  };
+}
+export const LOCKFILE_BUMP = modified(
+  'package-lock.json',
+  '{"packages":{"node_modules/left-pad":{"version":"1.3.0"}}}\n',
+  '{"packages":{"node_modules/left-pad":{"version":"1.3.1"}}}\n',
+);
+/** A verified routine version bump: reproduced lockfile, no scripts, allowed license, no findings. */
+export function dependencyFor(
+  policy: AutonomyPolicy,
+  request: ActionRequest,
+  overrides: Partial<DependencyReceipt> = {},
+): DependencyReceipt {
+  const scanner = policy.dependencies?.scanner ?? {
+    adapter: 'trivy',
+    image: `sha256:${'6'.repeat(64)}`,
+    databaseMaxAgeMs: 172_800_000,
+  };
+  return {
+    version: 1,
+    kind: 'dependency',
+    runId: randomUUID(),
+    subject: subjectOf(request),
+    scanner: { adapter: scanner.adapter, image: scanner.image, databaseUpdatedAt: NOW - 3_600_000 },
+    status: 'complete',
+    resolution: 'reproduced',
+    rootScriptsChanged: false,
+    packageInstallScripts: false,
+    packages: {
+      added: [],
+      removed: [],
+      upgraded: [
+        {
+          ecosystem: 'npm',
+          name: 'left-pad',
+          version: '1.3.1',
+          previousVersion: '1.3.0',
+          license: 'MIT',
+          major: false,
+        },
+      ],
+    },
+    findings: [],
+    completedAt: NOW - 20_000,
     ...overrides,
   };
 }

@@ -59,6 +59,7 @@ from a PR branch, Task text, labels, worker output or model output. See
 | `mergeEffect` | `deployment` holds every merge for a human. There is no `unknown`. |
 | `verification` | Trust roots: acceptance suite, harness and runner image digests, reviewer configuration digest, eval protocol digest, in-repository protected paths and receipt lifetime. |
 | `approvers` | Numeric GitHub user IDs allowed to approve holds. |
+| `dependencies` | Optional trusted dependency verification: pluggable scanner adapter and digest-pinned image, scanner database maximum age, hold severity, SPDX license allowlist, and whether new dependencies or major upgrades may be routine. `null` keeps every dependency change critical. |
 
 Limits cannot exceed the worker's own ceilings (60 turns, 30 minutes, USD 100 per
 run, 20 runs per Task). Cost figures are SDK estimates, not provider bills or hard
@@ -68,9 +69,9 @@ spending caps.
 
 The **active** policy assesses its replacement. Activation computes every
 weakening (wider paths, removed critical or protected paths, added models or
-approvers, raised limits, `human_gated` to `bounded`, `deployment` to `none`, and
-any trust-root change) and refuses unless the operator acknowledges exactly that
-list. A proposed policy cannot vouch for itself. Existing installations have no
+approvers, raised limits, `human_gated` to `bounded`, `deployment` to `none`,
+enabling or loosening dependency verification, and any trust-root change) and
+refuses unless the operator acknowledges exactly that list. A proposed policy cannot vouch for itself. Existing installations have no
 active policy and keep today's behavior; enabling `bounded` is an explicit,
 acknowledged activation. Activating a new policy invalidates pending decisions and
 every scope granted under the old one; pause state carries over.
@@ -88,7 +89,8 @@ the old and new path.
 hosted CI configurations, merge bots, dependency bots and composite actions),
 CODEOWNERS, developer hooks, test-runner and build-transform configuration
 (including `conftest.py`), factory configuration, `SECURITY.md`, dependency
-manifests, lockfiles and package-manager hooks, auth/login/session/permission modules
+manifests and lockfiles (routine only with a passing dependency receipt, below),
+registry and install-hook configuration (always critical), auth/login/session/permission modules
 (including camelCase names such as `requireAuth.js`), secret-bearing files,
 deployment and container definitions, infrastructure code, migrations, schema
 tools and SQL, license and notice files, plus configured `criticalPaths` and
@@ -128,8 +130,9 @@ risk; `bugfix` only adds the reproducer requirement.
 Publication is itself an external effect. Pushing to the base repository runs
 its automation and installs its dependencies with that repository's CI
 privileges, and anything pushed is disclosed. CI and hook definitions, test-runner
-configuration, dependency manifests, new code-execution calls, recognizable
-secret material, anything that could not be inspected (and so could hide those),
+configuration, dependency manifests (unless a passing dependency receipt covers
+them) and configuration, new code-execution calls, recognizable secret material,
+anything that could not be inspected (and so could hide those),
 and a reviewer's escalation of secrets, security or governance risk therefore
 need approval **before publish**. This hold is decided on the full set of
 reasons, before the reason list is truncated for display. Other critical changes
@@ -156,6 +159,7 @@ data inside receipts, never their authors. Unknown fields are refused.
 | Review | same subject, intent digest, reviewer configuration digest | Fresh-context, `complete`, no limitations, risk consistent with categories, no high or medium findings. Low findings are nits and never interrupt. |
 | Merge gate | repository, base branch, PR head, head tree, base | Observed within 5 minutes; PR open; head tree equals the tested tree; base unchanged; protection verified; required checks passed; no human change request. |
 | Approval | action digest (policy, Task, base, head, tree, changes, limits) | From a configured human GitHub user for that exact action. A new head, base, tree or policy needs a new approval. |
+| Dependency | same subject; scanner adapter and image from the policy | Fresh; scanner database within its maximum age at scan time; `complete`; lockfile reproduced from the manifests; no manifest script changes; no install scripts in added or upgraded packages; no new dependency or major upgrade unless the policy allows it; every added or upgraded license in the allowlist; no finding at or above `holdSeverity` and none of unknown severity. Passing makes `dependency_manifest` routine; each failed check holds for a human instead; `unsupported` holds; `error`, `timeout` or a stale database blocks. |
 
 A human change request blocks any PR, routine or not. Failed required checks
 send the change to repair.
@@ -180,6 +184,39 @@ or credentials. Optional execution runs in a separate restricted sandbox. Fresh
 context reduces shared assumptions; it is not proof of independence or
 correctness. It is distinct from regression retesting (which may use prior
 findings) and from outside-human onboarding.
+
+### Dependency verification
+
+A clean vulnerability scan is not proof that a dependency change is safe: scanners
+see known versions, not a lockfile whose download URL or integrity hash was
+altered, a brand-new malicious package, or an install script. The receipt
+therefore combines deterministic checks with the scanner, and both must pass:
+
+| Check | Routine when | Otherwise |
+| --- | --- | --- |
+| Reproduction | The committed lockfile is byte-identical to a clean re-resolution of the manifests in a fresh sandbox with install scripts disabled | `lockfile_not_reproducible` holds |
+| Scripts | The project's own manifest scripts are unchanged and no added or upgraded package declares install-time scripts | holds |
+| Shape | No new dependency and no major upgrade, unless the policy allows them | holds per package |
+| Licenses | Every added or upgraded package carries an allowlisted SPDX identifier | holds per package |
+| Scanner | No finding at or above `holdSeverity`; a finding of unknown severity counts as at the threshold | holds per finding |
+| Scanner health | Adapter and image match the policy; the database was no older than `databaseMaxAgeMs` at scan time; status `complete` | `error`, `timeout` or stale database blocks; `unsupported` holds |
+
+Registry, mirror and install-hook configuration (`.npmrc`, `.yarnrc`,
+`.pnpmfile.cjs`, `.cargo/`, `nuget.config`, `.gitmodules`, toolchain pins) is
+never made routine by a receipt.
+
+The scanner is a pluggable adapter chosen by name and digest-pinned image in the
+policy; the trusted runner normalizes its output into the receipt. The default
+adapter is decided when the runner is built (OSS-20). Verified against their
+documentation on September 27, 2026: Trivy scans a filesystem or repository with
+`--scanners vuln,license`, emits `--format json`, and runs offline with
+`--skip-db-update`, `--skip-java-db-update`, `--cache-dir` and `--offline-scan`
+after its databases (distributed as OCI images) are fetched; some lockfiles need the
+installed tree for license detection, which the clean re-resolution provides.
+OSV-Scanner runs offline with `--offline` and `--download-offline-databases`, but
+its `--licenses` data comes from the deps.dev API. Commercial scanners (Checkmarx,
+Snyk, Socket) can be configured as adapters by operators who hold accounts; none
+is required, and contributor CI never runs a scanner with credentials.
 
 ## Ledger
 

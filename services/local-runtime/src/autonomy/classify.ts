@@ -49,6 +49,7 @@ const PUBLICATION_HOLD_CODES: readonly string[] = [
   'developer_hooks',
   'test_runner_configuration',
   'dependency_manifest',
+  'dependency_configuration',
   'code_execution_primitive',
   'secret_material',
   'secret_material_path',
@@ -158,7 +159,14 @@ export const BUILT_IN_PATH_RULES: readonly PathRule[] = [
     code: 'dependency_manifest',
     category: 'security_auth',
     pattern:
-      /(^|\/)(package\.json|package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.npmrc|\.yarnrc(\.yml)?|requirements[^/]*\.(txt|in)|constraints[^/]*\.txt|pipfile(\.lock)?|pyproject\.toml|poetry\.lock|uv\.lock|setup\.py|setup\.cfg|go\.mod|go\.sum|cargo\.toml|cargo\.lock|gemfile(\.lock)?|[^/]*\.gemspec|pom\.xml|build\.gradle(\.kts)?|settings\.gradle(\.kts)?|gradle\.properties|composer\.(json|lock)|[^/]*\.csproj|packages\.lock\.json|nuget\.config|pubspec\.(yaml|lock)|mix\.(exs|lock)|\.gitmodules)$|(^|\/)(\.pnpmfile\.c?js|bun\.lockb?|go\.work(\.sum)?|deno\.jsonc?|deno\.lock|environment\.ya?ml|directory\.build\.(props|targets)|directory\.packages\.props|[^/]*\.(props|targets))$|(^|\/)\.cargo\//,
+      /(^|\/)(package\.json|package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|pnpm-workspace\.yaml|requirements[^/]*\.(txt|in)|constraints[^/]*\.txt|pipfile(\.lock)?|pyproject\.toml|poetry\.lock|uv\.lock|setup\.py|setup\.cfg|environment\.ya?ml|go\.mod|go\.sum|go\.work(\.sum)?|cargo\.toml|cargo\.lock|gemfile(\.lock)?|[^/]*\.gemspec|pom\.xml|build\.gradle(\.kts)?|settings\.gradle(\.kts)?|gradle\.properties|composer\.(json|lock)|[^/]*\.csproj|packages\.lock\.json|directory\.build\.(props|targets)|directory\.packages\.props|[^/]*\.(props|targets)|pubspec\.(yaml|lock)|mix\.(exs|lock)|bun\.lockb?|deno\.jsonc?|deno\.lock)$/,
+  },
+  {
+    // Registry, mirror and install-hook configuration: never made routine by a receipt.
+    code: 'dependency_configuration',
+    category: 'security_auth',
+    pattern:
+      /(^|\/)(\.npmrc|\.yarnrc(\.yml)?|\.pnpmfile\.c?js|nuget\.config|pip\.conf|\.pypirc|\.piprc|\.gemrc|\.gitmodules|\.tool-versions|\.nvmrc|\.python-version|rust-toolchain(\.toml)?)$|(^|\/)\.cargo\/|(^|\/)\.m2\/|(^|\/)\.gradle\//,
   },
   {
     code: 'auth_or_security_module',

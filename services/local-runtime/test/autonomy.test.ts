@@ -24,6 +24,7 @@ import {
 import {
   APPROVER_ID,
   HEAD,
+  LOCKFILE_BUMP,
   NOW,
   ROUTINE_CHANGE,
   TREE,
@@ -31,6 +32,7 @@ import {
   added,
   approvalFor,
   deleted,
+  dependencyFor,
   evidenceFor,
   manifest,
   mergeGateFor,
@@ -1047,4 +1049,378 @@ test('a huge differing region is refused as oversized before it is split into li
   // Splitting this input would take ~0.6 s and ~470 MB; the raw-string check takes ~5 ms.
   assert.ok(Date.now() - started < 250, `took ${Date.now() - started} ms`);
   assert.ok(result.reasons.some((reason) => reason.code === 'change_exceeds_routine_size_limit'));
+});
+
+test('dependency policy is strict, optional and compared as a weakening surface', () => {
+  const policy = policyFixture();
+  const dependencies = policy.dependencies as NonNullable<typeof policy.dependencies>;
+  assert.equal(parsePolicy({ ...policy, dependencies: null }).dependencies, null);
+  for (const invalid of [
+    { ...dependencies, scanner: { ...dependencies.scanner, adapter: 'Trivy' } },
+    { ...dependencies, scanner: { ...dependencies.scanner, image: 'trivy:latest' } },
+    { ...dependencies, scanner: { ...dependencies.scanner, databaseMaxAgeMs: 1000 } },
+    { ...dependencies, scanner: { ...dependencies.scanner, databaseMaxAgeMs: 31 * 86_400_000 } },
+    { ...dependencies, holdSeverity: 'medium' },
+    { ...dependencies, licenseAllowlist: ['MIT', 'MIT'] },
+    { ...dependencies, licenseAllowlist: ['MIT OR GPL'] },
+    { ...dependencies, allowNewDependencies: 'yes' },
+    { ...dependencies, extra: true },
+  ])
+    assert.throws(() => parsePolicy({ ...policy, dependencies: invalid }), JSON.stringify(invalid));
+
+  const disabled = policyFixture({ dependencies: null });
+  assert.deepEqual(weakeningCodes(comparePolicies(disabled, policyFixture({ revision: 2 }))), [
+    'dependency_verification_enabled',
+  ]);
+  assert.deepEqual(
+    weakeningCodes(comparePolicies(policy, policyFixture({ revision: 2, dependencies: null }))),
+    [],
+  );
+  const looser = policyFixture({
+    revision: 2,
+    dependencies: {
+      ...dependencies,
+      scanner: {
+        ...dependencies.scanner,
+        image: `sha256:${'9'.repeat(64)}`,
+        databaseMaxAgeMs: 604_800_000,
+      },
+      licenseAllowlist: [...dependencies.licenseAllowlist, 'GPL-3.0-only'],
+      allowNewDependencies: true,
+      allowMajorUpgrades: true,
+    },
+  });
+  assert.deepEqual(weakeningCodes(comparePolicies(policy, looser)), [
+    'allowMajorUpgrades_changed',
+    'allowNewDependencies_changed',
+    'license_allowed:GPL-3.0-only',
+    'limit_raised:dependencies.scanner.databaseMaxAgeMs',
+    'trust_root_changed:dependencies.scanner.image',
+  ]);
+  const strictThenLoose = policyFixture({
+    dependencies: { ...dependencies, holdSeverity: 'high' },
+  });
+  assert.deepEqual(
+    weakeningCodes(comparePolicies(strictThenLoose, policyFixture({ revision: 2 }))),
+    ['dependency_hold_severity_changed:high->critical'],
+  );
+});
+
+test('registry and install-hook configuration is critical regardless of any receipt', () => {
+  for (const path of [
+    '.npmrc',
+    'src/.yarnrc.yml',
+    '.pnpmfile.cjs',
+    '.cargo/config.toml',
+    '.gitmodules',
+    'nuget.config',
+  ])
+    assert.ok(classifiedCodes(added(path, 'x\n')).includes('dependency_configuration'), path);
+  for (const path of ['package-lock.json', 'src/go.work', 'bun.lock', 'poetry.lock'])
+    assert.ok(classifiedCodes(added(path, 'x\n')).includes('dependency_manifest'), path);
+  const policy = policyFixture({ allowedPaths: ['.'] });
+  const request = requestFor(
+    policy,
+    'merge',
+    manifest(added('.npmrc', 'registry=https://evil.example/\n')),
+  );
+  const decision = decide(
+    policy,
+    request,
+    { ...evidenceFor(policy, request), dependency: dependencyFor(policy, request) },
+    NOW,
+  );
+  assert.equal(decision.outcome, 'approval_required');
+  assert.ok(codes(decision).includes('dependency_configuration'));
+  const publish = requestFor(
+    policy,
+    'publish',
+    manifest(added('.npmrc', 'registry=https://evil.example/\n')),
+  );
+  assert.equal(
+    decide(
+      policy,
+      publish,
+      { ...evidenceFor(policy, publish), dependency: dependencyFor(policy, publish) },
+      NOW,
+    ).outcome,
+    'approval_required',
+  );
+});
+
+test('a verified routine dependency bump publishes and merges without a human', () => {
+  const policy = policyFixture({ allowedPaths: ['.'] });
+  for (const action of ['publish', 'merge'] as const) {
+    const request = requestFor(policy, action, manifest(LOCKFILE_BUMP));
+    const decision = decide(
+      policy,
+      request,
+      { ...evidenceFor(policy, request), dependency: dependencyFor(policy, request) },
+      NOW,
+    );
+    assert.equal(decision.outcome, 'allow', action);
+    assert.equal(decision.risk, 'routine');
+    assert.deepEqual(decision.reasons, []);
+  }
+  const mixed = requestFor(
+    policy,
+    'merge',
+    manifest(LOCKFILE_BUMP, added('.github/workflows/x.yml', 'on: push\n')),
+  );
+  const held = decide(
+    policy,
+    mixed,
+    { ...evidenceFor(policy, mixed), dependency: dependencyFor(policy, mixed) },
+    NOW,
+  );
+  assert.equal(held.outcome, 'approval_required');
+  assert.ok(!codes(held).includes('dependency_manifest'));
+});
+
+test('without verification a dependency change stays critical; a receipt is ignored when not configured', () => {
+  const policy = policyFixture({ allowedPaths: ['.'] });
+  const request = requestFor(policy, 'merge', manifest(LOCKFILE_BUMP));
+  const unverified = decide(policy, request, evidenceFor(policy, request), NOW);
+  assert.equal(unverified.outcome, 'approval_required');
+  assert.ok(codes(unverified).includes('dependency_manifest'));
+  const disabled = policyFixture({ allowedPaths: ['.'], dependencies: null });
+  const disabledRequest = requestFor(disabled, 'merge', manifest(LOCKFILE_BUMP));
+  const ignored = decide(
+    disabled,
+    disabledRequest,
+    {
+      ...evidenceFor(disabled, disabledRequest),
+      dependency: dependencyFor(disabled, disabledRequest),
+    },
+    NOW,
+  );
+  assert.equal(ignored.outcome, 'approval_required');
+  assert.deepEqual(codes(ignored), ['dependency_manifest']);
+  // A receipt cannot touch a change that has no dependency manifests in it.
+  const unrelated = requestFor(policy, 'merge');
+  const finding = {
+    id: 'CVE-2026-0001',
+    severity: 'critical',
+    ecosystem: 'npm',
+    name: 'left-pad',
+    version: '1.3.1',
+    fixedVersion: null,
+  } as const;
+  const stray = decide(
+    policy,
+    unrelated,
+    {
+      ...evidenceFor(policy, unrelated),
+      dependency: dependencyFor(policy, unrelated, { findings: [finding] }),
+    },
+    NOW,
+  );
+  assert.equal(stray.outcome, 'allow');
+});
+
+test('deterministic dependency checks hold for a human; approval binds the exact action', () => {
+  const policy = policyFixture({ allowedPaths: ['.'] });
+  const request = requestFor(policy, 'merge', manifest(LOCKFILE_BUMP));
+  const withReceipt = (overrides: Parameters<typeof dependencyFor>[2]) =>
+    decide(
+      policy,
+      request,
+      { ...evidenceFor(policy, request), dependency: dependencyFor(policy, request, overrides) },
+      NOW,
+    );
+  const upgraded = dependencyFor(policy, request).packages.upgraded[0] as NonNullable<
+    ReturnType<typeof dependencyFor>['packages']['upgraded'][0]
+  >;
+  const expectations: [Parameters<typeof dependencyFor>[2], string][] = [
+    [{ resolution: 'mismatch' }, 'lockfile_not_reproducible'],
+    [{ rootScriptsChanged: true }, 'manifest_scripts_changed'],
+    [{ packageInstallScripts: true }, 'install_scripts_in_dependencies'],
+    [
+      {
+        packages: {
+          added: [{ ...upgraded, name: 'dayjs', previousVersion: null }],
+          removed: [],
+          upgraded: [],
+        },
+      },
+      'new_dependency:npm/dayjs',
+    ],
+    [
+      { packages: { added: [], removed: [], upgraded: [{ ...upgraded, major: true }] } },
+      'major_upgrade:npm/left-pad',
+    ],
+    [
+      { packages: { added: [], removed: [], upgraded: [{ ...upgraded, license: null }] } },
+      'license_not_allowed:npm/left-pad',
+    ],
+    [
+      {
+        packages: { added: [], removed: [], upgraded: [{ ...upgraded, license: 'GPL-3.0-only' }] },
+      },
+      'license_not_allowed:npm/left-pad',
+    ],
+    [{ status: 'unsupported', resolution: 'not_attempted' }, 'dependency_ecosystem_unsupported'],
+  ];
+  for (const [overrides, expected] of expectations) {
+    const decision = withReceipt(overrides);
+    assert.equal(decision.outcome, 'approval_required', expected);
+    assert.ok(codes(decision).includes(expected), `${expected}: ${codes(decision)}`);
+    assert.ok(
+      codes(decision).includes('dependency_manifest'),
+      'manifest reason stands when unverified',
+    );
+  }
+  // Removed packages carry no license obligation.
+  assert.equal(
+    withReceipt({
+      packages: { added: [], removed: [{ ...upgraded, license: null }], upgraded: [] },
+    }).outcome,
+    'allow',
+  );
+  const permissive = policyFixture({
+    allowedPaths: ['.'],
+    dependencies: {
+      ...(policy.dependencies as NonNullable<typeof policy.dependencies>),
+      allowNewDependencies: true,
+      allowMajorUpgrades: true,
+    },
+  });
+  const permissiveRequest = requestFor(permissive, 'merge', manifest(LOCKFILE_BUMP));
+  const allowedAddition = dependencyFor(permissive, permissiveRequest, {
+    packages: {
+      added: [{ ...upgraded, name: 'dayjs', previousVersion: null }],
+      removed: [],
+      upgraded: [{ ...upgraded, major: true }],
+    },
+  });
+  assert.equal(
+    decide(
+      permissive,
+      permissiveRequest,
+      { ...evidenceFor(permissive, permissiveRequest), dependency: allowedAddition },
+      NOW,
+    ).outcome,
+    'allow',
+  );
+  const approved = decide(
+    policy,
+    request,
+    {
+      ...evidenceFor(policy, request),
+      dependency: dependencyFor(policy, request, { resolution: 'mismatch' }),
+      approval: approvalFor(policy, request),
+    },
+    NOW,
+  );
+  assert.equal(approved.outcome, 'allow');
+  assert.equal(approved.approvedBy, APPROVER_ID);
+});
+
+test('scanner findings hold at or above the configured severity; unknown severity always holds', () => {
+  const policy = policyFixture({ allowedPaths: ['.'] });
+  const request = requestFor(policy, 'merge', manifest(LOCKFILE_BUMP));
+  const finding = (severity: string, id = `GHSA-${severity}`) => ({
+    id,
+    severity,
+    ecosystem: 'npm',
+    name: 'left-pad',
+    version: '1.3.1',
+    fixedVersion: '1.3.2',
+  });
+  const decideWith = (activePolicy: typeof policy, findings: object[]) => {
+    const activeRequest = requestFor(activePolicy, 'merge', manifest(LOCKFILE_BUMP));
+    return decide(
+      activePolicy,
+      activeRequest,
+      {
+        ...evidenceFor(activePolicy, activeRequest),
+        dependency: dependencyFor(activePolicy, activeRequest, { findings } as never),
+      },
+      NOW,
+    );
+  };
+  assert.equal(
+    decideWith(policy, [finding('low'), finding('medium'), finding('high')]).outcome,
+    'allow',
+  );
+  const critical = decideWith(policy, [finding('critical', 'CVE-2026-0001')]);
+  assert.equal(critical.outcome, 'approval_required');
+  assert.ok(codes(critical).includes('vulnerability:CVE-2026-0001'));
+  assert.equal(decideWith(policy, [finding('unknown')]).outcome, 'approval_required');
+  const strict = policyFixture({
+    allowedPaths: ['.'],
+    dependencies: {
+      ...(policy.dependencies as NonNullable<typeof policy.dependencies>),
+      holdSeverity: 'high',
+    },
+  });
+  assert.equal(decideWith(strict, [finding('high')]).outcome, 'approval_required');
+  assert.equal(decideWith(strict, [finding('medium')]).outcome, 'allow');
+  assert.equal(
+    decide(
+      policy,
+      request,
+      {
+        ...evidenceFor(policy, request),
+        dependency: { ...dependencyFor(policy, request), findings: [finding('severe')] },
+      },
+      NOW,
+    ).outcome,
+    'blocked',
+  );
+});
+
+test('inconclusive, stale, re-rooted or malformed dependency receipts block', () => {
+  const policy = policyFixture({ allowedPaths: ['.'] });
+  const request = requestFor(policy, 'merge', manifest(LOCKFILE_BUMP));
+  const blockedBy = (dependency: object, expected: string) => {
+    const decision = decide(policy, request, { ...evidenceFor(policy, request), dependency }, NOW);
+    assert.equal(decision.outcome, 'blocked', expected);
+    assert.ok(codes(decision).includes(expected), `${expected}: ${codes(decision)}`);
+  };
+  blockedBy(dependencyFor(policy, request, { status: 'error' }), 'dependency_scan_inconclusive');
+  blockedBy(dependencyFor(policy, request, { status: 'timeout' }), 'dependency_scan_inconclusive');
+  blockedBy(
+    dependencyFor(policy, request, { resolution: 'not_attempted' }),
+    'dependency_receipt_inconsistent',
+  );
+  blockedBy(
+    dependencyFor(policy, request, { completedAt: NOW - 3_600_001 }),
+    'dependency_receipt_stale',
+  );
+  blockedBy(
+    dependencyFor(policy, request, {
+      scanner: {
+        adapter: 'trivy',
+        image: `sha256:${'6'.repeat(64)}`,
+        databaseUpdatedAt: NOW - 20_000 - 172_800_001,
+      },
+    }),
+    'dependency_database_stale',
+  );
+  blockedBy(
+    dependencyFor(policy, request, {
+      scanner: {
+        adapter: 'osv-scanner',
+        image: `sha256:${'6'.repeat(64)}`,
+        databaseUpdatedAt: NOW - 3_600_000,
+      },
+    }),
+    'dependency_trust_root_mismatch',
+  );
+  blockedBy(
+    dependencyFor(policy, { ...request, tree: 'e'.repeat(40) }),
+    'dependency_subject_mismatch',
+  );
+  blockedBy(
+    { ...dependencyFor(policy, request), log: 'no vulnerabilities found' },
+    'dependency_receipt_invalid',
+  );
+  blockedBy(
+    {
+      ...dependencyFor(policy, request),
+      packages: { added: [], removed: [], upgraded: [{ name: 'x' }] },
+    },
+    'dependency_receipt_invalid',
+  );
 });

@@ -11,6 +11,7 @@ import {
   type Evidence,
   acceptanceReasons,
   checkApproval,
+  dependencyReasons,
   mergeGateReasons,
   reviewReasons,
 } from './evidence.js';
@@ -215,7 +216,7 @@ export function decide(
         typeof evidence === 'object' &&
         !Array.isArray(evidence) &&
         Object.keys(evidence).every((key) =>
-          ['acceptance', 'review', 'mergeGate', 'approval'].includes(key),
+          ['acceptance', 'review', 'mergeGate', 'approval', 'dependency'].includes(key),
         ),
       'evidence_fields_invalid',
     );
@@ -233,7 +234,18 @@ export function decide(
         changesSha256: sha256Json(changes),
       };
       const classification = classifyChanges(policy, changes);
-      for (const reason of classification.reasons) {
+      // A passing dependency receipt is the only thing that lowers a classification
+      // reason, and only `dependency_manifest`; configuration and hooks stay critical.
+      let classificationReasons = classification.reasons;
+      if (classification.reasons.some((reason) => reason.code === 'dependency_manifest')) {
+        const dependency = dependencyReasons(policy, subject, evidence.dependency, now);
+        reasons.push(...dependency.reasons);
+        if (dependency.verified)
+          classificationReasons = classification.reasons.filter(
+            (reason) => reason.code !== 'dependency_manifest',
+          );
+      }
+      for (const reason of classificationReasons) {
         const deferredToMerge = request.action === 'publish' && !holdsPublication(reason);
         if (!deferredToMerge) reasons.push(toDecisionReason(reason, 'approval'));
       }
@@ -263,7 +275,7 @@ export function decide(
         ),
       );
       const semanticCritical = review.some((reason) => reason.effect === 'approval');
-      risk = classification.risk === 'critical' || semanticCritical ? 'critical' : 'routine';
+      risk = classificationReasons.length > 0 || semanticCritical ? 'critical' : 'routine';
       if (request.action === 'merge') {
         reasons.push(
           ...mergeGateReasons(

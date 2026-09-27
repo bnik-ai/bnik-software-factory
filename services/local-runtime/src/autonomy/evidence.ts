@@ -91,11 +91,60 @@ export interface ApprovalRecord {
   source: 'github_review' | 'operator_console';
   approvedAt: number;
 }
+export const DEPENDENCY_FINDING_SEVERITIES = [
+  'critical',
+  'high',
+  'medium',
+  'low',
+  'unknown',
+] as const;
+export interface PackageChange {
+  ecosystem: string;
+  name: string;
+  version: string;
+  previousVersion: string | null;
+  /** SPDX identifier as the runner determined it; `null` when it could not. */
+  license: string | null;
+  major: boolean;
+}
+export interface DependencyFinding {
+  id: string;
+  severity: (typeof DEPENDENCY_FINDING_SEVERITIES)[number];
+  ecosystem: string;
+  name: string;
+  version: string;
+  fixedVersion: string | null;
+}
+/**
+ * Written by the trusted runner after re-resolving the candidate's manifests in a
+ * clean sandbox with install scripts disabled and running the pinned scanner
+ * adapter over the result. It can make a manifest or lockfile change routine; it
+ * never affects registry or hook configuration, which stays critical.
+ */
+export interface DependencyReceipt {
+  version: 1;
+  kind: 'dependency';
+  runId: string;
+  subject: CandidateSubject;
+  scanner: { adapter: string; image: string; databaseUpdatedAt: number };
+  /** `unsupported`: the runner cannot re-resolve this ecosystem; the change stays critical. */
+  status: 'complete' | 'error' | 'timeout' | 'unsupported';
+  /** Whether the committed lockfile is byte-identical to a clean re-resolution of the manifests. */
+  resolution: 'reproduced' | 'mismatch' | 'not_attempted';
+  /** The project's own manifest scripts changed (what an install or CI run executes). */
+  rootScriptsChanged: boolean;
+  /** An added or upgraded package declares install-time scripts. */
+  packageInstallScripts: boolean;
+  packages: { added: PackageChange[]; removed: PackageChange[]; upgraded: PackageChange[] };
+  findings: DependencyFinding[];
+  completedAt: number;
+}
 export interface Evidence {
   acceptance?: unknown;
   review?: unknown;
   mergeGate?: unknown;
   approval?: unknown;
+  dependency?: unknown;
 }
 export type ReasonEffect = 'block' | 'repair' | 'approval';
 export interface DecisionReason {
@@ -435,6 +484,175 @@ export function mergeGateReasons(
       effect: 'block',
     });
   return reasons;
+}
+
+const SEVERITY_RANK: Record<(typeof DEPENDENCY_FINDING_SEVERITIES)[number], number> = {
+  critical: 4,
+  high: 3,
+  medium: 2,
+  low: 1,
+  unknown: 0,
+};
+const ECOSYSTEM = /^[a-z][a-z0-9.-]{0,31}$/;
+function requirePackageChange(value: unknown, reason: string): asserts value is PackageChange {
+  requireRecord(
+    value,
+    ['ecosystem', 'name', 'version', 'previousVersion', 'license', 'major'],
+    reason,
+  );
+  requireAutonomy(typeof value.ecosystem === 'string' && ECOSYSTEM.test(value.ecosystem), reason);
+  requireText(value.name, 256, reason);
+  requireText(value.version, 128, reason);
+  if (value.previousVersion !== null) requireText(value.previousVersion, 128, reason);
+  if (value.license !== null) requireText(value.license, 128, reason);
+  requireAutonomy(typeof value.major === 'boolean', reason);
+}
+export interface DependencyAssessment {
+  reasons: DecisionReason[];
+  /** True only when every deterministic check and the scanner passed; nothing else lowers risk. */
+  verified: boolean;
+}
+export function dependencyReasons(
+  policy: AutonomyPolicy,
+  subject: CandidateSubject,
+  value: unknown,
+  now: number,
+): DependencyAssessment {
+  // Without verification configured or a receipt present, manifest changes stay critical.
+  if (policy.dependencies === null || value === undefined) return { reasons: [], verified: false };
+  const settings = policy.dependencies;
+  const block = (code: string): DependencyAssessment => ({
+    reasons: [{ code, category: 'evidence', effect: 'block' }],
+    verified: false,
+  });
+  requireRecord(
+    value,
+    [
+      'version',
+      'kind',
+      'runId',
+      'subject',
+      'scanner',
+      'status',
+      'resolution',
+      'rootScriptsChanged',
+      'packageInstallScripts',
+      'packages',
+      'findings',
+      'completedAt',
+    ],
+    'dependency_receipt_invalid',
+  );
+  const receipt = value as unknown as DependencyReceipt;
+  requireAutonomy(
+    receipt.version === 1 && receipt.kind === 'dependency',
+    'dependency_receipt_invalid',
+  );
+  requireRunId(receipt.runId, 'dependency_receipt_invalid');
+  requireSubject(receipt.subject, 'dependency_receipt_invalid');
+  requireRecord(
+    receipt.scanner,
+    ['adapter', 'image', 'databaseUpdatedAt'],
+    'dependency_receipt_invalid',
+  );
+  requireText(receipt.scanner.adapter, 32, 'dependency_receipt_invalid');
+  requireText(receipt.scanner.image, 71, 'dependency_receipt_invalid');
+  requireTimestamp(receipt.scanner.databaseUpdatedAt, 'dependency_receipt_invalid');
+  requireAutonomy(
+    ['complete', 'error', 'timeout', 'unsupported'].includes(receipt.status),
+    'dependency_receipt_invalid',
+  );
+  requireAutonomy(
+    ['reproduced', 'mismatch', 'not_attempted'].includes(receipt.resolution),
+    'dependency_receipt_invalid',
+  );
+  requireAutonomy(
+    typeof receipt.rootScriptsChanged === 'boolean' &&
+      typeof receipt.packageInstallScripts === 'boolean',
+    'dependency_receipt_invalid',
+  );
+  requireRecord(receipt.packages, ['added', 'removed', 'upgraded'], 'dependency_receipt_invalid');
+  for (const list of [
+    receipt.packages.added,
+    receipt.packages.removed,
+    receipt.packages.upgraded,
+  ]) {
+    requireUniqueList<unknown>(list, 0, 5000, 'dependency_receipt_invalid');
+    for (const entry of list) requirePackageChange(entry, 'dependency_receipt_invalid');
+  }
+  requireUniqueList<unknown>(receipt.findings, 0, 5000, 'dependency_receipt_invalid');
+  for (const finding of receipt.findings) {
+    requireRecord(
+      finding,
+      ['id', 'severity', 'ecosystem', 'name', 'version', 'fixedVersion'],
+      'dependency_finding_invalid',
+    );
+    requireAutonomy(
+      typeof finding.id === 'string' && /^[A-Za-z0-9_.:-]{1,64}$/.test(finding.id),
+      'dependency_finding_invalid',
+    );
+    requireAutonomy(
+      (DEPENDENCY_FINDING_SEVERITIES as readonly unknown[]).includes(finding.severity),
+      'dependency_finding_invalid',
+    );
+    requireAutonomy(
+      typeof finding.ecosystem === 'string' && ECOSYSTEM.test(finding.ecosystem),
+      'dependency_finding_invalid',
+    );
+    requireText(finding.name, 256, 'dependency_finding_invalid');
+    requireText(finding.version, 128, 'dependency_finding_invalid');
+    if (finding.fixedVersion !== null)
+      requireText(finding.fixedVersion, 128, 'dependency_finding_invalid');
+  }
+  requireTimestamp(receipt.completedAt, 'dependency_receipt_invalid');
+
+  if (!sameSubject(receipt.subject, subject)) return block('dependency_subject_mismatch');
+  if (
+    receipt.scanner.adapter !== settings.scanner.adapter ||
+    receipt.scanner.image !== settings.scanner.image
+  )
+    return block('dependency_trust_root_mismatch');
+  if (!fresh(receipt.completedAt, now, policy.verification.receiptTtlMs))
+    return block('dependency_receipt_stale');
+  // Database age is measured at scan time; the receipt TTL bounds the rest.
+  if (
+    receipt.scanner.databaseUpdatedAt > receipt.completedAt + CLOCK_SKEW_MS ||
+    receipt.completedAt - receipt.scanner.databaseUpdatedAt > settings.scanner.databaseMaxAgeMs
+  )
+    return block('dependency_database_stale');
+  if (receipt.status === 'error' || receipt.status === 'timeout')
+    return block('dependency_scan_inconclusive');
+  if (receipt.status === 'unsupported')
+    return {
+      reasons: [
+        { code: 'dependency_ecosystem_unsupported', category: 'security_auth', effect: 'approval' },
+      ],
+      verified: false,
+    };
+  if (receipt.resolution === 'not_attempted') return block('dependency_receipt_inconsistent');
+
+  const reasons: DecisionReason[] = [];
+  const hold = (code: string, category: DecisionReason['category']) =>
+    reasons.push({ code, category, effect: 'approval' });
+  if (receipt.resolution === 'mismatch') hold('lockfile_not_reproducible', 'security_auth');
+  if (receipt.rootScriptsChanged) hold('manifest_scripts_changed', 'governance');
+  if (receipt.packageInstallScripts) hold('install_scripts_in_dependencies', 'security_auth');
+  const label = (entry: PackageChange) => `${entry.ecosystem}/${entry.name}`;
+  if (!settings.allowNewDependencies)
+    for (const entry of receipt.packages.added)
+      hold(`new_dependency:${label(entry)}`, 'security_auth');
+  if (!settings.allowMajorUpgrades)
+    for (const entry of receipt.packages.upgraded)
+      if (entry.major) hold(`major_upgrade:${label(entry)}`, 'security_auth');
+  for (const entry of [...receipt.packages.added, ...receipt.packages.upgraded])
+    if (entry.license === null || !settings.licenseAllowlist.includes(entry.license))
+      hold(`license_not_allowed:${label(entry)}`, 'release_licensing');
+  // Unknown severity is not "below threshold"; it holds like the threshold itself.
+  const threshold = SEVERITY_RANK[settings.holdSeverity];
+  for (const finding of receipt.findings)
+    if (finding.severity === 'unknown' || SEVERITY_RANK[finding.severity] >= threshold)
+      hold(`vulnerability:${finding.id}`, 'security_auth');
+  return { reasons, verified: reasons.length === 0 };
 }
 
 export type ApprovalCheck =

@@ -41,7 +41,24 @@ export const POLICY_CEILINGS = {
   maxChangedFiles: 1000,
   maxChangedBytes: 8 * 1024 * 1024,
   receiptTtlMs: 86_400_000,
+  scannerDatabaseMaxAgeMs: 30 * 86_400_000,
 } as const;
+export const DEPENDENCY_HOLD_SEVERITIES = ['high', 'critical'] as const;
+/**
+ * Optional trusted dependency verification. When configured, a passing
+ * dependency receipt makes manifest and lockfile changes routine; findings at or
+ * above `holdSeverity` and anything the deterministic checks reject still hold.
+ * `null` keeps every dependency change critical.
+ */
+export interface DependencyPolicy {
+  /** Pluggable scanner adapter, identified by name and digest-pinned image. */
+  scanner: { adapter: string; image: string; databaseMaxAgeMs: number };
+  holdSeverity: (typeof DEPENDENCY_HOLD_SEVERITIES)[number];
+  /** SPDX identifiers routine additions and upgrades may carry. */
+  licenseAllowlist: string[];
+  allowNewDependencies: boolean;
+  allowMajorUpgrades: boolean;
+}
 
 /**
  * Trusted autonomy policy v1. Loaded only from an operator-selected host file;
@@ -80,6 +97,7 @@ export interface AutonomyPolicy {
     receiptTtlMs: number;
   };
   approvers: { githubUserIds: number[] };
+  dependencies: DependencyPolicy | null;
 }
 
 const POLICY_KEYS = [
@@ -94,7 +112,11 @@ const POLICY_KEYS = [
   'mergeEffect',
   'verification',
   'approvers',
+  'dependencies',
 ];
+const SPDX_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9.+-]{0,63}$/;
+const ADAPTER_NAME = /^[a-z][a-z0-9-]{1,31}$/;
+const IMAGE_DIGEST = /^sha256:[0-9a-f]{64}$/;
 function requirePrefixList(
   value: unknown,
   minimum: number,
@@ -257,6 +279,51 @@ export function parsePolicy(value: unknown): AutonomyPolicy {
   requireUniqueList<number>(policy.approvers.githubUserIds, 1, 20, 'policy_approvers_invalid');
   for (const userId of policy.approvers.githubUserIds)
     requireInteger(userId, 1, Number.MAX_SAFE_INTEGER, 'policy_approvers_invalid');
+
+  if (policy.dependencies !== null) {
+    requireRecord(
+      policy.dependencies,
+      ['scanner', 'holdSeverity', 'licenseAllowlist', 'allowNewDependencies', 'allowMajorUpgrades'],
+      'policy_dependencies_invalid',
+    );
+    const { dependencies } = policy;
+    requireRecord(
+      dependencies.scanner,
+      ['adapter', 'image', 'databaseMaxAgeMs'],
+      'policy_dependencies_invalid',
+    );
+    requireAutonomy(
+      typeof dependencies.scanner.adapter === 'string' &&
+        ADAPTER_NAME.test(dependencies.scanner.adapter),
+      'policy_dependencies_invalid',
+    );
+    requireAutonomy(
+      typeof dependencies.scanner.image === 'string' &&
+        IMAGE_DIGEST.test(dependencies.scanner.image),
+      'policy_scanner_image_not_digest_pinned',
+    );
+    requireInteger(
+      dependencies.scanner.databaseMaxAgeMs,
+      3_600_000,
+      POLICY_CEILINGS.scannerDatabaseMaxAgeMs,
+      'policy_dependencies_invalid',
+    );
+    requireAutonomy(
+      (DEPENDENCY_HOLD_SEVERITIES as readonly unknown[]).includes(dependencies.holdSeverity),
+      'policy_dependencies_invalid',
+    );
+    requireUniqueList<string>(dependencies.licenseAllowlist, 0, 200, 'policy_dependencies_invalid');
+    for (const license of dependencies.licenseAllowlist)
+      requireAutonomy(
+        typeof license === 'string' && SPDX_IDENTIFIER.test(license),
+        'policy_dependencies_invalid',
+      );
+    requireAutonomy(
+      typeof dependencies.allowNewDependencies === 'boolean' &&
+        typeof dependencies.allowMajorUpgrades === 'boolean',
+      'policy_dependencies_invalid',
+    );
+  }
   return structuredClone(policy);
 }
 export function policyDigest(policy: AutonomyPolicy): string {
@@ -415,6 +482,35 @@ export function comparePolicies(current: AutonomyPolicy, proposed: AutonomyPolic
   for (const userId of current.approvers.githubUserIds)
     if (!proposed.approvers.githubUserIds.includes(userId))
       strengthens('approver_removed', String(userId));
+
+  // Dependency verification turns critical changes routine, so enabling or loosening it weakens.
+  if (current.dependencies === null && proposed.dependencies !== null)
+    weakens('dependency_verification_enabled');
+  else if (current.dependencies !== null && proposed.dependencies === null)
+    strengthens('dependency_verification_disabled');
+  else if (current.dependencies !== null && proposed.dependencies !== null) {
+    const before = current.dependencies;
+    const after = proposed.dependencies;
+    if (before.scanner.adapter !== after.scanner.adapter)
+      weakens('trust_root_changed', 'dependencies.scanner.adapter');
+    if (before.scanner.image !== after.scanner.image)
+      weakens('trust_root_changed', 'dependencies.scanner.image');
+    if (after.scanner.databaseMaxAgeMs > before.scanner.databaseMaxAgeMs)
+      weakens('limit_raised', 'dependencies.scanner.databaseMaxAgeMs');
+    if (after.scanner.databaseMaxAgeMs < before.scanner.databaseMaxAgeMs)
+      strengthens('limit_lowered', 'dependencies.scanner.databaseMaxAgeMs');
+    if (before.holdSeverity !== after.holdSeverity)
+      (after.holdSeverity === 'critical' ? weakens : strengthens)(
+        'dependency_hold_severity_changed',
+        `${before.holdSeverity}->${after.holdSeverity}`,
+      );
+    for (const license of after.licenseAllowlist)
+      if (!before.licenseAllowlist.includes(license)) weakens('license_allowed', license);
+    for (const license of before.licenseAllowlist)
+      if (!after.licenseAllowlist.includes(license)) strengthens('license_disallowed', license);
+    for (const flag of ['allowNewDependencies', 'allowMajorUpgrades'] as const)
+      if (before[flag] !== after[flag]) (after[flag] ? weakens : strengthens)(`${flag}_changed`);
+  }
   return changes;
 }
 export function weakeningCodes(changes: PolicyChange[]): string[] {

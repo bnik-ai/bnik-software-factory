@@ -7,6 +7,10 @@
   and budget reservations. The runtime database role gets read-only access.
 - Freeze the agent-quality qualification protocol and a 24-case corpus with five
   held-out cases published as digests. No qualification run has happened.
+- Add optional trusted dependency verification to the policy contract: a
+  pluggable, digest-pinned scanner adapter plus deterministic lockfile, script,
+  shape and license checks can make manifest changes routine; findings at or above
+  a configured severity, and registry or hook configuration, still hold.
 
 - Support restrictive source permissions in all three images; mount credentials by
   command, keep result preparation offline, and bound operator memory/processes.
