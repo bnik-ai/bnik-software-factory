@@ -22,6 +22,8 @@ For explicitly paired PRs, the [human merge profile](docs/human-merge.md) verifi
 GitHub protection, human approval and required CI, then reconciles the Task.
 Use the [recovery runbook](docs/recovery.md) to inspect failures, quarantine work
 and explicitly retry eligible items without bypassing human gates.
+Inspect [run evidence and controls](docs/run-controls.md) for usage, limits,
+cancellation and local content retention.
 
 ## Explore the source
 

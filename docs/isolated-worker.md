@@ -138,7 +138,7 @@ python3 runtime/worker.py status
 python3 runtime/worker.py recover
 ```
 
-`cancel` requests cancellation of the configured repository's active run. SIGINT or
+`cancel` requests cancellation of the configured repository's queued or active job. SIGINT or
 SIGTERM to the supervisor also cancels it. The durable cancellation poll runs every
 200 ms. The supervisor removes the entire worker/proxy container namespace and
 socket volume before settlement, including shell descendants. Worker execution is
@@ -161,6 +161,8 @@ not replay paid work, reverse provider effects or assert exactly-once execution.
 A paused/stopped daemon, disconnected database or host crash can delay cleanup;
 inspect durable state and restore infrastructure before another attempt.
 
+See [run evidence and controls](run-controls.md) for durable Task/head/test/accounting
+summaries, revision and budget limits, publication linkage and content pruning.
 `status` reports run ID, image ID, state and bounded reason codes. Completed/failed
 command receipts are stored with durable work and copied into the output directory.
 If execution cannot return a result, that directory gets `failure.json`; consult

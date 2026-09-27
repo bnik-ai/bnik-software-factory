@@ -9,6 +9,7 @@ export interface CodingJob {
   prompt: string;
   model?: string;
   maxTurns: number;
+  maxBudgetUsd?: number;
   timeoutMs: number;
   tests: string[];
   fixtureCommand?: string;
@@ -30,7 +31,13 @@ export interface CodingOutcome {
   patchSha256: string;
   testsStatus: 'passed' | 'failed' | 'not_run';
   tests: CommandEvidence[];
-  model: { mode: 'demo' | 'live'; subtype: string; turns: number | null; costUsd: number | null };
+  model: {
+    mode: 'demo' | 'live';
+    subtype: string;
+    turns: number | null;
+    costUsd: number | null;
+    usage?: Record<string, number> | null;
+  };
   summary: string;
 }
 export const MAX_ARCHIVE_BYTES = 8 * 1024 * 1024;
@@ -53,6 +60,7 @@ export function parseJob(value: unknown): CodingJob {
     'prompt',
     'model',
     'maxTurns',
+    'maxBudgetUsd',
     'timeoutMs',
     'tests',
     'fixtureCommand',
@@ -92,6 +100,16 @@ export function parseJob(value: unknown): CodingJob {
     timeoutMs: integer('timeoutMs', 1000, 1_800_000),
     tests: v.tests as string[],
   };
+  if (v.maxBudgetUsd !== undefined) {
+    if (
+      typeof v.maxBudgetUsd !== 'number' ||
+      !Number.isFinite(v.maxBudgetUsd) ||
+      v.maxBudgetUsd < 0.001 ||
+      v.maxBudgetUsd > 100
+    )
+      throw new Error('invalid_job_budget');
+    job.maxBudgetUsd = v.maxBudgetUsd;
+  }
   if (job.mode === 'live') {
     job.model = string('model', /^claude-[A-Za-z0-9.-]+$/, 100);
     if (v.fixtureCommand !== undefined) throw new Error('live_cannot_use_fixture');

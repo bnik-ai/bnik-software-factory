@@ -6,6 +6,7 @@ import { after, before, beforeEach, test } from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { Pool } from 'pg';
 import { Docker, WorkerFailure, executeIsolated, runPrefix } from '../src/worker/docker.js';
+import { RunRecords } from '../src/worker/records.js';
 import { CodingSupervisor } from '../src/worker/supervisor.js';
 import { initialize, reset } from './helpers.js';
 import { fixture, source } from './worker-fixtures.js';
@@ -539,5 +540,158 @@ test('cleanup failure leaves work unsettled and requires recovery before any lat
   evidence.push({
     check: 'cleanup failure fences all later jobs for the repository until recovered',
     passed: true,
+  });
+});
+
+test('installed SDK budget threshold stops execution with estimated usage rather than claiming a billed ceiling', async () => {
+  class FixtureDocker extends Docker {
+    override checked(args: string[], options?: Parameters<Docker['checked']>[1]) {
+      return super.checked(
+        args.map((value) =>
+          value === 'src/worker/proxy.ts' ? 'test/worker-proxy-fixture.ts' : value,
+        ),
+        options,
+      );
+    }
+  }
+  const archive = source();
+  const runId = randomUUID();
+  const job = fixture(archive, {
+    mode: 'live',
+    fixtureCommand: undefined,
+    model: 'claude-opus-5-5',
+    maxBudgetUsd: 0.001,
+    maxTurns: 4,
+    timeoutMs: 45000,
+  });
+  const output = await executeIsolated({
+    job,
+    archive,
+    runId,
+    image,
+    docker: new FixtureDocker(),
+    modelKey: 'synthetic-proxy-only-key',
+    signal: new AbortController().signal,
+  });
+  assert.equal(output.outcome.ok, false);
+  assert.equal(
+    output.outcome.model.subtype,
+    'error_max_budget_usd',
+    JSON.stringify(output.outcome),
+  );
+  assert.ok(output.outcome.model.costUsd !== null && output.outcome.model.costUsd >= 0.001);
+  assert.ok(output.outcome.model.usage);
+  assert.equal(output.outcome.testsStatus, 'not_run');
+  await clean(runId);
+  evidence.push({
+    check: 'installed SDK budget threshold',
+    thresholdUsd: job.maxBudgetUsd,
+    estimatedUsd: output.outcome.model.costUsd,
+    usage: output.outcome.model.usage,
+    subtype: output.outcome.model.subtype,
+    paidApi: false,
+    hardBillingCeiling: false,
+  });
+});
+
+test('cancelling live-mode execution removes both SDK worker and provider proxy without a new paid attempt', async () => {
+  class FixtureDocker extends Docker {
+    override checked(args: string[], options?: Parameters<Docker['checked']>[1]) {
+      return super.checked(
+        args.map((value) =>
+          value === 'src/worker/proxy.ts' ? 'test/worker-proxy-fixture.ts' : value,
+        ),
+        options,
+      );
+    }
+  }
+  const archive = source();
+  const runId = randomUUID();
+  const controller = new AbortController();
+  const job = fixture(archive, {
+    mode: 'live',
+    fixtureCommand: undefined,
+    model: 'claude-fixture-loop',
+    maxTurns: 60,
+    timeoutMs: 45000,
+  });
+  await assert.rejects(
+    executeIsolated({
+      job,
+      archive,
+      runId,
+      image,
+      docker: new FixtureDocker(),
+      modelKey: 'synthetic-proxy-only-key',
+      signal: controller.signal,
+      onStarted: async () => {
+        setTimeout(() => controller.abort(), 1000);
+      },
+    }),
+    /worker_cancelled/,
+  );
+  await clean(runId);
+  evidence.push({
+    check: 'live-mode cancellation removes SDK worker and provider proxy',
+    paidApi: false,
+    automaticRetry: false,
+    resourcesRemaining: 0,
+  });
+});
+
+test('completed run evidence and cached result survive a real PostgreSQL SIGKILL and new connections', async () => {
+  const database = process.env.FACTORY_TEST_DATABASE_CONTAINER ?? '';
+  assert.match(database, /^factory-worker-test-[0-9a-f]{10}$/);
+  const archive = source();
+  const job = fixture(archive);
+  const s = supervisor();
+  await s.submit(job);
+  await s.run(job.id, archive);
+  const before = (await new RunRecords(pool).status(job.id))[0];
+  await pool.end();
+  await admin.end();
+  await docker.checked(['kill', '--signal', 'KILL', database]);
+  await docker.checked(['start', database]);
+  let ready = false;
+  for (let n = 0; n < 100; n++) {
+    if (
+      (
+        await docker.command([
+          'exec',
+          database,
+          'pg_isready',
+          '-U',
+          'factory_migrator',
+          '-d',
+          'software_factory',
+        ])
+      ).code === 0
+    ) {
+      ready = true;
+      break;
+    }
+    await delay(100);
+  }
+  assert.ok(ready);
+  process.env.POSTGRES_PORT = (await docker.checked(['port', database, '5432']))
+    .split(':')
+    .at(-1)
+    ?.trim();
+  ({ admin, pool } = await initialize());
+  const restored = (await new RunRecords(pool).status(job.id))[0];
+  assert.deepEqual(restored, before);
+  const repeated = await supervisor({
+    execute: async () => {
+      throw Error('must_not_execute_after_restart');
+    },
+  }).run(job.id, archive);
+  assert.equal(repeated.cached, true);
+  assert.equal(restored.evidence.sourceHead, job.sourceCommit);
+  assert.equal(restored.evidence.testsStatus, 'passed');
+  evidence.push({
+    check: 'completed run evidence after PostgreSQL SIGKILL and reconnect',
+    unchangedRecord: true,
+    cachedResult: true,
+    paidApi: false,
   });
 });

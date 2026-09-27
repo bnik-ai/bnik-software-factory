@@ -185,10 +185,14 @@ export async function executeIsolated(
   let proxyProcess: Promise<DockerReply> | undefined;
   const proxyAttach = new AbortController();
   let cancelled = false;
+  let stopProcess: Promise<void> | undefined;
   let timeout: ReturnType<typeof setTimeout> | undefined;
   const stop = () => {
     cancelled = true;
-    void docker.command(['rm', '-f', `${prefix}-worker`, `${prefix}-proxy`]).catch(() => {});
+    stopProcess ??= docker
+      .command(['rm', '-f', `${prefix}-worker`, `${prefix}-proxy`])
+      .then(() => undefined)
+      .catch(() => undefined);
   };
   options.signal.throwIfAborted();
   options.signal.addEventListener('abort', stop, { once: true });
@@ -312,6 +316,8 @@ export async function executeIsolated(
   } finally {
     clearTimeout(timeout);
     options.signal.removeEventListener('abort', stop);
+    // Await the bounded stop command before enumerating/removing the same resources.
+    await stopProcess;
     try {
       await cleanupRun(docker, options.runId);
     } catch {

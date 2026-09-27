@@ -48,7 +48,7 @@ try:
             raise RuntimeError('Disposable database did not become ready')
         port = run(['docker', 'port', name, '5432']).strip().rsplit(':', 1)[1]
         env = {key: os.environ[key] for key in ['PATH', 'HOME', 'DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_CONFIG', 'DOCKER_TLS_VERIFY', 'DOCKER_CERT_PATH'] if key in os.environ}
-        env.update(POSTGRES_HOST='127.0.0.1', POSTGRES_PORT=port, POSTGRES_TLS='disable', POSTGRES_USER='factory_migrator', POSTGRES_DATABASE='software_factory', POSTGRES_PASSWORD_FILE=str(private / 'admin'), FACTORY_DB_PASSWORD_FILE=str(private / 'runtime'), FACTORY_TEST_WORKER_IMAGE=image, WORKER_EVIDENCE_PATH=str(private / 'evidence.json'))
+        env.update(POSTGRES_HOST='127.0.0.1', POSTGRES_PORT=port, POSTGRES_TLS='disable', POSTGRES_USER='factory_migrator', POSTGRES_DATABASE='software_factory', POSTGRES_PASSWORD_FILE=str(private / 'admin'), FACTORY_DB_PASSWORD_FILE=str(private / 'runtime'), FACTORY_TEST_WORKER_IMAGE=image, WORKER_EVIDENCE_PATH=str(private / 'evidence.json'), FACTORY_TEST_DATABASE_CONTAINER=name)
         command = ['node', '--import', 'tsx', '--test', '--test-concurrency=1', 'test/worker.container.ts']
         r = subprocess.run(command, cwd=ROOT / 'services/local-runtime', env=env, capture_output=True, text=True)
         print(r.stdout, flush=True)

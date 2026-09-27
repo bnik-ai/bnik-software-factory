@@ -11,6 +11,7 @@ import { HumanMergeGate } from '../src/github/reconcile.js';
 import { checkSchema, migrate, migrationFiles } from '../src/migrate.js';
 import { PostgresQueue } from '../src/queue.js';
 import { Recovery, type RecoveryRequest } from '../src/recovery.js';
+import { RunRecords } from '../src/worker/records.js';
 import { CodingSupervisor } from '../src/worker/supervisor.js';
 import { FixtureGitHub, liveConfig } from './github-fixtures.js';
 import { config, initialize, reset } from './helpers.js';
@@ -214,6 +215,12 @@ test('failed model call and repeated job submission never trigger an automatic p
     fixtureCommand: undefined,
     model: 'claude-fixture',
   });
+  const activationId = randomUUID();
+  job.id = `activation-${activationId}`;
+  await admin.query(
+    "INSERT INTO factory_task_activations(id,delivery_id,repository_id,repository,installation_id,issue_number,issue_id,comment_id,actor_id,actor_login,source_commit,task_hash,proof) VALUES($1::uuid,($1::uuid)::text,42,$2,7,1,10,66,55,'example-maintainer',$3,$4,'{}')",
+    [activationId, job.repository, job.sourceCommit, '0'.repeat(64)],
+  );
   const supervisor = new CodingSupervisor({
     pool,
     repository: job.repository,
@@ -362,10 +369,36 @@ test('upgrade from previous schema retains failed work identity, payload and att
     assert.ok(work);
     await queue.deadletter(work.lease_token, 'github_connection_failed');
     const before = (await upgrade.query('SELECT * FROM factory_work WHERE id=$1', [id])).rows[0];
+    const legacyQueue = new PostgresQueue(upgrade, 'CodingJob');
+    const legacyId = await legacyQueue.enqueue(
+      'legacy-run',
+      'example/factory-demo',
+      fixture(Buffer.from('legacy')),
+    );
+    const legacyWork = await legacyQueue.claim();
+    assert.ok(legacyWork);
+    await upgrade.query(
+      "INSERT INTO factory_worker_runs(run_id,work_id,lease_token,state,ended_at) VALUES($1,$2,$3,'failed',clock_timestamp())",
+      [randomUUID(), legacyId, legacyWork.lease_token],
+    );
+    await legacyQueue.complete(legacyWork.lease_token, {
+      ok: false,
+      patchSha256: '1'.repeat(64),
+      testsStatus: 'passed',
+      tests: [{ command: 'private command', output: 'private output', exitCode: 0 }],
+      model: { costUsd: 0.25 },
+    });
     await migrate(upgrade, config().database.password);
+    const legacy = (await new RunRecords(upgrade).status('legacy-run'))[0];
+    assert.equal(legacy.evidence.cost.estimatedUsd, 0.25);
+    assert.equal(legacy.evidence.cost.billedUsd, null);
+    assert.equal(legacy.evidence.sourceHead, '1'.repeat(40));
+    assert.equal(legacy.evidence.tests[0].exitCode, 0);
+    assert.ok(!JSON.stringify(legacy).includes('private command'));
+    assert.equal(legacy.evidence.limits.maxBudgetUsd, null);
     await checkSchema(upgrade);
     const after = (await upgrade.query('SELECT * FROM factory_work WHERE id=$1', [id])).rows[0];
-    assert.deepEqual(after, { ...before, recovery_version: 0 });
+    assert.deepEqual(after, { ...before, cancel_requested: false, content_deleted_at: null });
     await new Recovery(upgrade).act(request(id));
     assert.equal((await queue.claim())?.id, id);
   } finally {

@@ -4,6 +4,7 @@ import { LeaseGuard } from '../lease.js';
 import { PostgresQueue, type QueueOptions } from '../queue.js';
 import { Docker, WorkerFailure, cleanupRun, executeIsolated } from './docker.js';
 import { type CodingJob, type CodingOutcome, parseJob } from './protocol.js';
+import { type RunLimits, RunRecords, outcomeEvidence, runLimits } from './records.js';
 
 export type Executor = typeof executeIsolated;
 export interface SupervisorOptions {
@@ -17,13 +18,24 @@ export interface SupervisorOptions {
   execute?: Executor;
   authorize?: (job: CodingJob) => Promise<void>;
   docker?: Docker;
+  limits?: RunLimits;
 }
 export class CodingSupervisor {
   readonly queue: PostgresQueue;
   private readonly docker: Docker;
+  private readonly records: RunRecords;
+  private readonly limits: RunLimits;
   constructor(private readonly options: SupervisorOptions) {
     this.queue = new PostgresQueue(options.pool, 'CodingJob', { ...options.queue, maxAttempts: 1 });
     this.docker = options.docker ?? new Docker();
+    this.records = new RunRecords(options.pool);
+    const l = options.limits ?? runLimits();
+    this.limits = runLimits({
+      FACTORY_MAX_TASK_RUNS: String(l.maxTaskRuns),
+      FACTORY_MAX_RUN_TURNS: String(l.maxTurns),
+      FACTORY_MAX_RUN_MS: String(l.timeoutMs),
+      FACTORY_MAX_RUN_BUDGET_USD: String(l.maxBudgetUsd),
+    });
   }
   // Native operator invocation is the activation boundary. No webhook starts this.
   async submit(value: unknown): Promise<string> {
@@ -59,7 +71,7 @@ export class CodingSupervisor {
   }
   private async recoverLocked(): Promise<void> {
     const runs = await this.options.pool.query<{ run_id: string; active: boolean }>(
-      "SELECT r.run_id,(w.state='running' AND w.lease_until>clock_timestamp()) AS active FROM factory_worker_runs r JOIN factory_work w ON w.id=r.work_id WHERE w.queue_name='CodingJob' AND w.record_key=$1 AND r.state IN ('preparing','running','cleanup_failed')",
+      "SELECT r.run_id,(w.state='running' AND w.lease_until>clock_timestamp()) AS active FROM factory_worker_runs r JOIN factory_work w ON w.id=r.work_id WHERE w.queue_name='CodingJob' AND w.record_key=$1 AND r.state IN ('preparing','running','cleanup_failed','lease_lost')",
       [this.options.repository.toLowerCase()],
     );
     for (const row of runs.rows) {
@@ -80,12 +92,9 @@ export class CodingSupervisor {
     }
   }
   async cancel(id: string): Promise<number> {
-    const result = await this.options.pool.query(
-      "UPDATE factory_worker_runs r SET cancel_requested=true FROM factory_work w WHERE r.work_id=w.id AND w.queue_name='CodingJob' AND w.delivery_key=$1 AND w.record_key=$2 AND r.state IN ('preparing','running')",
-      [id, this.options.repository.toLowerCase()],
-    );
-    return result.rowCount ?? 0;
+    return this.records.cancel(id, this.options.repository);
   }
+
   async run(
     id: string,
     archive: Buffer,
@@ -103,6 +112,7 @@ export class CodingSupervisor {
     let runId: string | undefined;
     let token: string | undefined;
     try {
+      this.options.signal.throwIfAborted();
       await this.recoverLocked();
       const existing = (
         await pool.query<{ id: string; body: unknown; state: string; result: CodingOutcome }>(
@@ -115,6 +125,8 @@ export class CodingSupervisor {
         if (!existing.result) throw new Error('coding_artifact_compacted');
         return { workId: existing.id, outcome: existing.result, cached: true };
       }
+      if (!['pending', 'running'].includes(existing.state))
+        throw new Error('coding_job_not_claimable');
       const job = parseJob(existing.body);
       if (
         job.mode !== this.options.mode ||
@@ -127,15 +139,25 @@ export class CodingSupervisor {
       guard = new LeaseGuard(this.queue, token);
       runId = randomUUID();
       await pool.query(
-        "INSERT INTO factory_worker_runs(run_id,work_id,lease_token,state) VALUES($1,$2,$3,'preparing')",
-        [runId, work.id, token],
+        "INSERT INTO factory_worker_runs(run_id,work_id,lease_token,state,evidence) VALUES($1,$2,$3,'preparing',$4::jsonb)",
+        [
+          runId,
+          work.id,
+          token,
+          JSON.stringify({
+            version: 1,
+            sourceHead: job.sourceCommit,
+            ...outcomeEvidence(),
+            executionMayHaveStarted: false,
+          }),
+        ],
       );
       const signal = AbortSignal.any([guard.signal, controller.signal, this.options.signal]);
       const schedule = () => {
         timer = setTimeout(() => {
           poll = pool
             .query<{ cancel_requested: boolean }>(
-              'SELECT cancel_requested FROM factory_worker_runs WHERE run_id=$1',
+              'SELECT (r.cancel_requested OR w.cancel_requested) AS cancel_requested FROM factory_worker_runs r JOIN factory_work w ON w.id=r.work_id WHERE run_id=$1',
               [runId],
             )
             .then((r) => {
@@ -147,17 +169,51 @@ export class CodingSupervisor {
         timer.unref();
       };
       schedule();
+      const cancelled = (
+        await pool.query('SELECT cancel_requested FROM factory_work WHERE id=$1', [work.id])
+      ).rows[0]?.cancel_requested;
+      if (cancelled) controller.abort(new Error('operator_cancelled'));
+      signal.throwIfAborted();
+      const effective = {
+        ...this.limits,
+        maxTurns: Math.min(job.maxTurns, this.limits.maxTurns),
+        timeoutMs: Math.min(job.timeoutMs, this.limits.timeoutMs),
+        maxBudgetUsd: Math.min(
+          job.maxBudgetUsd ?? this.limits.maxBudgetUsd,
+          this.limits.maxBudgetUsd,
+        ),
+      };
+      let record: unknown;
+      try {
+        record = await this.records.prepare(job, effective);
+      } catch (error) {
+        throw new WorkerFailure(
+          error instanceof Error && error.message === 'task_run_limit_reached'
+            ? 'task_run_limit_reached'
+            : 'run_activation_link_required',
+        );
+      }
+      await pool.query(
+        'UPDATE factory_worker_runs SET evidence=evidence || $2::jsonb WHERE run_id=$1',
+        [runId, JSON.stringify(record)],
+      );
       if (job.mode === 'live') {
         try {
           if (!this.options.authorize) throw new Error('live_activation_authorizer_required');
           await this.options.authorize(job);
           signal.throwIfAborted();
         } catch {
+          signal.throwIfAborted();
           throw new WorkerFailure('worker_activation_denied');
         }
       }
       const result = await (this.options.execute ?? executeIsolated)({
-        job,
+        job: {
+          ...job,
+          maxTurns: effective.maxTurns,
+          timeoutMs: effective.timeoutMs,
+          ...(job.mode === 'live' ? { maxBudgetUsd: effective.maxBudgetUsd } : {}),
+        },
         archive,
         runId,
         image: this.options.image,
@@ -165,26 +221,35 @@ export class CodingSupervisor {
         modelKey: this.options.modelKey,
         docker: this.docker,
         onStarted: async (imageId) => {
+          if (
+            (await pool.query('SELECT cancel_requested FROM factory_work WHERE id=$1', [work.id]))
+              .rows[0]?.cancel_requested
+          )
+            controller.abort(new Error('operator_cancelled'));
           signal.throwIfAborted();
           await pool.query(
-            "UPDATE factory_worker_runs SET state='running',image_id=$2 WHERE run_id=$1",
+            "UPDATE factory_worker_runs SET state='running',image_id=$2,evidence=evidence || '{\"executionMayHaveStarted\":true}'::jsonb WHERE run_id=$1",
             [runId, imageId],
           );
         },
       });
+      await pool.query(
+        "UPDATE factory_worker_runs SET evidence=evidence || $2::jsonb WHERE run_id=$1 AND state IN ('preparing','running')",
+        [runId, JSON.stringify(outcomeEvidence(result.outcome))],
+      );
       signal.throwIfAborted();
       // Docker cleanup has completed before any ACK. No BuildAgent/Task is settled.
       if (result.outcome.ok) {
         await this.queue.complete(token, result.outcome, async (client) => {
           await client.query(
-            "UPDATE factory_worker_runs SET state='succeeded',reason='execution_completed',ended_at=clock_timestamp() WHERE run_id=$1",
-            [runId],
+            "UPDATE factory_worker_runs SET state='succeeded',reason='execution_completed',ended_at=clock_timestamp(),evidence=evidence || $2::jsonb WHERE run_id=$1",
+            [runId, JSON.stringify(outcomeEvidence(result.outcome))],
           );
         });
       } else {
         await pool.query(
-          "UPDATE factory_worker_runs SET state='failed',reason=$2,ended_at=clock_timestamp() WHERE run_id=$1",
-          [runId, result.outcome.reason],
+          "UPDATE factory_worker_runs SET state='failed',reason=$2,ended_at=clock_timestamp(),evidence=evidence || $3::jsonb WHERE run_id=$1",
+          [runId, result.outcome.reason, JSON.stringify(outcomeEvidence(result.outcome))],
         );
         // Store failure artifacts before settlement; they are diagnostic, not acceptance.
         await pool.query(

@@ -144,6 +144,7 @@ async function main() {
   let subtype = 'fixture_failed';
   let turns: number | null = null;
   let costUsd: number | null = null;
+  let usage: Record<string, number> | null = null;
   let summary = '';
   try {
     if (job.mode === 'demo') {
@@ -161,17 +162,19 @@ async function main() {
         prompt: job.prompt,
         model: job.model,
         maxTurns: job.maxTurns,
+        maxBudgetUsd: job.maxBudgetUsd ?? 5,
         isolation: { environment: env, signal },
       });
       ok = result.ok;
       subtype = result.subtype;
       turns = result.subtype === 'no_result' ? null : result.numTurns;
       costUsd = result.subtype === 'no_result' ? null : result.costUsd;
+      usage = result.usage ?? null;
       summary = result.summary.slice(0, 8192);
     }
   } catch (error) {
     subtype = signal.aborted ? 'interrupted' : 'model_execution_failed';
-    summary = error instanceof Error ? error.message.slice(0, 2048) : 'SDK execution failed';
+    summary = 'Execution interrupted or provider unavailable; inspect run status.';
   } finally {
     for (const socket of connections) socket.destroy();
     bridge?.close();
@@ -209,7 +212,7 @@ async function main() {
     patchSha256: sha256(patch),
     testsStatus,
     tests,
-    model: { mode: job.mode, subtype, turns, costUsd },
+    model: { mode: job.mode, subtype, turns, costUsd, usage },
     summary,
   };
   const encoded = JSON.stringify(outcome);

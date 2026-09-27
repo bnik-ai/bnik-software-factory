@@ -87,8 +87,8 @@ describe('runCodingAgent — result mapping', () => {
     expect(out.ok).toBe(false);
     expect(out.subtype).toBe('no_result');
     expect(out.summary).toBe('');
-    expect(out.numTurns).toBe(0);
-    expect(out.costUsd).toBe(0);
+    expect(out.numTurns).toBeNull();
+    expect(out.costUsd).toBeNull();
   });
 });
 
@@ -206,5 +206,58 @@ describe('isolated execution contract', () => {
       ),
     ).rejects.toThrow();
     expect(never.calls).toHaveLength(0);
+  });
+});
+
+describe('run budget and accounting', () => {
+  test('passes a validated SDK budget and preserves only numeric model usage counters', async () => {
+    const fake = makeFakeQuery([
+      {
+        type: 'result',
+        subtype: 'error_max_budget_usd',
+        num_turns: 1,
+        total_cost_usd: 0.02,
+        modelUsage: {
+          fixture: {
+            inputTokens: 100,
+            outputTokens: 10,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+            privateField: 'omit',
+          },
+        },
+      },
+    ]);
+    const result = await runCodingAgent(
+      { cwd: '/tmp/fixture', prompt: 'fixture', maxBudgetUsd: 0.01 },
+      fake.fn,
+    );
+    expect(fake.calls[0]?.options.maxBudgetUsd).toBe(0.01);
+    expect(result.usage).toEqual({
+      inputTokens: 100,
+      outputTokens: 10,
+      cacheReadInputTokens: 0,
+      cacheCreationInputTokens: 0,
+    });
+    expect(result.costUsd).toBe(0.02);
+    expect(result.ok).toBe(false);
+    for (const maxBudgetUsd of [0, -1, Number.POSITIVE_INFINITY, Number.NaN, 101])
+      await expect(
+        runCodingAgent({ cwd: '/tmp/fixture', prompt: 'fixture', maxBudgetUsd }, fake.fn),
+      ).rejects.toThrow('invalid_coding_budget');
+    expect(fake.calls).toHaveLength(1);
+  });
+  test('missing accounting and zeroed startup error accounting are unavailable', async () => {
+    for (const message of [
+      { type: 'result', subtype: 'success' },
+      { type: 'result', subtype: 'error_during_execution', total_cost_usd: 0 },
+    ]) {
+      const result = await runCodingAgent(
+        { cwd: '/tmp/fixture', prompt: 'fixture' },
+        makeFakeQuery([message]).fn,
+      );
+      expect(result.costUsd).toBeNull();
+      expect(result.usage).toBeNull();
+    }
   });
 });

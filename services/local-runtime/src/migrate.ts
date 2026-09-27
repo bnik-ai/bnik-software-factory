@@ -15,6 +15,7 @@ const migrations = [
   ['0004_task_activations', new URL('../migrations/0004_task_activations.sql', import.meta.url)],
   ['0005_human_merge', new URL('../migrations/0005_human_merge.sql', import.meta.url)],
   ['0006_recovery', new URL('../migrations/0006_recovery.sql', import.meta.url)],
+  ['0007_run_evidence', new URL('../migrations/0007_run_evidence.sql', import.meta.url)],
 ] as const;
 export function migrationFiles() {
   return migrations.map(([version, path]) => {

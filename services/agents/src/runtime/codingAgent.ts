@@ -43,6 +43,7 @@ export interface CodingAgentRequest {
   allowedTools?: string[];
   // Turn cap. Defaults to DEFAULT_MAX_TURNS.
   maxTurns?: number;
+  maxBudgetUsd?: number;
   // Optional model override (e.g. a specific claude-* id). Omitted →
   // SDK default.
   model?: string;
@@ -61,9 +62,10 @@ export interface CodingAgentResult {
   // which carry no `result` field).
   summary: string;
   // Number of agent turns the run consumed.
-  numTurns: number;
+  numTurns: number | null;
   // Total run cost in USD as reported by the SDK.
-  costUsd: number;
+  costUsd: number | null;
+  usage?: Record<string, number> | null;
 }
 
 // Structural subset of the SDK message stream this module reads. Kept
@@ -73,6 +75,7 @@ interface ResultMessageLike {
   subtype: string;
   num_turns: number;
   total_cost_usd: number;
+  modelUsage?: Record<string, Record<string, unknown>>;
   // Present only on the success variant (SDKResultSuccess); absent on
   // error subtypes.
   result?: string;
@@ -99,6 +102,11 @@ export async function runCodingAgent(
     (req.maxTurns ?? DEFAULT_MAX_TURNS) > 60
   )
     throw new Error('invalid_coding_turn_limit');
+  if (
+    req.maxBudgetUsd !== undefined &&
+    (!Number.isFinite(req.maxBudgetUsd) || req.maxBudgetUsd < 0.001 || req.maxBudgetUsd > 100)
+  )
+    throw new Error('invalid_coding_budget');
   req.isolation?.signal.throwIfAborted();
   const controller = new AbortController();
   const abort = () => controller.abort();
@@ -126,6 +134,7 @@ export async function runCodingAgent(
     tools: toolset,
     allowedTools: toolset,
     maxTurns: req.maxTurns ?? DEFAULT_MAX_TURNS,
+    ...(req.maxBudgetUsd === undefined ? {} : { maxBudgetUsd: req.maxBudgetUsd }),
     ...(req.model !== undefined && req.model !== '' ? { model: req.model } : {}),
   };
 
@@ -153,14 +162,46 @@ export async function runCodingAgent(
   if (resultMessage === undefined) {
     // Stream ended without a result message — a malformed/aborted run.
     // Surface a typed non-ok result rather than throwing.
-    return { ok: false, subtype: NO_RESULT_SUBTYPE, summary: '', numTurns: 0, costUsd: 0 };
+    return {
+      ok: false,
+      subtype: NO_RESULT_SUBTYPE,
+      summary: '',
+      numTurns: null,
+      costUsd: null,
+      usage: null,
+    };
   }
 
+  const entries = Object.values(resultMessage.modelUsage ?? {});
+  const counters = [
+    'inputTokens',
+    'outputTokens',
+    'cacheReadInputTokens',
+    'cacheCreationInputTokens',
+  ];
+  const usage =
+    entries.length &&
+    entries.length <= 16 &&
+    entries.every((e) => counters.every((k) => Number.isSafeInteger(e[k]) && Number(e[k]) >= 0))
+      ? Object.fromEntries(
+          counters.map((k) => [k, entries.reduce((sum, e) => sum + Number(e[k]), 0)]),
+        )
+      : null;
+  const cost = resultMessage.total_cost_usd;
   return {
     ok: resultMessage.subtype === 'success',
     subtype: resultMessage.subtype,
     summary: resultMessage.result ?? '',
-    numTurns: resultMessage.num_turns,
-    costUsd: resultMessage.total_cost_usd,
+    numTurns:
+      Number.isSafeInteger(resultMessage.num_turns) && resultMessage.num_turns >= 0
+        ? resultMessage.num_turns
+        : null,
+    costUsd:
+      Number.isFinite(cost) &&
+      cost >= 0 &&
+      !(cost === 0 && !usage && resultMessage.subtype !== 'success')
+        ? cost
+        : null,
+    usage,
   };
 }

@@ -232,6 +232,14 @@ export class HumanMergeGate extends LeasedConsumer {
                 JSON.stringify((evidence as { dependencies: unknown }).dependencies),
               ],
             );
+          if (state === 'awaiting_human_merge' || state === 'reconciled')
+            await client.query(
+              `UPDATE factory_worker_runs SET evidence=evidence || jsonb_build_object('review',
+                jsonb_build_object('reviewedHead',$1::text,'state',$2::text,'observedAt',clock_timestamp()))
+               WHERE evidence->'publication'->>'builtHead'=$1 AND evidence->'publication'->>'pullNumber'=$3
+                 AND evidence->'task'->>'repositoryId'=$4`,
+              [head, state, String(body.pull), String(body.repositoryId)],
+            );
         },
       );
       return true;

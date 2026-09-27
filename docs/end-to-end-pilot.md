@@ -133,9 +133,13 @@ pair binds the Task content immutably, and later Task edits would park it.
 
 ```sh
 python3 runtime/worker.py track-pr TASK_NUMBER PR_NUMBER FULL_REVISED_HEAD
+python3 runtime/worker.py record-pr FINAL_JOB_ID PR_NUMBER FULL_REVISED_HEAD
 python3 runtime/worker.py review-scan
 python3 runtime/worker.py review-status
 ```
+
+`FINAL_JOB_ID` identifies the successful final coding run. The [run controls guide](run-controls.md)
+explains its recorded source/published/reviewed heads, accounting and retention.
 
 Wait for successful current-head CI and a fresh native human approval. Record the
 new review ID/head. Scan while the PR is open and confirm `awaiting_human_merge`

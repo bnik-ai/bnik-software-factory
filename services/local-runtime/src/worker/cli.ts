@@ -10,9 +10,11 @@ import {
 } from '../github/activation.js';
 import { GitHubFailure, InstallationClient } from '../github/client.js';
 import { authorizeApprovedJob, loadActivation } from '../github/intake.js';
+import { pairPull } from '../github/merge-gate.js';
 import { HumanMergeGate } from '../github/reconcile.js';
 import { checkSchema } from '../migrate.js';
 import { type CodingJob, parseJob, sha256 } from './protocol.js';
+import { RunRecords, runLimits } from './records.js';
 import { githubArchive } from './source.js';
 import { CodingSupervisor } from './supervisor.js';
 
@@ -25,6 +27,8 @@ async function main() {
       'cancel',
       'recover',
       'status',
+      'prune',
+      'record-pr',
       'github-check',
       'prepare-task',
       'activations',
@@ -40,20 +44,40 @@ async function main() {
   const pool = createLocalPool(databaseConfig(process.env));
   try {
     await checkSchema(pool);
+    const identity = (await pool.query('SELECT session_user AS principal')).rows[0]?.principal;
+    if (identity !== 'factory_runtime') throw new Error('runtime_database_identity_required');
+    const records = new RunRecords(pool);
     if (command === 'status') {
-      console.log(
-        JSON.stringify(
-          (
-            await pool.query(
-              'SELECT w.delivery_key,r.run_id,r.state,r.reason,r.image_id,r.cancel_requested,r.started_at,r.ended_at FROM factory_worker_runs r JOIN factory_work w ON w.id=r.work_id ORDER BY r.started_at DESC LIMIT 100',
-            )
-          ).rows,
-        ),
-      );
+      console.log(JSON.stringify(await records.status(process.argv[3])));
+      return;
+    }
+    if (command === 'prune') {
+      console.log(JSON.stringify({ contentRemoved: await records.prune(Number(process.argv[3])) }));
+      return;
+    }
+    if (command === 'cancel') {
+      const id = process.argv[3];
+      const repository = process.env.FACTORY_REPOSITORY;
+      if (!id || !repository) throw new Error('cancellation_identity_required');
+      console.log(JSON.stringify({ requested: await records.cancel(id, repository) }));
       return;
     }
     const config = resolveConfig();
     const github = new InstallationClient(config, controller.signal);
+    if (command === 'record-pr') {
+      const jobId = process.argv[3] ?? '';
+      const row = (await records.status(jobId))[0];
+      if (!row?.evidence?.task) throw new Error('run_task_link_required');
+      const pair = await pairPull(
+        config,
+        github,
+        Number(row.evidence.task.number),
+        Number(process.argv[4]),
+        process.argv[5] ?? '',
+      );
+      console.log(JSON.stringify(await records.linkPublication(jobId, config.repository, pair)));
+      return;
+    }
     if (command === 'track-pr' || command === 'review-scan' || command === 'review-status') {
       const gate = new HumanMergeGate(pool, config, github);
       try {
@@ -129,6 +153,7 @@ async function main() {
       modelKey: config.modelKey,
       signal: controller.signal,
       authorize,
+      limits: runLimits(process.env),
     });
     if (command === 'recover') {
       await supervisor.recover();
@@ -137,10 +162,6 @@ async function main() {
     }
     const argument = process.argv[3];
     if (!argument) throw new Error('worker_argument_required');
-    if (command === 'cancel') {
-      console.log(JSON.stringify({ requested: await supervisor.cancel(argument) }));
-      return;
-    }
     const output = process.argv[4];
     if (!output || !isAbsolute(output)) throw new Error('new_absolute_artifact_directory_required');
     let archive: Buffer;

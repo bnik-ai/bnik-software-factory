@@ -14,7 +14,10 @@ export interface TaskSnapshot {
   issue: Issue;
   taskHash: string;
   sourceCommit: string;
-  definition: Pick<CodingJob, 'prompt' | 'tests' | 'model' | 'maxTurns' | 'timeoutMs'>;
+  definition: Pick<
+    CodingJob,
+    'prompt' | 'tests' | 'model' | 'maxTurns' | 'timeoutMs' | 'maxBudgetUsd'
+  >;
 }
 export const activationCommand = (sourceCommit: string, taskHash: string) =>
   `/factory activate ${sourceCommit} ${taskHash}`;
@@ -60,7 +63,7 @@ export function taskSnapshot(
     typeof definition !== 'object' ||
     Array.isArray(definition) ||
     Object.keys(definition).some(
-      (key) => !['prompt', 'tests', 'model', 'maxTurns', 'timeoutMs'].includes(key),
+      (key) => !['prompt', 'tests', 'model', 'maxTurns', 'timeoutMs', 'maxBudgetUsd'].includes(key),
     )
   )
     throw new GitHubFailure('task_definition_invalid');
@@ -101,6 +104,7 @@ export function taskSnapshot(
       tests: job.tests,
       model: job.model,
       maxTurns: job.maxTurns,
+      ...(job.maxBudgetUsd === undefined ? {} : { maxBudgetUsd: job.maxBudgetUsd }),
       timeoutMs: job.timeoutMs,
     },
   };

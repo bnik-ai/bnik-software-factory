@@ -80,6 +80,7 @@ export function apiProxy(config: ProxyConfig, upstream: typeof fetch = fetch) {
         return deny(403);
       const controller = new AbortController();
       res.once('close', () => controller.abort());
+      if (lifetime.aborted || controller.signal.aborted) return deny(429);
       const result = await upstream(`https://api.anthropic.com${req.url}`, {
         method: 'POST',
         redirect: 'error',
