@@ -238,8 +238,18 @@ export function decide(
       // reason, and only `dependency_manifest` for the manifests it lists; executable
       // manifests, configuration, patches and vendored code stay critical.
       let classificationReasons = classification.reasons;
+      // Only a manifest that still exists after the change can be re-resolved; a deleted
+      // or renamed-away lockfile stays critical, since "reproduced" is vacuous without it.
+      const survivingPaths = new Set(
+        changes.files.map((file) => file.newPath).filter((path): path is string => path !== null),
+      );
       const manifestPaths = classification.reasons
-        .filter((reason) => reason.code === 'dependency_manifest' && reason.path !== undefined)
+        .filter(
+          (reason) =>
+            reason.code === 'dependency_manifest' &&
+            reason.path !== undefined &&
+            survivingPaths.has(reason.path),
+        )
         .map((reason) => reason.path as string);
       // Any supplied receipt is validated; one that covers no manifest of this change is refused.
       if (manifestPaths.length > 0 || evidence.dependency !== undefined) {

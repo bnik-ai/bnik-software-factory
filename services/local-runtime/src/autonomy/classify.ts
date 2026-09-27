@@ -162,21 +162,21 @@ export const BUILT_IN_PATH_RULES: readonly PathRule[] = [
     code: 'dependency_manifest',
     category: 'security_auth',
     pattern:
-      /(^|\/)(package\.json|package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|pnpm-workspace\.yaml|requirements[^/]*\.(txt|in)|constraints[^/]*\.txt|pipfile(\.lock)?|pyproject\.toml|poetry\.lock|uv\.lock|setup\.cfg|environment\.ya?ml|go\.mod|go\.sum|go\.work(\.sum)?|cargo\.toml|cargo\.lock|gemfile\.lock|pom\.xml|gradle\.properties|composer\.(json|lock)|packages\.lock\.json|pubspec\.(yaml|lock)|mix\.lock|bun\.lockb?|deno\.jsonc?|deno\.lock)$/,
+      /(^|\/)(package\.json|package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|pnpm-workspace\.yaml|requirements[^/]*\.(txt|in)|constraints[^/]*\.txt|pipfile(\.lock)?|pyproject\.toml|poetry\.lock|uv\.lock|setup\.cfg|environment\.ya?ml|go\.mod|go\.sum|go\.work(\.sum)?|cargo\.toml|cargo\.lock|gemfile\.lock|pom\.xml|gradle\.properties|composer\.(json|lock)|packages\.lock\.json|pubspec\.(yaml|lock)|mix\.lock|bun\.lockb?|deno\.jsonc?|deno\.lock|libs\.versions\.toml|pdm\.lock|package\.resolved|podfile\.lock|cartfile(\.resolved|\.private)?|vcpkg(-configuration)?\.json|conanfile\.txt|conan\.lock|renv\.lock|rebar\.lock|paket\.(lock|dependencies|references)|packages\.config|module\.bazel\.lock|flake\.lock|shard\.(yml|lock)|stack\.yaml(\.lock)?|cabal\.project(\.freeze)?|elm\.json)$/,
   },
   {
     // Manifests that are programs: executed at install or build time, never made routine.
     code: 'dependency_manifest_executable',
     category: 'security_auth',
     pattern:
-      /(^|\/)(setup\.py|gemfile|[^/]*\.gemspec|podfile|build\.gradle(\.kts)?|settings\.gradle(\.kts)?|mix\.exs|[^/]*\.csproj|[^/]*\.fsproj|[^/]*\.vbproj|directory\.build\.(props|targets)|directory\.packages\.props|[^/]*\.(props|targets)|build\.sbt|project\.clj|deps\.edn|rebar\.config)$/,
+      /(^|\/)(setup\.py|gemfile|[^/]*\.gemspec|podfile|build\.gradle(\.kts)?|settings\.gradle(\.kts)?|mix\.exs|[^/]*\.csproj|[^/]*\.fsproj|[^/]*\.vbproj|directory\.build\.(props|targets)|directory\.packages\.props|[^/]*\.(props|targets)|build\.sbt|project\.clj|deps\.edn|rebar\.config|package\.swift|conanfile\.py|module\.bazel|workspace(\.bazel|\.bzlmod)?|flake\.nix|default\.nix|shell\.nix|[^/]*\.cabal|vcpkg\.cmake)$/,
   },
   {
     // Registry, mirror, toolchain, wrapper, patch and install-hook configuration: never made routine.
     code: 'dependency_configuration',
     category: 'security_auth',
     pattern:
-      /(^|\/)(\.npmrc|\.yarnrc(\.yml)?|\.pnpmfile\.c?js|bunfig\.toml|nuget\.config|pip\.conf|\.pypirc|\.piprc|uv\.toml|\.condarc|\.gemrc|\.gitmodules|\.tool-versions|\.nvmrc|\.python-version|\.node-version|\.ruby-version|\.go-version|\.java-version|\.terraform-version|rust-toolchain(\.toml)?|global\.json|gradlew(\.bat)?|mvnw(\.cmd)?|gradle-wrapper\.properties|maven-wrapper\.properties)$|(^|\/)(\.cargo|\.m2|\.gradle|\.mvn|\.yarn|\.bundle|patches)\/|^[^/]+\.patch$/,
+      /(^|\/)(\.npmrc|\.yarnrc(\.yml)?|\.pnpmfile\.c?js|bunfig\.toml|nuget\.config|pip\.conf|\.pypirc|\.piprc|uv\.toml|\.condarc|\.gemrc|\.gitmodules|\.tool-versions|\.nvmrc|\.python-version|\.node-version|\.ruby-version|\.go-version|\.java-version|\.terraform-version|rust-toolchain(\.toml)?|global\.json|gradlew(\.bat)?|mvnw(\.cmd)?|gradle-wrapper\.properties|maven-wrapper\.properties|verification-metadata\.xml|verification-keyring\.keys)$|(^|\/)(\.cargo|\.m2|\.gradle|\.mvn|\.yarn|\.bundle|patches)\/|^[^/]+\.patch$/,
   },
   {
     // Committed third-party code: an edit here is an edit to a dependency.

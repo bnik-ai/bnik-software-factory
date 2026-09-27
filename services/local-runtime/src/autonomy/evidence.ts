@@ -507,8 +507,11 @@ const SEVERITY_RANK: Record<DependencySeverity, number> = {
   unknown: 0,
 };
 const ECOSYSTEM = /^[a-z][a-z0-9.-]{0,31}$/;
-const NUMERIC_PREFIX = /^v?(\d+(?:\.\d+)*)(?:[+-]|$)/;
-/** Dotted numeric prefix of a version, or null for identifiers such as `latest` or a commit SHA. */
+const NUMERIC_PREFIX = /^v?(\d+(?:\.\d+)*)/;
+/**
+ * Dotted numeric prefix of a version, or null for identifiers such as `latest`,
+ * `^2.0.0` or a commit SHA. Suffixes (`rc1`, `.post1`, `.RELEASE`, `w`) are ignored.
+ */
 function numericPrefix(version: string): number[] | null {
   const match = NUMERIC_PREFIX.exec(version);
   return match ? (match[1] as string).split('.').map(Number) : null;
@@ -521,6 +524,23 @@ function compareNumeric(left: number[], right: number[]): number {
   return 0;
 }
 /** Breaking by digits alone: a different leading component, or a different second component under 0.x. */
+/**
+ * SPDX expression against the allowlist: a single identifier (including `WITH`
+ * exceptions) must be listed verbatim; an `OR` choice needs one listed operand; an
+ * `AND` conjunction needs all. Parentheses or mixed operators are not accepted.
+ */
+export function licenseAllowed(license: string, allowlist: readonly string[]): boolean {
+  if (allowlist.includes(license)) return true;
+  if (/[()]/.test(license)) return false;
+  const choices = license.split(/\s+OR\s+/);
+  if (choices.length > 1)
+    return (
+      choices.every((choice) => !/\s+AND\s+/.test(choice)) &&
+      choices.some((choice) => allowlist.includes(choice.trim()))
+    );
+  const conjuncts = license.split(/\s+AND\s+/);
+  return conjuncts.length > 1 && conjuncts.every((conjunct) => allowlist.includes(conjunct.trim()));
+}
 function visiblyBreaking(before: number[], after: number[]): boolean {
   if (before[0] !== after[0]) return true;
   return before[0] === 0 && (before[1] ?? 0) !== (after[1] ?? 0);
@@ -752,7 +772,7 @@ export function dependencyReasons(
   for (const entry of [...receipt.packages.added, ...receipt.packages.upgraded]) {
     if (entry.source !== 'registry')
       hold(`dependency_source_not_registry:${label(entry)}`, 'security_auth');
-    if (entry.license === null || !settings.licenseAllowlist.includes(entry.license))
+    if (entry.license === null || !licenseAllowed(entry.license, settings.licenseAllowlist))
       hold(`license_not_allowed:${label(entry)}`, 'release_licensing');
   }
   // Unknown severity is not "below threshold"; it holds like the threshold itself.

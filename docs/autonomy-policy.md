@@ -197,20 +197,22 @@ therefore combines deterministic checks with the scanner, and both must pass:
 
 | Check | Routine when | Otherwise |
 | --- | --- | --- |
-| Coverage | The receipt lists exactly which manifest and lockfile paths it re-resolved; only those become routine, and a listed path outside the change blocks | uncovered paths stay critical |
+| Coverage | The receipt lists exactly which manifest and lockfile paths it re-resolved; only those become routine, and a listed path outside the change blocks. A lockfile that the change deletes or renames away no longer exists to re-resolve, so it can never be covered | uncovered paths stay critical |
 | Reproduction | The committed lockfiles are byte-identical to a clean re-resolution of the manifests in a fresh sandbox with install scripts disabled | `lockfile_not_reproducible` holds |
 | Manifest fields | Nothing outside dependency version specifications changed: no `scripts`, `overrides`, `resolutions`, `replace`, `workspaces`, `patchedDependencies`, `onlyBuiltDependencies` or embedded tool configuration | holds per field |
 | Install scripts | The set of packages whose install-time scripts run is the same before and after | holds |
 | Source | Every added or upgraded package resolves from a registry, not git, a URL, a path, a link or a workspace | holds per package |
 | Shape | No new dependency, major upgrade or downgrade unless the policy allows them. The runner's `major` flag may add a break the digits do not show (it is ecosystem-aware) but may not deny one they do, including 0.x minor bumps; its `direction` must agree with the numbers; a resolved registry version starts with a number; one package has one story | holds per package; disagreement blocks |
-| Licenses | Every added or upgraded package carries an allowlisted SPDX identifier | holds per package |
+| Licenses | Every added or upgraded package carries an allowlisted SPDX identifier or expression: a single identifier (including `WITH` exceptions) must be listed verbatim, an `OR` choice needs one listed operand, an `AND` conjunction needs all; parentheses and mixed operators are not accepted | holds per package |
 | Scanner | No finding at or above `holdSeverity`; a finding of unknown severity counts as at the threshold. The runner may omit findings below a stated severity to bound the list, but never at or above the threshold | holds per finding; omission at the threshold blocks |
 | Scanner health | Adapter and image match the policy; the database was no older than `databaseMaxAgeMs` at scan time; status `complete` | `error`, `timeout` or stale database blocks; `unsupported` holds |
 
 Never made routine by a receipt: executable manifests (`setup.py`, `Gemfile`,
-`*.gemspec`, `build.gradle`, `mix.exs`, MSBuild project files and others that run
-at install or build time); registry, mirror and install-hook configuration
-(`.npmrc`, `.yarnrc`, `.pnpmfile.cjs`, `.cargo/`, `nuget.config`, `.gitmodules`);
+`*.gemspec`, `build.gradle`, `mix.exs`, `Package.swift`, `conanfile.py`,
+`MODULE.bazel`, Nix expressions, MSBuild project files and others that run at
+install or build time); registry, mirror, install-hook and checksum-verification
+configuration (`.npmrc`, `.yarnrc`, `.pnpmfile.cjs`, `.cargo/`, `nuget.config`,
+`.gitmodules`, Gradle `verification-metadata.xml`);
 toolchain and wrapper pins (`.tool-versions`, `.node-version`, `rust-toolchain`,
 `gradlew`, `mvnw`, wrapper properties); `patches/` and `.yarn/`; and vendored
 third-party code (`vendor/`, `third_party/`, committed `node_modules/`). Content

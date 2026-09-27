@@ -507,9 +507,10 @@ export function comparePolicies(current: AutonomyPolicy, proposed: AutonomyPolic
       allowDowngrades: false,
     };
     if (current.dependencies === null) weakens('dependency_verification_enabled');
-    if (before.scanner.adapter !== after.scanner.adapter)
+    // A new scanner is a new trust root, so enabling names it as well.
+    if (current.dependencies === null || before.scanner.adapter !== after.scanner.adapter)
       weakens('trust_root_changed', 'dependencies.scanner.adapter');
-    if (before.scanner.image !== after.scanner.image)
+    if (current.dependencies === null || before.scanner.image !== after.scanner.image)
       weakens('trust_root_changed', 'dependencies.scanner.image');
     if (after.scanner.databaseMaxAgeMs > before.scanner.databaseMaxAgeMs)
       weakens('limit_raised', 'dependencies.scanner.databaseMaxAgeMs');

@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { changedLines, classifyChanges, parseChangeManifest } from '../src/autonomy/classify.js';
 import { type Decision, decide } from '../src/autonomy/decision.js';
+import { licenseAllowed } from '../src/autonomy/evidence.js';
 import {
   comparePolicies,
   contentTreeDigest,
@@ -1078,6 +1079,8 @@ test('dependency policy is strict, optional and compared as a weakening surface'
     'license_allowed:ISC',
     'license_allowed:MIT',
     'limit_raised:dependencies.scanner.databaseMaxAgeMs',
+    'trust_root_changed:dependencies.scanner.adapter',
+    'trust_root_changed:dependencies.scanner.image',
   ]);
   assert.deepEqual(
     weakeningCodes(comparePolicies(policy, policyFixture({ revision: 2, dependencies: null }))),
@@ -1721,4 +1724,125 @@ test('semver-0 breaks, downgrades and unresolved registry versions are handled',
     upgradedTo(policy, { previousVersion: '1.3.1-rc.1', version: '1.3.1' }).outcome,
     'allow',
   );
+});
+
+test('a lockfile that disappears cannot be verified, and real registry versions are not refused', () => {
+  const policy = policyFixture({ allowedPaths: ['.'] });
+  for (const gone of [
+    deleted('package-lock.json', '{}\n'),
+    renamed('package-lock.json', 'package-lock.json.bak', '{}\n'),
+  ]) {
+    for (const action of ['publish', 'merge'] as const) {
+      const request = requestFor(policy, action, manifest(gone));
+      const decision = decide(
+        policy,
+        request,
+        {
+          ...evidenceFor(policy, request),
+          dependency: dependencyFor(policy, request, {
+            packages: { added: [], removed: [], upgraded: [] },
+          }),
+        },
+        NOW,
+      );
+      assert.equal(decision.outcome, 'blocked', `${action} ${gone.status}`);
+      assert.ok(codes(decision).includes('dependency_receipt_inconsistent'));
+      const withoutReceipt = decide(policy, request, evidenceFor(policy, request), NOW);
+      assert.equal(withoutReceipt.outcome, 'approval_required');
+      assert.ok(codes(withoutReceipt).includes('dependency_manifest'));
+    }
+  }
+  const request = requestFor(policy, 'merge', manifest(LOCKFILE_BUMP));
+  const base = dependencyFor(policy, request).packages.upgraded[0] as NonNullable<
+    ReturnType<typeof dependencyFor>['packages']['upgraded'][0]
+  >;
+  for (const [previousVersion, version] of [
+    ['2.0.0rc1', '2.0.0'],
+    ['1.2.3', '1.2.3.post1'],
+    ['5.2.0.RELEASE', '5.3.0.RELEASE'],
+    ['4.0.0.Final', '4.0.1.Final'],
+    ['1.1.1v', '1.1.1w'],
+    ['3.0.0.pre', '3.0.0'],
+  ] as const) {
+    const decision = decide(
+      policy,
+      request,
+      {
+        ...evidenceFor(policy, request),
+        dependency: dependencyFor(policy, request, {
+          packages: { added: [], removed: [], upgraded: [{ ...base, previousVersion, version }] },
+        }),
+      },
+      NOW,
+    );
+    assert.equal(decision.outcome, 'allow', `${previousVersion} -> ${version}`);
+  }
+});
+
+test('SPDX license expressions: an OR choice needs one allowlisted operand, an AND needs all', () => {
+  const allowlist = ['MIT', 'Apache-2.0'];
+  for (const [expression, expected] of [
+    ['MIT', true],
+    ['MIT OR Apache-2.0', true],
+    ['GPL-3.0-only OR MIT', true],
+    ['MIT AND Apache-2.0', true],
+    ['MIT AND GPL-3.0-only', false],
+    ['GPL-3.0-only', false],
+    ['(MIT OR GPL-3.0-only)', false],
+    ['MIT OR (GPL-3.0-only)', false],
+    ['GPL-3.0-only OR AGPL-3.0-only', false],
+    ['MIT OR GPL-3.0-only AND LGPL-2.1-only', false],
+    ['GPL-2.0-only WITH Classpath-exception-2.0', false],
+    ['MIT OR', false],
+  ] as const)
+    assert.equal(licenseAllowed(expression, allowlist), expected, expression);
+  assert.equal(
+    licenseAllowed('GPL-2.0-only WITH Classpath-exception-2.0', [
+      'GPL-2.0-only WITH Classpath-exception-2.0',
+    ]),
+    true,
+  );
+  const policy = policyFixture({ allowedPaths: ['.'] });
+  const request = requestFor(policy, 'merge', manifest(LOCKFILE_BUMP));
+  const base = dependencyFor(policy, request).packages.upgraded[0] as NonNullable<
+    ReturnType<typeof dependencyFor>['packages']['upgraded'][0]
+  >;
+  const withLicense = (license: string) =>
+    decide(
+      policy,
+      request,
+      {
+        ...evidenceFor(policy, request),
+        dependency: dependencyFor(policy, request, {
+          packages: { added: [], removed: [], upgraded: [{ ...base, license }] },
+        }),
+      },
+      NOW,
+    ).outcome;
+  assert.equal(withLicense('MIT OR Apache-2.0'), 'allow');
+  assert.equal(withLicense('MIT AND GPL-3.0-only'), 'approval_required');
+  assert.equal(withLicense('GPL-3.0-only OR AGPL-3.0-only'), 'approval_required');
+});
+
+test('further dependency manifests, executable manifests and verification metadata are classified', () => {
+  for (const [path, expected] of [
+    ['gradle/libs.versions.toml', 'dependency_manifest'],
+    ['pdm.lock', 'dependency_manifest'],
+    ['Package.resolved', 'dependency_manifest'],
+    ['Podfile.lock', 'dependency_manifest'],
+    ['Cartfile.resolved', 'dependency_manifest'],
+    ['vcpkg.json', 'dependency_manifest'],
+    ['renv.lock', 'dependency_manifest'],
+    ['rebar.lock', 'dependency_manifest'],
+    ['paket.lock', 'dependency_manifest'],
+    ['packages.config', 'dependency_manifest'],
+    ['flake.lock', 'dependency_manifest'],
+    ['Package.swift', 'dependency_manifest_executable'],
+    ['conanfile.py', 'dependency_manifest_executable'],
+    ['MODULE.bazel', 'dependency_manifest_executable'],
+    ['WORKSPACE', 'dependency_manifest_executable'],
+    ['flake.nix', 'dependency_manifest_executable'],
+    ['gradle/verification-metadata.xml', 'dependency_configuration'],
+  ] as const)
+    assert.ok(classifiedCodes(added(path, 'x\n')).includes(expected), `${path} -> ${expected}`);
 });
