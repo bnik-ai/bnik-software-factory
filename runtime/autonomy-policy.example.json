@@ -67,6 +67,7 @@
       "0BSD"
     ],
     "allowNewDependencies": false,
-    "allowMajorUpgrades": false
+    "allowMajorUpgrades": false,
+    "allowDowngrades": false
   }
 }

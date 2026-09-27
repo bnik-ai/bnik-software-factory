@@ -58,6 +58,7 @@ export interface DependencyPolicy {
   licenseAllowlist: string[];
   allowNewDependencies: boolean;
   allowMajorUpgrades: boolean;
+  allowDowngrades: boolean;
 }
 
 /**
@@ -283,7 +284,14 @@ export function parsePolicy(value: unknown): AutonomyPolicy {
   if (policy.dependencies !== null) {
     requireRecord(
       policy.dependencies,
-      ['scanner', 'holdSeverity', 'licenseAllowlist', 'allowNewDependencies', 'allowMajorUpgrades'],
+      [
+        'scanner',
+        'holdSeverity',
+        'licenseAllowlist',
+        'allowNewDependencies',
+        'allowMajorUpgrades',
+        'allowDowngrades',
+      ],
       'policy_dependencies_invalid',
     );
     const { dependencies } = policy;
@@ -320,7 +328,8 @@ export function parsePolicy(value: unknown): AutonomyPolicy {
       );
     requireAutonomy(
       typeof dependencies.allowNewDependencies === 'boolean' &&
-        typeof dependencies.allowMajorUpgrades === 'boolean',
+        typeof dependencies.allowMajorUpgrades === 'boolean' &&
+        typeof dependencies.allowDowngrades === 'boolean',
       'policy_dependencies_invalid',
     );
   }
@@ -495,6 +504,7 @@ export function comparePolicies(current: AutonomyPolicy, proposed: AutonomyPolic
       licenseAllowlist: [],
       allowNewDependencies: false,
       allowMajorUpgrades: false,
+      allowDowngrades: false,
     };
     if (current.dependencies === null) weakens('dependency_verification_enabled');
     if (before.scanner.adapter !== after.scanner.adapter)
@@ -514,7 +524,7 @@ export function comparePolicies(current: AutonomyPolicy, proposed: AutonomyPolic
       if (!before.licenseAllowlist.includes(license)) weakens('license_allowed', license);
     for (const license of before.licenseAllowlist)
       if (!after.licenseAllowlist.includes(license)) strengthens('license_disallowed', license);
-    for (const flag of ['allowNewDependencies', 'allowMajorUpgrades'] as const)
+    for (const flag of ['allowNewDependencies', 'allowMajorUpgrades', 'allowDowngrades'] as const)
       if (before[flag] !== after[flag]) (after[flag] ? weakens : strengthens)(`${flag}_changed`);
   }
   return changes;

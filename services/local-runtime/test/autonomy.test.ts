@@ -1095,9 +1095,11 @@ test('dependency policy is strict, optional and compared as a weakening surface'
       licenseAllowlist: [...dependencies.licenseAllowlist, 'GPL-3.0-only'],
       allowNewDependencies: true,
       allowMajorUpgrades: true,
+      allowDowngrades: true,
     },
   });
   assert.deepEqual(weakeningCodes(comparePolicies(policy, looser)), [
+    'allowDowngrades_changed',
     'allowMajorUpgrades_changed',
     'allowNewDependencies_changed',
     'license_allowed:GPL-3.0-only',
@@ -1129,7 +1131,7 @@ test('registry and install-hook configuration is critical regardless of any rece
   const request = requestFor(
     policy,
     'merge',
-    manifest(added('.npmrc', 'registry=https://evil.example/\n')),
+    manifest(LOCKFILE_BUMP, added('.npmrc', 'registry=https://evil.example/\n')),
   );
   const decision = decide(
     policy,
@@ -1139,10 +1141,11 @@ test('registry and install-hook configuration is critical regardless of any rece
   );
   assert.equal(decision.outcome, 'approval_required');
   assert.ok(codes(decision).includes('dependency_configuration'));
+  assert.ok(!codes(decision).includes('dependency_manifest'), 'the covered lockfile is routine');
   const publish = requestFor(
     policy,
     'publish',
-    manifest(added('.npmrc', 'registry=https://evil.example/\n')),
+    manifest(LOCKFILE_BUMP, added('.npmrc', 'registry=https://evil.example/\n')),
   );
   assert.equal(
     decide(
@@ -1184,7 +1187,7 @@ test('a verified routine dependency bump publishes and merges without a human', 
   assert.ok(!codes(held).includes('dependency_manifest'));
 });
 
-test('without verification a dependency change stays critical; a receipt is ignored when not configured', () => {
+test('without verification a dependency change stays critical; a stray receipt is refused', () => {
   const policy = policyFixture({ allowedPaths: ['.'] });
   const request = requestFor(policy, 'merge', manifest(LOCKFILE_BUMP));
   const unverified = decide(policy, request, evidenceFor(policy, request), NOW);
@@ -1203,26 +1206,20 @@ test('without verification a dependency change stays critical; a receipt is igno
   );
   assert.equal(ignored.outcome, 'approval_required');
   assert.deepEqual(codes(ignored), ['dependency_manifest']);
-  // A receipt cannot touch a change that has no dependency manifests in it.
+  // A receipt about manifests this change does not touch is refused, not ignored.
   const unrelated = requestFor(policy, 'merge');
-  const finding = {
-    id: 'CVE-2026-0001',
-    severity: 'critical',
-    ecosystem: 'npm',
-    name: 'left-pad',
-    version: '1.3.1',
-    fixedVersion: null,
-  } as const;
   const stray = decide(
     policy,
     unrelated,
-    {
-      ...evidenceFor(policy, unrelated),
-      dependency: dependencyFor(policy, unrelated, { findings: [finding] }),
-    },
+    { ...evidenceFor(policy, unrelated), dependency: dependencyFor(policy, unrelated) },
     NOW,
   );
-  assert.equal(stray.outcome, 'allow');
+  assert.equal(stray.outcome, 'blocked');
+  assert.ok(codes(stray).includes('dependency_receipt_inconsistent'));
+  assert.equal(
+    decide(policy, unrelated, { ...evidenceFor(policy, unrelated), dependency: 42 }, NOW).outcome,
+    'blocked',
+  );
 });
 
 test('deterministic dependency checks hold for a human; approval binds the exact action', () => {
@@ -1249,7 +1246,7 @@ test('deterministic dependency checks hold for a human; approval binds the exact
     [
       {
         packages: {
-          added: [{ ...upgraded, name: 'dayjs', previousVersion: null }],
+          added: [{ ...upgraded, name: 'dayjs', previousVersion: null, direction: null }],
           removed: [],
           upgraded: [],
         },
@@ -1292,7 +1289,7 @@ test('deterministic dependency checks hold for a human; approval binds the exact
     withReceipt({
       packages: {
         added: [],
-        removed: [{ ...upgraded, previousVersion: null, license: null }],
+        removed: [{ ...upgraded, previousVersion: null, direction: null, license: null }],
         upgraded: [],
       },
     }).outcome,
@@ -1309,7 +1306,7 @@ test('deterministic dependency checks hold for a human; approval binds the exact
   const permissiveRequest = requestFor(permissive, 'merge', manifest(LOCKFILE_BUMP));
   const allowedAddition = dependencyFor(permissive, permissiveRequest, {
     packages: {
-      added: [{ ...upgraded, name: 'dayjs', previousVersion: null }],
+      added: [{ ...upgraded, name: 'dayjs', previousVersion: null, direction: null }],
       removed: [],
       upgraded: [{ ...upgraded, version: '2.0.0', major: true }],
     },
@@ -1533,7 +1530,7 @@ test('non-registry sources, inconsistent package stories and omitted findings ar
   for (const source of ['git', 'url', 'file', 'link', 'workspace'] as const) {
     const decision = decideWith({
       packages: {
-        added: [{ ...base, name: 'dayjs', previousVersion: null, source }],
+        added: [{ ...base, name: 'dayjs', previousVersion: null, direction: null, source }],
         removed: [],
         upgraded: [],
       },
@@ -1548,16 +1545,11 @@ test('non-registry sources, inconsistent package stories and omitted findings ar
     }).outcome,
     'blocked',
   );
-  assert.equal(
-    decideWith({ packages: { added: [], removed: [], upgraded: [{ ...base, major: true }] } })
-      .outcome,
-    'blocked',
-  );
   // Removal plus addition of one package is an upgrade the runner must report as such.
   const dodge = decideWith({
     packages: {
-      added: [{ ...base, version: '2.0.0', previousVersion: null }],
-      removed: [{ ...base, previousVersion: null }],
+      added: [{ ...base, version: '2.0.0', previousVersion: null, direction: null }],
+      removed: [{ ...base, previousVersion: null, direction: null }],
       upgraded: [],
     },
   });
@@ -1620,5 +1612,113 @@ test('non-registry sources, inconsistent package stories and omitted findings ar
       NOW,
     ).outcome,
     'blocked',
+  );
+});
+
+test('semver-0 breaks, downgrades and unresolved registry versions are handled', () => {
+  const settings = policyFixture().dependencies as NonNullable<
+    ReturnType<typeof policyFixture>['dependencies']
+  >;
+  const policy = policyFixture({ allowedPaths: ['.'] });
+  const request = requestFor(policy, 'merge', manifest(LOCKFILE_BUMP));
+  const base = dependencyFor(policy, request).packages.upgraded[0] as NonNullable<
+    ReturnType<typeof dependencyFor>['packages']['upgraded'][0]
+  >;
+  const upgradedTo = (activePolicy: typeof policy, entry: Partial<typeof base>) => {
+    const activeRequest = requestFor(activePolicy, 'merge', manifest(LOCKFILE_BUMP));
+    return decide(
+      activePolicy,
+      activeRequest,
+      {
+        ...evidenceFor(activePolicy, activeRequest),
+        dependency: dependencyFor(activePolicy, activeRequest, {
+          packages: { added: [], removed: [], upgraded: [{ ...base, ...entry }] },
+        }),
+      },
+      NOW,
+    );
+  };
+  // 0.x minor bumps are breaking; the runner may say so and must not deny it.
+  const zeroBreak = upgradedTo(policy, { previousVersion: '0.1.0', version: '0.2.0', major: true });
+  assert.equal(zeroBreak.outcome, 'approval_required');
+  assert.ok(codes(zeroBreak).includes('major_upgrade:npm/left-pad'));
+  assert.equal(
+    upgradedTo(policy, { previousVersion: '0.1.0', version: '0.2.0', major: false }).outcome,
+    'blocked',
+  );
+  assert.equal(
+    upgradedTo(policy, { previousVersion: '0.1.0', version: '0.1.1', major: false }).outcome,
+    'allow',
+  );
+  // The runner may know a break the digits do not show.
+  assert.equal(
+    upgradedTo(policy, { previousVersion: '1.3.0', version: '1.4.0', major: true }).outcome,
+    'approval_required',
+  );
+  // Registry versions are resolved numbers, never specs or tags.
+  for (const version of ['latest', '^2.0.0', 'main'])
+    assert.equal(upgradedTo(policy, { version }).outcome, 'blocked', version);
+  // Rollbacks reintroduce old vulnerabilities; they hold unless the policy allows them.
+  const rollback = upgradedTo(policy, {
+    previousVersion: '1.3.1',
+    version: '1.2.0',
+    direction: 'downgrade',
+  });
+  assert.equal(rollback.outcome, 'approval_required');
+  assert.ok(codes(rollback).includes('dependency_downgrade:npm/left-pad'));
+  const permissive = policyFixture({
+    allowedPaths: ['.'],
+    dependencies: { ...settings, allowDowngrades: true },
+  });
+  assert.equal(
+    upgradedTo(permissive, { previousVersion: '1.3.1', version: '1.2.0', direction: 'downgrade' })
+      .outcome,
+    'allow',
+  );
+  // The stated direction must agree with the numbers; identical versions are no change at all.
+  assert.equal(
+    upgradedTo(policy, { previousVersion: '1.3.1', version: '1.2.0', direction: 'upgrade' })
+      .outcome,
+    'blocked',
+  );
+  assert.equal(
+    upgradedTo(policy, { previousVersion: '1.3.0', version: '1.3.1', direction: 'downgrade' })
+      .outcome,
+    'blocked',
+  );
+  assert.equal(
+    upgradedTo(policy, { previousVersion: '1.3.1', version: '1.3.1' }).outcome,
+    'blocked',
+  );
+  assert.equal(upgradedTo(policy, { direction: null }).outcome, 'blocked');
+  // Direction is required even when the numbers cannot settle it, and forbidden on additions.
+  assert.equal(
+    upgradedTo(policy, { previousVersion: '1.3.1-rc.1', version: '1.3.1', direction: null })
+      .outcome,
+    'blocked',
+  );
+  const addedRequest = requestFor(policy, 'merge', manifest(LOCKFILE_BUMP));
+  assert.equal(
+    decide(
+      policy,
+      addedRequest,
+      {
+        ...evidenceFor(policy, addedRequest),
+        dependency: dependencyFor(policy, addedRequest, {
+          packages: {
+            added: [{ ...base, name: 'dayjs', previousVersion: null, direction: 'upgrade' }],
+            removed: [],
+            upgraded: [],
+          },
+        }),
+      },
+      NOW,
+    ).outcome,
+    'blocked',
+  );
+  // Pre-release suffixes leave the order to the runner.
+  assert.equal(
+    upgradedTo(policy, { previousVersion: '1.3.1-rc.1', version: '1.3.1' }).outcome,
+    'allow',
   );
 });

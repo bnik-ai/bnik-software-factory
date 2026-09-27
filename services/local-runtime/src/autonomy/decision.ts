@@ -241,7 +241,8 @@ export function decide(
       const manifestPaths = classification.reasons
         .filter((reason) => reason.code === 'dependency_manifest' && reason.path !== undefined)
         .map((reason) => reason.path as string);
-      if (manifestPaths.length > 0) {
+      // Any supplied receipt is validated; one that covers no manifest of this change is refused.
+      if (manifestPaths.length > 0 || evidence.dependency !== undefined) {
         const dependency = dependencyReasons(
           policy,
           subject,

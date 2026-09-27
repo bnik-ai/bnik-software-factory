@@ -67,6 +67,7 @@ export function policyFixture(overrides: Partial<AutonomyPolicy> = {}): Autonomy
       licenseAllowlist: ['Apache-2.0', 'MIT', 'BSD-3-Clause', 'ISC'],
       allowNewDependencies: false,
       allowMajorUpgrades: false,
+      allowDowngrades: false,
     },
     ...overrides,
   };
@@ -283,6 +284,7 @@ export function dependencyFor(
           previousVersion: '1.3.0',
           license: 'MIT',
           major: false,
+          direction: 'upgrade',
           source: 'registry',
         },
       ],

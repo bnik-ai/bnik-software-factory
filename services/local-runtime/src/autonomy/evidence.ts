@@ -108,7 +108,10 @@ export interface PackageChange {
   previousVersion: string | null;
   /** SPDX identifier as the runner determined it; `null` when it could not. */
   license: string | null;
+  /** True for any breaking change the ecosystem recognizes, including 0.x minor bumps. */
   major: boolean;
+  /** Upgraded entries only; `null` for additions and removals. */
+  direction: 'upgrade' | 'downgrade' | null;
   /** Where the resolved artifact comes from; only `registry` can be routine. */
   source: (typeof PACKAGE_SOURCES)[number];
 }
@@ -504,15 +507,28 @@ const SEVERITY_RANK: Record<DependencySeverity, number> = {
   unknown: 0,
 };
 const ECOSYSTEM = /^[a-z][a-z0-9.-]{0,31}$/;
-const LEADING_MAJOR = /^v?(\d+)(?:[.+-]|$)/;
-function majorOf(version: string): number | null {
-  const match = LEADING_MAJOR.exec(version);
-  return match ? Number(match[1]) : null;
+const NUMERIC_PREFIX = /^v?(\d+(?:\.\d+)*)(?:[+-]|$)/;
+/** Dotted numeric prefix of a version, or null for identifiers such as `latest` or a commit SHA. */
+function numericPrefix(version: string): number[] | null {
+  const match = NUMERIC_PREFIX.exec(version);
+  return match ? (match[1] as string).split('.').map(Number) : null;
+}
+function compareNumeric(left: number[], right: number[]): number {
+  for (let index = 0; index < Math.max(left.length, right.length); index++) {
+    const difference = (left[index] ?? 0) - (right[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+/** Breaking by digits alone: a different leading component, or a different second component under 0.x. */
+function visiblyBreaking(before: number[], after: number[]): boolean {
+  if (before[0] !== after[0]) return true;
+  return before[0] === 0 && (before[1] ?? 0) !== (after[1] ?? 0);
 }
 function requirePackageChange(value: unknown, reason: string): asserts value is PackageChange {
   requireRecord(
     value,
-    ['ecosystem', 'name', 'version', 'previousVersion', 'license', 'major', 'source'],
+    ['ecosystem', 'name', 'version', 'previousVersion', 'license', 'major', 'direction', 'source'],
     reason,
   );
   requireAutonomy(typeof value.ecosystem === 'string' && ECOSYSTEM.test(value.ecosystem), reason);
@@ -521,7 +537,15 @@ function requirePackageChange(value: unknown, reason: string): asserts value is 
   if (value.previousVersion !== null) requireText(value.previousVersion, 128, reason);
   if (value.license !== null) requireText(value.license, 128, reason);
   requireAutonomy(typeof value.major === 'boolean', reason);
+  requireAutonomy(
+    value.direction === null || value.direction === 'upgrade' || value.direction === 'downgrade',
+    reason,
+  );
   requireAutonomy((PACKAGE_SOURCES as readonly unknown[]).includes(value.source), reason);
+  // A resolved registry version always starts with a number; `latest` or `^2.0.0` is a spec, not a version.
+  if (value.source === 'registry')
+    for (const version of [value.version, value.previousVersion])
+      if (version !== null) requireAutonomy(numericPrefix(version) !== null, reason);
 }
 export interface DependencyAssessment {
   reasons: DecisionReason[];
@@ -605,14 +629,26 @@ export function dependencyReasons(
       requireAutonomy(!seenPackages.has(key), 'dependency_receipt_inconsistent');
       seenPackages.set(key, list);
       requireAutonomy(
-        (list === 'upgraded') === (entry.previousVersion !== null),
+        (list === 'upgraded') === (entry.previousVersion !== null) &&
+          (list === 'upgraded') === (entry.direction !== null),
         'dependency_receipt_inconsistent',
       );
       if (entry.previousVersion !== null) {
-        const before = majorOf(entry.previousVersion);
-        const after = majorOf(entry.version);
-        if (before !== null && after !== null)
-          requireAutonomy(entry.major === (before !== after), 'dependency_receipt_inconsistent');
+        requireAutonomy(entry.previousVersion !== entry.version, 'dependency_receipt_inconsistent');
+        const before = numericPrefix(entry.previousVersion);
+        const after = numericPrefix(entry.version);
+        if (before !== null && after !== null) {
+          // The runner may know a break the digits do not show; it may not deny one they do.
+          requireAutonomy(
+            entry.major || !visiblyBreaking(before, after),
+            'dependency_receipt_inconsistent',
+          );
+          const order = compareNumeric(before, after);
+          requireAutonomy(
+            order === 0 || order < 0 === (entry.direction === 'upgrade'),
+            'dependency_receipt_inconsistent',
+          );
+        }
       }
     }
   }
@@ -709,6 +745,10 @@ export function dependencyReasons(
   if (!settings.allowMajorUpgrades)
     for (const entry of receipt.packages.upgraded)
       if (entry.major) hold(`major_upgrade:${label(entry)}`, 'security_auth');
+  if (!settings.allowDowngrades)
+    for (const entry of receipt.packages.upgraded)
+      if (entry.direction === 'downgrade')
+        hold(`dependency_downgrade:${label(entry)}`, 'security_auth');
   for (const entry of [...receipt.packages.added, ...receipt.packages.upgraded]) {
     if (entry.source !== 'registry')
       hold(`dependency_source_not_registry:${label(entry)}`, 'security_auth');
