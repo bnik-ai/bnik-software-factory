@@ -7,3 +7,5 @@ runtime/backups
 **/__pycache__
 internal
 *.log
+
+.factory

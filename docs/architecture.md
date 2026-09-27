@@ -6,6 +6,10 @@ durable work, authorization and run/review receipts. GitHub holds Tasks, PRs,
 reviews, CI results and the human merge. These paths share source packages but
 must not be confused when evaluating what a demo proves.
 
+The [container launcher](container-runtime.md) packages operator tools and the trusted
+supervisor with Python and Node. Only the supervisor receives the Docker socket;
+this remains full daemon authority. PostgreSQL needs no host port.
+
 ## Live operator workflow
 
 ```text
@@ -18,7 +22,7 @@ Authenticated intake --> PostgreSQL delivery + activation receipt
                                        |
                              recheck human + Task + head
                                        |
-                             trusted native supervisor
+                             trusted supervisor container
                                   /           \
                     scoped source read    durable job/run lease
                                   \           /

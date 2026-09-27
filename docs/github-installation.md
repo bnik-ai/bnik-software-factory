@@ -1,5 +1,11 @@
 # GitHub App installation and human Task activation
 
+Use the same shell for the native example so `FACTORY_EXERCISE` remains set.
+For Docker-only host operation, use [the container launcher](container-runtime.md).
+The low-level commands below describe the optional native profile; the mapping
+covers configuration, secret paths, worker/recovery commands and sample artifacts.
+Do not mix its `runtime/` state with the launcher's `.factory/` state.
+
 This candidate supports one explicitly configured GitHub.com repository. Start with
 a disposable repository containing synthetic data. Live intake records events and
 human activation receipts; it never automatically invokes a model. PR publication is an explicit operator step in the
@@ -111,7 +117,8 @@ model-generated statement authorizes execution.
 Obtain the full 40-character current default-branch commit and run:
 
 ```sh
-python3 runtime/worker.py prepare-task ISSUE_NUMBER FULL_COMMIT_SHA /tmp/factory-task-review
+FACTORY_EXERCISE=$(mktemp -d "${TMPDIR:-/tmp}/factory-exercise.XXXXXX")
+python3 runtime/worker.py prepare-task ISSUE_NUMBER FULL_COMMIT_SHA $FACTORY_EXERCISE/factory-task-review
 ```
 
 The new private directory contains `task.json`, including the exact issue snapshot
@@ -149,7 +156,7 @@ there is no default/substitution. This command spends your provider quota:
 
 ```sh
 docker build -f runtime/worker/Dockerfile -t software-factory-worker:development .
-python3 runtime/worker.py run-activation ACTIVATION_UUID /tmp/factory-task-result
+python3 runtime/worker.py run-activation ACTIVATION_UUID $FACTORY_EXERCISE/factory-task-result
 ```
 
 The native supervisor revalidates authorization before source download and again

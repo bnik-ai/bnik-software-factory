@@ -1,5 +1,10 @@
 # Run evidence and resource controls
 
+For Docker-only host operation, use [the container launcher](container-runtime.md).
+The low-level commands below describe the optional native profile; the mapping
+covers configuration, secret paths, worker/recovery commands and sample artifacts.
+Do not mix its `runtime/` state with the launcher's `.factory/` state.
+
 The supported local profile records each explicit coding attempt in PostgreSQL.
 Inspection and cancellation do not start a model call. Run the schema migrator
 after backing up an existing installation, using the same Compose project and

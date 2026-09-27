@@ -1,0 +1,28 @@
+x-operator: &operator
+  image: ${FACTORY_OPERATOR_IMAGE:?Use ./sfac}
+  profiles: [operator]
+  user: "${LOCAL_UID}:${LOCAL_GID}"
+  environment:
+    FACTORY_STATE_DIR: /state
+    FACTORY_DATABASE_HOST: db
+    FACTORY_RUNTIME_URL: http://runtime:8787
+    FACTORY_WORKER_IMAGE: ${FACTORY_WORKER_IMAGE:?Use ./sfac}
+    HOME: /tmp
+  volumes:
+    - ${FACTORY_STATE_DIR:?Use ./sfac}:/state:ro
+    - ${FACTORY_STATE_DIR}/artifacts:/artifacts
+  init: true
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+services:
+  operator:
+    <<: *operator
+  supervisor:
+    <<: *operator
+    group_add: ["${FACTORY_DOCKER_GID:-0}"]
+    volumes:
+      - ${FACTORY_STATE_DIR}:/state:ro
+      - ${FACTORY_STATE_DIR}/artifacts:/artifacts
+      - ${FACTORY_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock

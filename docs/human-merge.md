@@ -1,5 +1,10 @@
 # Human review and merge
 
+For Docker-only host operation, use [the container launcher](container-runtime.md).
+The low-level commands below describe the optional native profile; the mapping
+covers configuration, secret paths, worker/recovery commands and sample artifacts.
+Do not mix its `runtime/` state with the launcher's `.factory/` state.
+
 The supported local profile never calls a merge or deployment API. AI review is
 advisory. A native GitHub review by a configured human and successful required CI
 on the PR's current head are mandatory. That human performs the squash merge in

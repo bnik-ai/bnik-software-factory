@@ -20,9 +20,14 @@ PG = "postgres:17-bookworm@sha256:639ab7ceb90e13123085b741fb31ef493fba25463002f6
 p = argparse.ArgumentParser()
 p.add_argument("--report", type=Path)
 p.add_argument("--skip-build", action="store_true")
+p.add_argument('--image', help='Existing image for --skip-build; otherwise a fresh per-run tag is built')
 a = p.parse_args()
+if not a.skip_build and a.image:
+    p.error('--image is only accepted with --skip-build; normal builds use unique tags')
+if a.skip_build and not a.image:
+    p.error('--skip-build requires --image')
 name = "factory-runtime-test-" + uuid.uuid4().hex[:10]
-image = "software-factory-local:development"
+image = a.image or name + ':test'
 results = []
 
 
@@ -270,6 +275,8 @@ try:
 finally:
     subprocess.run(["docker", "rm", "-f", "-v", name], capture_output=True)
     subprocess.run(["docker", "network", "rm", name], capture_output=True)
+    if not a.skip_build:
+        subprocess.run(['docker', 'image', 'rm', image], capture_output=True)
 if a.report:
     a.report.parent.mkdir(parents=True, exist_ok=True)
     a.report.write_text(json.dumps(report, indent=2) + "\n")

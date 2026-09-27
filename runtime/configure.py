@@ -19,11 +19,12 @@ p.add_argument("--app-slug")
 p.add_argument("--app-id", type=int)
 p.add_argument("--port", type=int, default=8787)
 a = p.parse_args()
-root = Path(__file__).resolve().parent
+source_root = Path(__file__).resolve().parent
+root = Path(os.environ.get('FACTORY_STATE_DIR', source_root)).resolve()
 if os.getuid() == 0:
     p.error("Run local configuration as a non-root user")
 if (root / ".env").exists() or (root / "secrets").exists():
-    p.error("Configuration exists; preserve it. See the reset/rotation instructions.")
+    p.error("Configuration exists; preserve it. See docs/credentials.md and docs/local-runtime.md#backup-restore-and-reset.")
 if not 1 <= a.port <= 65535:
     p.error("Invalid local port")
 if a.mode == "live" and not all(

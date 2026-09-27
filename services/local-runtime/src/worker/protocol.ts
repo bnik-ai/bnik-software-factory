@@ -31,6 +31,7 @@ export interface CodingOutcome {
   patchSha256: string;
   testsStatus: 'passed' | 'failed' | 'not_run';
   tests: CommandEvidence[];
+  testSideEffects?: { modifiedPaths: string[]; generatedPaths: string[] };
   model: {
     mode: 'demo' | 'live';
     subtype: string;
@@ -124,6 +125,7 @@ export const workerEnvironment = (live: boolean): Record<string, string> => ({
   HOME: '/tmp/worker-home',
   TMPDIR: '/tmp',
   LANG: 'C.UTF-8',
+  PYTHONDONTWRITEBYTECODE: '1',
   GIT_CONFIG_NOSYSTEM: '1',
   GIT_CONFIG_GLOBAL: '/dev/null',
   GIT_TERMINAL_PROMPT: '0',

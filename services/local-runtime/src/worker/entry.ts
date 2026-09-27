@@ -11,6 +11,7 @@ import {
   sha256,
   workerEnvironment,
 } from './protocol.js';
+import { snapshot, sourceChanges } from './snapshot.js';
 
 // This program is only started by the Docker executor. It never reads host paths.
 export async function runCommand(
@@ -67,7 +68,10 @@ async function main() {
     input = Buffer.concat([input, chunk]);
     if (input.length > MAX_ARCHIVE_BYTES * 1.5 + 100_000) throw new Error('worker_input_limit');
   }
-  const data = JSON.parse(input.toString('utf8')) as { job: unknown; archive: string };
+  const data = JSON.parse(input.toString('utf8')) as {
+    job: unknown;
+    archive: string;
+  };
   const job = parseJob(data.job);
   if (typeof data.archive !== 'string') throw new Error('source_archive_required');
   const archive = Buffer.from(data.archive, 'base64');
@@ -98,7 +102,13 @@ async function main() {
     stdin?: Buffer,
     limit?: number,
   ) => {
-    const result = await runCommand(program, args, { env, signal, cwd, input: stdin, limit });
+    const result = await runCommand(program, args, {
+      env,
+      signal,
+      cwd,
+      input: stdin,
+      limit,
+    });
     if (result.exitCode !== 0 || result.outputTruncated)
       throw new Error('worker_preparation_or_artifact_failed');
     return result.output;
@@ -179,23 +189,37 @@ async function main() {
     for (const socket of connections) socket.destroy();
     bridge?.close();
   }
+  // Freeze proposed output before any validation command can write to the tree.
+  await git('add', '-A');
+  const patch = await git('diff', '--cached', '--binary', '--no-ext-diff', '--no-textconv', base);
+  const proposed = await snapshot(cwd);
+  const modifiedPaths = new Set<string>();
+  const generatedPaths = new Set<string>();
   const tests: CommandEvidence[] = [];
   if (ok && !signal.aborted) {
     for (const command of job.tests) {
       tests.push(
-        await runCommand('bash', ['-c', command], { env: workerEnvironment(false), signal, cwd }),
+        await runCommand('bash', ['-c', command], {
+          env: workerEnvironment(false),
+          signal,
+          cwd,
+        }),
       );
       if (signal.aborted) break;
+      const changes = sourceChanges(proposed, await snapshot(cwd));
+      for (const path of changes.modifiedPaths) modifiedPaths.add(path);
+      for (const path of changes.generatedPaths) generatedPaths.add(path);
+      if (modifiedPaths.size) break;
     }
   }
   const testsStatus =
     tests.length === 0
       ? 'not_run'
-      : tests.length === job.tests.length && tests.every((t) => t.exitCode === 0 && !t.signal)
+      : !modifiedPaths.size &&
+          tests.length === job.tests.length &&
+          tests.every((t) => t.exitCode === 0 && !t.signal)
         ? 'passed'
         : 'failed';
-  await git('add', '-A');
-  const patch = await git('diff', '--cached', '--binary', '--no-ext-diff', '--no-textconv', base);
   const outcome: CodingOutcome = {
     version: 1,
     ok: ok && testsStatus !== 'failed' && !signal.aborted,
@@ -203,15 +227,21 @@ async function main() {
       ? 'interrupted'
       : !ok
         ? 'coding_failed'
-        : testsStatus === 'failed'
-          ? 'tests_failed'
-          : 'execution_completed',
+        : modifiedPaths.size
+          ? 'test_modified_source'
+          : testsStatus === 'failed'
+            ? 'tests_failed'
+            : 'execution_completed',
     sourceCommit: job.sourceCommit,
     archiveSha256: job.archiveSha256,
     patch,
     patchSha256: sha256(patch),
     testsStatus,
     tests,
+    testSideEffects: {
+      modifiedPaths: [...modifiedPaths].sort(),
+      generatedPaths: [...generatedPaths].sort(),
+    },
     model: { mode: job.mode, subtype, turns, costUsd, usage },
     summary,
   };

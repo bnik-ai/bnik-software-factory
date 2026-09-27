@@ -34,7 +34,7 @@ def build(root, commit, output):
             parts = PurePosixPath(path).parts
             if kind != 'blob' or mode not in ('100644', '100755'):
                 raise ValueError('Symlinks and submodules are not release inputs')
-            if path.startswith('/') or '..' in parts or any(p in {'.git', 'node_modules', 'internal', 'secrets', '__pycache__'} or p.startswith('.env') for p in parts):
+            if path.startswith('/') or '..' in parts or any(p in {'.git', '.factory', 'node_modules', 'internal', 'secrets', '__pycache__'} or p.startswith('.env') for p in parts):
                 raise ValueError('Private or generated path in candidate commit')
             data = git('cat-file', 'blob', oid)
             if re.search(rb'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|github_pat_[A-Za-z0-9_]{35,}', data):

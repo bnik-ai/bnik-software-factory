@@ -1,5 +1,11 @@
 # Run the synthetic Task-to-merge pilot
 
+Use the same shell for the native example so `FACTORY_EXERCISE` remains set.
+For Docker-only host operation, use [the container launcher](container-runtime.md).
+The low-level commands below describe the optional native profile; the mapping
+covers configuration, secret paths, worker/recovery commands and sample artifacts.
+Do not mix its `runtime/` state with the launcher's `.factory/` state.
+
 This walkthrough connects the supported local runtime to a private disposable
 GitHub repository and your own Anthropic account. It requires a real model call,
 a human request-changes/revision cycle, successful required CI, a human squash
@@ -56,7 +62,8 @@ the deliberately invalid model placeholder with the exact model ID available to
 your account. Review the prompt, permitted files, test command and limits.
 
 ```sh
-python3 runtime/worker.py prepare-task TASK_NUMBER FULL_SAMPLE_COMMIT /tmp/invoice-review-1
+FACTORY_EXERCISE=$(mktemp -d "${TMPDIR:-/tmp}/factory-exercise.XXXXXX")
+python3 runtime/worker.py prepare-task TASK_NUMBER FULL_SAMPLE_COMMIT $FACTORY_EXERCISE/invoice-review-1
 ```
 
 As the configured human operator, inspect `task.json` and post the printed
@@ -66,7 +73,7 @@ API key as described in the installation guide; never paste it into the Task or 
 
 ```sh
 python3 runtime/worker.py activations
-python3 runtime/worker.py run-activation ACTIVATION_UUID /tmp/invoice-result-1
+python3 runtime/worker.py run-activation ACTIVATION_UUID $FACTORY_EXERCISE/invoice-result-1
 python3 runtime/worker.py status
 ```
 
@@ -84,8 +91,8 @@ permitted files without executing model-generated code on the host:
 ```sh
 python3 examples/invoice/prepare-result.py \
   --repository /absolute/path/to/sample-checkout \
-  --receipt /tmp/invoice-result-1/result.json \
-  --output /tmp/invoice-publication-1
+  --receipt $FACTORY_EXERCISE/invoice-result-1/result.json \
+  --output $FACTORY_EXERCISE/invoice-publication-1
 ```
 
 The helper validates receipt/patch hashes, passing live outcome/command fields,
@@ -114,7 +121,7 @@ Before immutable pairing, update the same Task definition using
 `task.revision.json`, customized to the actual review. Keep `status:proposed` and
 pin the unchanged default branch. Obtain a **new** human activation using a new
 review directory/comment; changed Task text invalidates the old approval.
-Run it into `/tmp/invoice-result-2` and prepare `/tmp/invoice-publication-2`.
+Run it into `$FACTORY_EXERCISE/invoice-result-2` and prepare `$FACTORY_EXERCISE/invoice-publication-2`.
 The runtime currently executes default-branch snapshots: the revision prompt must
 state the complete requested result, not assume the prior PR files are present.
 

@@ -1,0 +1,89 @@
+#!/bin/sh
+# Local Docker-only operator interface. No environment file is executed as shell.
+set -eu
+umask 077
+root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+state=${SFAC_STATE_DIR:-"$root/.factory"}
+case "$state" in /*) ;; *) echo 'SFAC_STATE_DIR must be absolute' >&2; exit 2;; esac
+case "$state" in "$root/.factory") ;; "$root"|"$root"/*) echo 'Custom state must be outside the source build context' >&2; exit 2;; esac
+command=${1:-help}
+[ "$#" -eq 0 ] || shift
+if [ "$command" = help ]; then
+  echo 'Usage: ./sfac init --mode demo|live [options]'
+  echo '       ./sfac build|up|stop|down|ps|logs|ready|demo|status|demo-status'
+  echo '       ./sfac demo-source NAME | worker COMMAND ... | recovery COMMAND ...'
+  echo '       ./sfac backup FILE | restore-check FILE | verify-database | prepare-result ...'
+  echo 'Paths passed to operator commands are relative to .factory/artifacts (or /artifacts).'
+  exit 0
+fi
+[ "$(id -u)" != 0 ] || { echo 'Run as a non-root local operator' >&2; exit 2; }
+endpoint=${DOCKER_HOST:-$(docker context inspect --format '{{.Endpoints.docker.Host}}')}
+case "$endpoint" in unix://*) ;; *) echo 'A local Unix-socket Docker context is required' >&2; exit 2;; esac
+if [ "$command" = init ]; then
+  [ ! -e "$state/.env" ] && [ ! -e "$state/secrets" ] || { echo 'Configuration exists; see docs/credentials.md' >&2; exit 2; }
+  mkdir -p "$state/artifacts"
+  state=$(CDPATH= cd -- "$state" && pwd -P)
+  case "$state" in "$root/.factory") ;; "$root"|"$root"/*) echo "Custom state must be outside the source build context" >&2; exit 2;; esac
+  chmod 700 "$state" "$state/artifacts"
+  [ -e "$state/project" ] || { printf 'factory-%s-%s\n' "$(date +%Y%m%d%H%M%S)" "$$" > "$state/project"; }
+fi
+[ -d "$state" ] || { echo "Run ./sfac init first" >&2; exit 2; }
+state=$(CDPATH= cd -- "$state" && pwd -P) || exit 2
+case "$state" in "$root/.factory") ;; "$root"|"$root"/*) echo 'Custom state must be outside the source build context' >&2; exit 2;; esac
+[ -f "$state/project" ] || { echo 'Run ./sfac init first' >&2; exit 2; }
+project=$(cat "$state/project")
+case "$project" in ''|*[!a-z0-9-]*) echo 'Invalid project name' >&2; exit 2;; esac
+export FACTORY_STATE_DIR="$state"
+export FACTORY_LOCAL_IMAGE="$project-local:development"
+export FACTORY_WORKER_IMAGE="$project-worker:development"
+export FACTORY_OPERATOR_IMAGE="$project-operator:development"
+build_operator() { docker build -f "$root/runtime/operator/Dockerfile" -t "$FACTORY_OPERATOR_IMAGE" "$root"; }
+if [ "$command" = init ]; then
+  build_operator
+  exec docker run --rm --init --user "$(id -u):$(id -g)" --network none --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges --mount "type=bind,src=$state,dst=/state" -e FACTORY_STATE_DIR=/state "$FACTORY_OPERATOR_IMAGE" init "$@"
+fi
+[ -f "$state/.env" ] || { echo "Initialization is incomplete; finish ./sfac init first" >&2; exit 2; }
+compose() {
+  if grep -qx 'FACTORY_MODE=live' "$state/.env"; then
+    if [ -f "$state/merge-policy.json" ]; then
+      docker compose --project-directory "$root/runtime" --env-file "$state/.env" -p "$project" -f "$root/runtime/compose.yaml" -f "$root/runtime/compose.operator.yaml" -f "$root/runtime/compose.live.yaml" -f "$root/runtime/compose.review.yaml" "$@"
+    else
+      docker compose --project-directory "$root/runtime" --env-file "$state/.env" -p "$project" -f "$root/runtime/compose.yaml" -f "$root/runtime/compose.operator.yaml" -f "$root/runtime/compose.live.yaml" "$@"
+    fi
+  else
+    docker compose --project-directory "$root/runtime" --env-file "$state/.env" -p "$project" -f "$root/runtime/compose.yaml" -f "$root/runtime/compose.operator.yaml" "$@"
+  fi
+}
+case "$command" in
+  build) build_operator; compose build migrate; docker build -f "$root/runtime/worker/Dockerfile" -t "$FACTORY_WORKER_IMAGE" "$root";;
+  up) compose up -d --wait db migrate runtime;;
+  stop|ps|logs) compose "$command" "$@";;
+  down) compose down "$@";;
+  worker)
+    case "${1:-}" in
+      run|run-activation|recover)
+        FACTORY_DOCKER_GID=$(docker run --rm --network none --read-only --cap-drop ALL --mount "type=bind,src=${FACTORY_DOCKER_SOCKET:-/var/run/docker.sock},dst=/var/run/docker.sock,readonly" --entrypoint python3 "$FACTORY_OPERATOR_IMAGE" -c 'import os; print(os.stat("/var/run/docker.sock").st_gid)')
+        export FACTORY_DOCKER_GID
+        compose run --rm --no-deps -T supervisor worker "$@";;
+      *) compose run --rm --no-deps -T operator worker "$@";;
+    esac;;
+  backup)
+    [ "$#" = 1 ] || { echo 'Specify one new backup filename' >&2; exit 2; }
+    case "$1" in ''|*[!a-zA-Z0-9._-]*|.*) echo 'Use a simple backup filename' >&2; exit 2;; esac
+    # Noclobber avoids overwriting an existing backup, including symlinks.
+    (set -C; compose exec -T db pg_dump -U factory_migrator -d software_factory --format=custom > "$state/artifacts/$1")
+    echo "Backup created: $state/artifacts/$1";;
+  restore-check)
+    [ "$#" = 1 ] || { echo 'Specify one backup filename' >&2; exit 2; }
+    case "$1" in ''|*[!a-zA-Z0-9._-]*|.*) echo 'Use a simple backup filename' >&2; exit 2;; esac
+    restore_db="factory_restore_$(date +%s)_$$"
+    compose exec -T db createdb -U factory_migrator "$restore_db"
+    trap 'compose exec -T db dropdb -U factory_migrator "$restore_db"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' HUP TERM
+    compose exec -T db pg_restore --exit-on-error --no-owner -U factory_migrator -d "$restore_db" < "$state/artifacts/$1"
+    compose run --rm --no-deps -T operator verify-database "$restore_db";;
+  ready|demo|status|demo-status|demo-source|recovery|prepare-result|verify-database|compact)
+    compose run --rm --no-deps -T operator "$command" "$@";;
+  *) echo 'Unknown command; use ./sfac help' >&2; exit 2;;
+esac

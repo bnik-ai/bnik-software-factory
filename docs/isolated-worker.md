@@ -8,52 +8,51 @@ operator publication, required CI, human review/merge and Task reconciliation.
 
 ## Run the credential-free example
 
-Requirements: Docker/Compose, Python 3, and host Node 24.21.0 with npm. Verified worker containers cover Linux x64 in contributor CI and Linux arm64
-on macOS arm64 Docker Desktop; other platforms are unqualified.
-From the repository root, configure a fresh demo once (preserve existing settings):
+Requirements: Docker/Compose and a POSIX shell. Follow the [quickstart](quickstart.md)
+to initialize, build and start a demo, then run:
 
 ```sh
-python3 runtime/configure.py --mode demo
-for service in agents github-app orchestrator validator local-runtime; do
-  npm ci --prefix "services/$service" --ignore-scripts --no-audit --no-fund || exit 1
-done
-docker compose -f runtime/compose.yaml -f runtime/compose.worker.yaml build
-docker compose -f runtime/compose.yaml -f runtime/compose.worker.yaml up -d --wait
-docker build -f runtime/worker/Dockerfile -t software-factory-worker:development .
-python3 runtime/worker/demo-source.py /tmp/factory-coding-input
-python3 runtime/worker.py run /tmp/factory-coding-input/job.json /tmp/factory-coding-result /tmp/factory-coding-input/source.tar.gz
-python3 runtime/worker.py status
+./sfac demo-source coding-input
+./sfac worker run coding-input/job.json coding-result coding-input/source.tar.gz
+./sfac worker status
 ```
 
-Input/output directories must be new. The example fixes an arithmetic function and
-actually runs Node's test runner, Python unittest and shell/tool version commands.
-It calls no model. Read `result.json` for each command's exit code, signal and bounded
-output; `changes.patch` contains the proposed edits. Files are private to your user.
-An omitted test list is reported as `not_run`; it never becomes a passing test claim.
-Model success and command success are separate fields. These receipts describe
-execution of the supplied commands, not independent proof of code correctness.
-Treat repository tests, model summaries and patches as untrusted review inputs.
-No patch is applied on the host, no PR is created, and no Task is marked complete.
+Inputs and outputs live under `.factory/artifacts/`; choose new names for each
+example. The fixed demo job ID supports cached retrieval: repeating it with a new
+output directory retrieves the stored result without execution. See
+[container operation](container-runtime.md) for paths and command mapping.
 
-The optional Compose override exposes PostgreSQL on **127.0.0.1:55432** so the
-native trusted supervisor can use it. The regular runtime profile has no host
-database port. To select another free port, add `FACTORY_DATABASE_PORT=<port>` to
-`runtime/.env` before starting Compose. The supervisor and Docker daemon are trusted
-host components; execute neither as repository/model-controlled code. Select the
-local Docker context intended for this machine before running these commands.
+The example fixes an arithmetic function and runs Node tests, Python unittest and
+shell/tool version commands. It calls no model. Inspect `coding-result/result.json`
+and `changes.patch` beneath the artifacts directory. Output is private to your user.
+No patch is applied to a host checkout, no PR is created and no Task is completed.
+
+The worker freezes the proposed patch **before** validation. Generated test output
+is excluded from that patch and listed in `testSideEffects.generatedPaths`. A test
+that changes or deletes a file present before validation fails with
+`test_modified_source`, listing `modifiedPaths`. Python bytecode generation is
+disabled. Snapshot bounds match the source size/file bounds; excessive or unsupported
+side effects fail the run. Tests share the worker UID and can tamper with their own
+execution, so these checks are not independent or tamper-proof attestation.
+An omitted test list remains `not_run`. Review source and receipts independently.
+
+The trusted supervisor runs in a container with Docker daemon authority; ordinary
+operator commands have no socket. PostgreSQL is reachable on the internal Compose
+network only. The optional native profile in [local runtime](local-runtime.md)
+requires host Python/Node and a loopback database port; it is not required by `sfac`.
 
 ## Live request contract
 
 First complete [GitHub installation and human activation](github-installation.md).
 The live CLI accepts only `run-activation ACTIVATION_ID NEW_OUTPUT_DIRECTORY`;
 arbitrary `run JOB_JSON` requests are demo-only. Before running, set
-`FACTORY_EXECUTION=manual` in ignored `runtime/.env` and supply your own Anthropic
-key as private `runtime/secrets/model_key`. The Compose service remains intake-only.
+`FACTORY_EXECUTION=manual` in ignored `.factory/.env` and supply your own Anthropic
+key as private `.factory/secrets/model_key`. The Compose service remains intake-only.
 Live calls spend your provider quota and must use an exact model ID you selected
 and can access; the executor never substitutes a model.
 
 An activation binds an open Task's title, body, labels and identity, its explicit
-prompt/tests/model/limits, and the current default-branch commit. The native
+prompt/tests/model/limits, and the current default-branch commit. The trusted
 supervisor rechecks the installation, unchanged comment, current human permission,
 Task and source before downloading and again under the execution lease before
 starting Docker/model work. Authorization expires one hour after the comment was
@@ -93,7 +92,7 @@ There is no Python package manager or general compiler/toolchain promise.
 
 ```mermaid
 flowchart LR
-    O[Operator request] --> S[Trusted native supervisor]
+    O[Operator request] --> S[Trusted supervisor]
     S --> D[(PostgreSQL leases and receipts)]
     S --> G[GitHub scoped source read]
     S -->|snapshot and instruction only| W[Disposable non-root worker]
@@ -116,7 +115,8 @@ model at `https://api.anthropic.com`; redirects, arbitrary destinations, unknown
 request fields and provider network/MCP tools are rejected. Each request is limited
 to 2 MiB and at most 16,384 output tokens; request count is `maxTurns + 4` (maximum
 64). The extra requests accommodate SDK accounting/retries, not unlimited turns.
-The proxy has its own bridge network, resource limits and lifetime. Its API key is
+The proxy uses Docker’s shared default bridge with resource limits and a bounded lifetime.
+It does not have a dedicated per-run network. Its API key is
 passed through stdin, never Docker environment or command arguments. The worker's
 SDK sees a non-secret placeholder and a local loopback-to-socket bridge.
 
@@ -135,9 +135,9 @@ vendor/OS notice clearance remain separate release gates; see [third-party compo
 ## Cancellation, limits and recovery
 
 ```sh
-python3 runtime/worker.py cancel operator-request-001
-python3 runtime/worker.py status
-python3 runtime/worker.py recover
+./sfac worker cancel operator-request-001
+./sfac worker status
+./sfac worker recover
 ```
 
 `cancel` requests cancellation of the configured repository's queued or active job. SIGINT or

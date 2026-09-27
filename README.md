@@ -28,7 +28,8 @@ Human Task activation -> Isolated build -> Patch + test receipts
 ## Get started
 
 Start with the [credential-free quickstart](docs/quickstart.md). It verifies the
-local control plane without a GitHub App or model bill. Then try the
+local control plane without a GitHub App or model bill. The `sfac` launcher runs
+operator tools in containers; no host Python or Node install is needed. Then try the
 [isolated worker example](docs/isolated-worker.md), followed by the
 [GitHub installation](docs/github-installation.md) and
 [real Task-to-merge walkthrough](docs/end-to-end-pilot.md).

@@ -84,3 +84,8 @@ Record advisory IDs, affected locked versions, runtime/dev scope and exposure;
 choose targeted fixes and rerun relevant checks. Current preparation has unresolved
 advisories, including the agent test toolchain and Hono middleware. Passing CI does
 not imply a clean dependency audit. Review/remediation remains required for release.
+
+The `container-operator` job runs `runtime/operator/test.sh` with fresh state and
+unique image tags. It blocks host Node/npm/Python in PATH and exercises the demo,
+worker/cached result, cancellation, recovery, backup/restore and restart. It uses
+synthetic data only and participates in the required aggregate check.

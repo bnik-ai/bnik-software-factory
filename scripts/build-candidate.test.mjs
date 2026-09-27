@@ -27,8 +27,9 @@ test('source archives reproduce byte-for-byte and ignore untracked credentials a
   assert.notEqual(spawnSync('python3', [builder, '--commit', 'HEAD', '--output', 'c'], { cwd: dir }).status, 0);
 }));
 test('tracked secrets and symbolic links cannot enter a source artifact', () => {
-  for (const scenario of ['path', 'key', 'symlink']) fixture((dir, git) => {
+  for (const scenario of ['path', 'state', 'key', 'symlink']) fixture((dir, git) => {
     if (scenario === 'path') writeFileSync(join(dir, '.env'), 'not-for-distribution');
+    if (scenario === 'state') { mkdirSync(join(dir, '.factory')); writeFileSync(join(dir, '.factory', 'artifact.txt'), 'private-run-output'); }
     if (scenario === 'key') writeFileSync(join(dir, 'unexpected.txt'), '-----BEGIN ' + 'PRIVATE KEY-----\nsynthetic\n');
     if (scenario === 'symlink') symlinkSync('/etc/passwd', join(dir, 'external'));
     git('add', '.'); git('-c', 'commit.gpgsign=false', 'commit', '-qm', 'Unsafe fixture');

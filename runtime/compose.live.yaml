@@ -10,4 +10,4 @@ services:
       FACTORY_EXECUTION: disabled
     secrets: [app_private_key]
 secrets:
-  app_private_key: {file: ./secrets/app_private_key}
+  app_private_key: {file: "${FACTORY_STATE_DIR:-.}/secrets/app_private_key"}

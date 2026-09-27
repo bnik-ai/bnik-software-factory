@@ -4,4 +4,4 @@ services:
     environment:
       FACTORY_MERGE_POLICY_FILE: /run/config/merge-policy.json
     volumes:
-      - ./merge-policy.json:/run/config/merge-policy.json:ro
+      - ${FACTORY_STATE_DIR:-.}/merge-policy.json:/run/config/merge-policy.json:ro

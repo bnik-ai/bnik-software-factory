@@ -1,5 +1,11 @@
 # Release notes
 
+- Add the local `sfac` container operator for configuration, supervision, recovery,
+  backup verification and result preparation; isolate installation image tags.
+- Freeze worker patches before tests; exclude generated outputs and fail validation
+  when tests modify proposed source. Expose demo completion receipts directly.
+- Document the trusted supervisor's Docker authority and current platform limits.
+
 ## 0.1.0-alpha — unreleased
 
 This candidate has not been tagged or published yet. Project-owned source uses Apache-2.0.

@@ -1,5 +1,10 @@
 # Local PostgreSQL runtime
 
+For Docker-only host operation, use [the container launcher](container-runtime.md).
+The low-level commands below describe the optional native profile; the mapping
+covers configuration, secret paths, worker/recovery commands and sample artifacts.
+Do not mix its `runtime/` state with the launcher's `.factory/` state.
+
 This private development candidate runs authenticated intake, validation, audit and
 routing with durable PostgreSQL queues. The packaged demo uses synthetic GitHub
 reads and a receipt-only worker. Live mode verifies GitHub installation and human Task activation, storing durable
@@ -14,8 +19,8 @@ native protection, human review and required CI, then reconciles verified human 
 The container target is Linux arm64, verified on macOS arm64 with Docker Desktop
 (Engine 28.0.4, Compose 2.34.0). Images pin official multi-platform manifest digests:
 Node 24.21.0 on Debian Bookworm slim and PostgreSQL 17.11 on Bookworm. Linux x64 database/worker integration has also run in contributor CI; other hosts
-remain unqualified. Docker, Compose and Python 3 are required for the
-launcher and integration exercise. Node source checks also ran on macOS Node 26.
+remain unqualified. Docker, Compose and Python 3 are required for this optional native
+profile and integration exercise; `sfac` packages the language runtimes. Node source checks also ran on macOS Node 26.
 
 The control-plane image installs locked dependencies with lifecycle scripts
 disabled. It includes no installed Claude Agent SDK or coding worker. Installed
@@ -27,6 +32,9 @@ image is distributed. The image is built locally; no registry push is required.
 From the repository root, as a non-root user:
 
 ```sh
+export COMPOSE_PROJECT_NAME="factory-native-$(date +%Y%m%d%H%M%S)-$$"
+export FACTORY_LOCAL_IMAGE="$COMPOSE_PROJECT_NAME-local:development"
+export FACTORY_WORKER_IMAGE="$COMPOSE_PROJECT_NAME-worker:development"
 python3 runtime/configure.py --mode demo
 docker compose -f runtime/compose.yaml build
 docker compose -f runtime/compose.yaml up -d --wait
@@ -34,6 +42,10 @@ curl --fail http://127.0.0.1:8787/readyz
 python3 runtime/demo.py
 docker compose -f runtime/compose.yaml exec runtime node --import tsx src/main.ts status
 ```
+
+Keep these project/image variables set for every native command, including worker
+builds (`docker build -f runtime/worker/Dockerfile -t "$FACTORY_WORKER_IMAGE" .`).
+The raw Compose fallback tags are shared; the variables isolate this installation.
 
 Configuration creates ignored `runtime/.env` and `runtime/secrets/` once and refuses
 to overwrite them. Secrets are generated locally and never printed. The configured
@@ -50,7 +62,12 @@ The demo posts one synthetic Task transition attributed to its fixture planner.
 The real parser, FSM, assertions, audit writer and router produce a BuildAgent job;
 the demo worker records `fixture_completed_no_external_effect`. It creates no PR,
 executes no model and does not demonstrate human Task activation or approval policy.
-Expect three `done` rows in the status output per accepted demo delivery.
+Expect three `done` rows (`validator`, `orchestrator`, `BuildAgent`) per delivery.
+To inspect the actual completion marker:
+
+```sh
+docker compose -f runtime/compose.yaml exec runtime node --import tsx src/operator.ts demo-status
+```
 
 Only the webhook port is exposed, bound to host loopback. PostgreSQL has no host
 port in this Compose profile. `read_only`, dropped capabilities, non-root identity
@@ -146,7 +163,8 @@ Create a private backup without copying App/model credentials into it:
 
 ```sh
 mkdir -p runtime/backups
-(umask 077; docker compose -f runtime/compose.yaml exec -T db pg_dump -U factory_migrator -d software_factory -Fc > runtime/backups/factory.dump)
+chmod 700 runtime/backups
+(umask 077; set -C; docker compose -f runtime/compose.yaml exec -T db pg_dump -U factory_migrator -d software_factory -Fc > runtime/backups/factory.dump)
 ```
 
 Use a new filename per backup. Backups contain repository/event content; the backup
@@ -159,7 +177,7 @@ Validate a restore into a **new** database before replacing working data:
 ```sh
 docker compose -f runtime/compose.yaml exec db createdb -U factory_migrator factory_restore_check
 docker compose -f runtime/compose.yaml exec -T db pg_restore -U factory_migrator -d factory_restore_check --no-owner < runtime/backups/factory.dump
-docker compose -f runtime/compose.yaml exec db psql -U factory_migrator -d factory_restore_check -c 'SELECT queue_name,state,count(*) FROM factory_work GROUP BY queue_name,state;'
+docker compose -f runtime/compose.yaml exec -e POSTGRES_DATABASE=factory_restore_check runtime node --import tsx src/operator.ts verify-database
 ```
 
 `createdb` fails if that database already exists. On a new server, initialize the

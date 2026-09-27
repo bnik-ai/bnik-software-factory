@@ -44,9 +44,18 @@ jobs:
         run: python3 runtime/test.py
       - name: Isolated worker integration (synthetic provider only)
         run: python3 runtime/worker/test.py
+  container-operator:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Docker-only operator workflow (synthetic data)
+        run: runtime/operator/test.sh
   contributor-ci:
     if: always()
-    needs: [source, integration]
+    needs: [source, integration, container-operator]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions: {}
@@ -55,4 +64,5 @@ jobs:
         env:
           SOURCE_RESULT: ${{ needs.source.result }}
           INTEGRATION_RESULT: ${{ needs.integration.result }}
-        run: test "$SOURCE_RESULT" = success && test "$INTEGRATION_RESULT" = success
+          OPERATOR_RESULT: ${{ needs.container-operator.result }}
+        run: test "$SOURCE_RESULT" = success && test "$INTEGRATION_RESULT" = success && test "$OPERATOR_RESULT" = success

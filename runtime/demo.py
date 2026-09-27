@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Send one synthetic, signed Task transition to the explicitly configured demo."""
+import os
 import hashlib
 import hmac
 import json
@@ -7,7 +8,8 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-root = Path(__file__).resolve().parent
+source_root = Path(__file__).resolve().parent
+root = Path(os.environ.get('FACTORY_STATE_DIR', source_root)).resolve()
 settings = dict(
     line.split("=", 1)
     for line in (root / ".env").read_text().splitlines()
@@ -37,7 +39,7 @@ payload = {
 body = json.dumps(payload).encode()
 key = (root / "secrets/webhook_secret").read_text().rstrip().encode()
 request = urllib.request.Request(
-    "http://127.0.0.1:" + settings.get("FACTORY_PORT", "8787") + "/webhook",
+    (os.environ.get("FACTORY_RUNTIME_URL") or "http://127.0.0.1:" + settings.get("FACTORY_PORT", "8787")) + "/webhook",
     data=body,
     headers={
         "Content-Type": "application/json",

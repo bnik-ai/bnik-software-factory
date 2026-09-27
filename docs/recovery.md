@@ -1,5 +1,10 @@
 # Inspect and recover durable work
 
+For Docker-only host operation, use [the container launcher](container-runtime.md).
+The low-level commands below describe the optional native profile; the mapping
+covers configuration, secret paths, worker/recovery commands and sample artifacts.
+Do not mix its `runtime/` state with the launcher's `.factory/` state.
+
 Recovery is an explicit maintainer operation. It preserves the work ID, delivery
 key, payload hash and accumulated attempts. It does not create a branch or PR,
 change a Task's labels, supply approval, or rerun a coding model.

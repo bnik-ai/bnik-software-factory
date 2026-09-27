@@ -17,11 +17,11 @@ Other packages include permissive licenses and the development dependency
 its notices and any conditions applicable to the artifact you build.
 
 Local installation obtains unmodified dependencies from their registries. The
-locally built worker image contains the pinned vendor runtime and OS tools, so its
-redistribution rights, notices and inventory require a separate review. The worker
+locally built worker and operator images contain the pinned vendor runtime and OS tools, so its
+redistribution rights, notices and inventories require a separate review. The worker
 Dockerfile installs Bash, Git, Python 3 and CA certificates through Debian apt;
 those package versions are not pinned to a repository snapshot. Capture the exact
-built-image inventory before any distribution. No prebuilt worker is published. The local
+built-image inventory before any distribution. The operator also installs the Docker CLI, Git, Python 3 and CA certificates from Debian, and all five locked service packages. No prebuilt image is published. The local
 control-plane Dockerfile installs its four locked packages without lifecycle
 scripts and excludes the installed Agent SDK. Node/PostgreSQL base images pin
 manifest digests; their OS/runtime notices and the full built-image inventory need
@@ -37,7 +37,7 @@ the source distribution. Exact copyright attribution is being finalized.
 | --- | --- |
 | Project source archive | Project source/docs, lockfiles, LICENSE and provenance; preserve any source notices. No installed third-party implementation is vendored. |
 | Locally installed npm packages | Each installed package retains its own license/notice. The lockfile is an inventory reference, not a replacement for license text. |
-| Locally built worker/control-plane image | Includes dependencies, OS tools and possibly the vendor SDK; not an approved distribution artifact. Inventory and satisfy exact artifact obligations before redistribution. |
+| Locally built worker/operator/control-plane image | Includes dependencies, OS tools and possibly the vendor SDK; not an approved distribution artifact. Inventory and satisfy exact artifact obligations before redistribution. |
 | Provider/GitHub services | Account contracts, acceptable-use, billing and data-processing rules apply separately from source licensing. |
 
 For the pinned Agent SDK, `LICENSE.md` points to Anthropic's

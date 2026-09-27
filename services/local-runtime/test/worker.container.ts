@@ -105,6 +105,7 @@ test('shipped non-root container edits code and actually runs shell, Node and Py
   assert.equal(output.outcome.ok, true);
   assert.equal(output.outcome.testsStatus, 'passed');
   assert.match(output.outcome.patch, /a \+ b/);
+  assert.doesNotMatch(output.outcome.patch, /__pycache__|\.pyc/);
   assert.equal(output.outcome.tests.length, 3);
   for (const entry of output.outcome.tests) assert.equal(entry.exitCode, 0);
   assert.equal(output.outcome.model.costUsd, null);
@@ -173,7 +174,13 @@ test('wall deadline kills a non-cooperative shell and its descendants and remove
   const runId = randomUUID();
   const start = Date.now();
   await assert.rejects(
-    executeIsolated({ job, archive, runId, image, signal: new AbortController().signal }),
+    executeIsolated({
+      job,
+      archive,
+      runId,
+      image,
+      signal: new AbortController().signal,
+    }),
     (e: unknown) =>
       e instanceof WorkerFailure &&
       ['worker_timed_out', 'worker_process_failed'].includes(e.reason),
@@ -212,7 +219,13 @@ test('archive traversal and embedded git metadata fail inside the worker without
     const job = fixture(archive, { fixtureCommand: 'true', tests: [] });
     const runId = randomUUID();
     await assert.rejects(
-      executeIsolated({ job, archive, runId, image, signal: new AbortController().signal }),
+      executeIsolated({
+        job,
+        archive,
+        runId,
+        image,
+        signal: new AbortController().signal,
+      }),
       /worker_process_failed/,
     );
     await clean(runId);
@@ -693,5 +706,38 @@ test('completed run evidence and cached result survive a real PostgreSQL SIGKILL
     unchangedRecord: true,
     cachedResult: true,
     paidApi: false,
+  });
+});
+
+test('validation outputs never enter the frozen patch and source mutations fail validation', async () => {
+  for (const mutate of [false, true]) {
+    const archive = source();
+    const runId = randomUUID();
+    const output = await executeIsolated({
+      job: fixture(archive, {
+        tests: [
+          mutate
+            ? "printf 'test-injected code' > sum.js"
+            : "mkdir -p coverage; printf 'report' > coverage/output.txt",
+        ],
+      }),
+      archive,
+      runId,
+      image,
+      signal: new AbortController().signal,
+    });
+    assert.doesNotMatch(output.outcome.patch, /coverage|test-injected/);
+    assert.match(output.outcome.patch, /a \+ b/);
+    assert.equal(output.outcome.ok, !mutate);
+    assert.equal(output.outcome.reason, mutate ? 'test_modified_source' : 'execution_completed');
+    assert.deepEqual(output.outcome.testSideEffects?.modifiedPaths, mutate ? ['sum.js'] : []);
+    assert.deepEqual(
+      output.outcome.testSideEffects?.generatedPaths,
+      mutate ? [] : ['coverage/output.txt'],
+    );
+    await clean(runId);
+  }
+  evidence.push({
+    check: 'frozen patch excludes test outputs and rejects changed proposed source',
   });
 });

@@ -18,7 +18,7 @@ services:
     stop_grace_period: 30s
   migrate:
     build: {context: .., dockerfile: runtime/Dockerfile}
-    image: software-factory-local:development
+    image: ${FACTORY_LOCAL_IMAGE:-software-factory-local:development}
     user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
     environment:
       POSTGRES_HOST: db
@@ -37,7 +37,7 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
   runtime:
-    image: software-factory-local:development
+    image: ${FACTORY_LOCAL_IMAGE:-software-factory-local:development}
     user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
     environment:
       FACTORY_MODE: ${FACTORY_MODE:?Run configure.py with an explicit mode}
@@ -68,8 +68,8 @@ services:
       timeout: 3s
       retries: 12
 secrets:
-  admin_password: {file: ./secrets/admin_password}
-  database_password: {file: ./secrets/database_password}
-  webhook_secret: {file: ./secrets/webhook_secret}
+  admin_password: {file: "${FACTORY_STATE_DIR:-.}/secrets/admin_password"}
+  database_password: {file: "${FACTORY_STATE_DIR:-.}/secrets/database_password"}
+  webhook_secret: {file: "${FACTORY_STATE_DIR:-.}/secrets/webhook_secret"}
 volumes:
   database:

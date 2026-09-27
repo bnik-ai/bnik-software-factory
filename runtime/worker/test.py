@@ -16,9 +16,14 @@ PG = 'postgres:17-bookworm@sha256:639ab7ceb90e13123085b741fb31ef493fba25463002f6
 p = argparse.ArgumentParser()
 p.add_argument('--report', type=Path)
 p.add_argument('--skip-build', action='store_true')
+p.add_argument('--image', help='Existing image for --skip-build; otherwise a fresh per-run tag is built')
 a = p.parse_args()
+if not a.skip_build and a.image:
+    p.error('--image is only accepted with --skip-build; normal builds use unique tags')
+if a.skip_build and not a.image:
+    p.error('--skip-build requires --image')
 name = 'factory-worker-test-' + uuid.uuid4().hex[:10]
-image = 'software-factory-worker:development'
+image = a.image or name + ':test'
 
 
 def run(args, **kwargs):
@@ -57,6 +62,8 @@ try:
         report = dict(passed=True, image_id=run(['docker', 'image', 'inspect', image, '--format', '{{.Id}}']).strip(), architecture=run(['docker', 'run', '--rm', '--network', 'none', image, 'node', '-p', 'process.platform+"/"+process.arch']).strip(), output_sha256=hashlib.sha256((r.stdout + r.stderr).encode()).hexdigest(), checks=json.loads((private / 'evidence.json').read_text()), limitations='Real shell/containers/database with synthetic source. No paid model, live GitHub token, PR publication or end-to-end alpha claim.')
 finally:
     subprocess.run(['docker', 'rm', '-f', '-v', name], capture_output=True)
+    if not a.skip_build:
+        subprocess.run(['docker', 'image', 'rm', image], capture_output=True)
 if a.report:
     a.report.parent.mkdir(parents=True, exist_ok=True)
     a.report.write_text(json.dumps(report, indent=2) + '\n')
