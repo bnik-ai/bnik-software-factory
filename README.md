@@ -1,12 +1,19 @@
 # BNIK Software Factory
 
-GitHub-native workflows for coding agents.
+BNIK Software Factory turns coding agents into a recoverable, policy-controlled GitHub workflow that you operate locally.
 
 Turn a bounded GitHub Task into a reviewed change using your own repository,
 credentials and local runtime. A human authorizes each coding run, an isolated
 worker returns a patch and test receipts, an operator publishes the reviewed
 output, and a human reviews and merges after required CI. The runtime verifies
 the merge and completes the paired Task.
+
+- **Recoverable:** inspect durable work and receipts, reconcile interrupted runs,
+  and recover without blindly repeating model calls.
+- **Policy-controlled:** enforce authorization, required checks and execution limits,
+  with recorded evidence for workflow decisions.
+- **Locally operated:** run the factory through Docker using your own repository
+  and credentials. Live work still connects to GitHub and the model provider.
 
 **Private alpha candidate; not yet released.** Apache-2.0 is selected for project-owned source; public attribution and maintainer
 identity are being finalized. No public repository, installation service or
