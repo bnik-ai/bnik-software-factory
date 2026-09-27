@@ -16,6 +16,7 @@ const migrations = [
   ['0005_human_merge', new URL('../migrations/0005_human_merge.sql', import.meta.url)],
   ['0006_recovery', new URL('../migrations/0006_recovery.sql', import.meta.url)],
   ['0007_run_evidence', new URL('../migrations/0007_run_evidence.sql', import.meta.url)],
+  ['0008_autonomy_policy', new URL('../migrations/0008_autonomy_policy.sql', import.meta.url)],
 ] as const;
 export function migrationFiles() {
   return migrations.map(([version, path]) => {
@@ -89,6 +90,12 @@ export async function migrate(pool: Pool, runtimePassword: string): Promise<void
     await client.query(
       'GRANT SELECT,INSERT ON audit_ledger,factory_demo_effects,factory_task_activations,factory_pr_pairs,factory_pr_observations,factory_merge_receipts,factory_recovery_actions TO factory_runtime',
     );
+    // Read-only: the internet-facing runtime must not forge policy, scopes, approvals or
+    // admissions. Revoke first so every migration run restores least privilege.
+    const autonomyTables =
+      'factory_autonomy_policies,factory_autonomy_control,factory_autonomy_scopes,factory_autonomy_decisions,factory_autonomy_reservations';
+    await client.query(`REVOKE ALL ON ${autonomyTables} FROM factory_runtime`);
+    await client.query(`GRANT SELECT ON ${autonomyTables} TO factory_runtime`);
     await client.query('GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO factory_runtime');
   });
 }

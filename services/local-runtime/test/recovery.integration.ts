@@ -354,7 +354,11 @@ test('upgrade from previous schema retains failed work identity, payload and att
     await upgrade.query(
       'CREATE TABLE factory_schema_migrations(version text PRIMARY KEY,sha256 text NOT NULL,applied_at timestamptz NOT NULL DEFAULT clock_timestamp())',
     );
-    for (const file of migrationFiles().slice(0, -1)) {
+    // Schema immediately before the run-evidence backfill this test exercises.
+    const files = migrationFiles();
+    const backfill = files.findIndex((file) => file.version === '0007_run_evidence');
+    assert.ok(backfill > 0);
+    for (const file of files.slice(0, backfill)) {
       await upgrade.query(file.sql);
       await upgrade.query('INSERT INTO factory_schema_migrations(version,sha256) VALUES($1,$2)', [
         file.version,

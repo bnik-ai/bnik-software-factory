@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "revision": 1,
+  "mode": "human_gated",
+  "repository": {
+    "fullName": "example-org/example-repo",
+    "id": 100000001,
+    "installationId": 200000001,
+    "baseBranch": "main"
+  },
+  "allowedPaths": ["src", "test", "docs", "README.md"],
+  "criticalPaths": [{ "path": "src/billing", "category": "infrastructure_spend" }],
+  "execution": {
+    "models": ["claude-sonnet-5"],
+    "maxTurns": 40,
+    "maxRunMs": 900000,
+    "maxRunMicrousd": 5000000,
+    "maxScopeMicrousd": 20000000,
+    "maxTaskRuns": 3
+  },
+  "changeLimits": { "maxChangedFiles": 50, "maxChangedBytes": 200000 },
+  "mergeEffect": "none",
+  "verification": {
+    "acceptanceSuiteSha256": "0000000000000000000000000000000000000000000000000000000000000001",
+    "acceptanceHarnessSha256": "0000000000000000000000000000000000000000000000000000000000000002",
+    "acceptanceRunnerImage": "sha256:0000000000000000000000000000000000000000000000000000000000000003",
+    "reviewerConfigSha256": "0000000000000000000000000000000000000000000000000000000000000004",
+    "evalProtocolSha256": "0000000000000000000000000000000000000000000000000000000000000005",
+    "protectedPaths": ["acceptance"],
+    "receiptTtlMs": 3600000
+  },
+  "approvers": { "githubUserIds": [300000001] }
+}

@@ -1,5 +1,13 @@
 # Release notes
 
+- Add the trusted autonomy policy foundation (not yet wired into any runtime path):
+  a strict host policy file, deterministic risk rules over the complete change,
+  acceptance/review/merge-gate/approval receipts, a pure decision engine and a
+  PostgreSQL ledger for policy activation, pause, scopes, single-use admissions
+  and budget reservations. The runtime database role gets read-only access.
+- Freeze the agent-quality qualification protocol and a 24-case corpus with five
+  held-out cases published as digests. No qualification run has happened.
+
 - Support restrictive source permissions in all three images; mount credentials by
   command, keep result preparation offline, and bound operator memory/processes.
 - Print migration digests and audit heads, reject tampered verification fixtures,
