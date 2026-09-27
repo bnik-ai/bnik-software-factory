@@ -1,5 +1,13 @@
-import { constants, closeSync, fstatSync, openSync, readFileSync } from 'node:fs';
-import { isAbsolute } from 'node:path';
+import {
+  constants,
+  closeSync,
+  fstatSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+} from 'node:fs';
+import { dirname, isAbsolute } from 'node:path';
 import {
   AutonomyError,
   pathWithin,
@@ -256,15 +264,19 @@ export function policyDigest(policy: AutonomyPolicy): string {
 }
 /**
  * The operator chooses this path; never pass a worker-, Task- or PR-supplied path.
- * Opened without following a final symlink and checked on the open handle, so the
- * file cannot be swapped between the check and the read. Ownership is not checked:
- * container and host user IDs legitimately differ.
+ * The path must be canonical (no symlink anywhere in it) and its directory must not
+ * be group- or world-writable, so nobody else can substitute the file. It is opened
+ * without following a final symlink and checked on the open handle, so it cannot be
+ * swapped between check and read. Ownership is not checked: container and host user
+ * IDs legitimately differ; higher ancestors are the operator's responsibility.
  */
 export function loadPolicy(filename: string): AutonomyPolicy {
   requireAutonomy(isAbsolute(filename), 'policy_path_must_be_absolute');
   let document: unknown;
   let descriptor: number | null = null;
   try {
+    requireAutonomy(realpathSync(filename) === filename, 'policy_path_not_canonical');
+    requireAutonomy((statSync(dirname(filename)).mode & 0o022) === 0, 'policy_directory_unsafe');
     try {
       descriptor = openSync(filename, constants.O_RDONLY | constants.O_NOFOLLOW);
     } catch (error) {

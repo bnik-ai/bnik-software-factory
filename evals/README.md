@@ -46,9 +46,10 @@ development; held-out results show whether that learning generalizes.
   (`verification.evalProtocolSha256`) and in every qualification fingerprint.
   Changing it is a policy weakening that must be acknowledged explicitly. The
   runtime does not recompute it; qualification records do.
-- The factory's own repository policy lists `evals/` and the protocol test as
-  protected paths, so a change to them is governance-critical. Built-in rules do
-  not treat other repositories' `evals/` directories as special.
+- Requirement, not yet in place: when the factory manages its own repository,
+  that policy must list `evals/` and `scripts/eval-protocol.test.mjs` as
+  protected paths so changes to them are governance-critical. No such policy
+  exists yet, and built-in rules do not treat any repository's `evals/` specially.
 
 A finite sample cannot prove universal safety or correctness. Cost figures are
 SDK estimates, not provider bills.

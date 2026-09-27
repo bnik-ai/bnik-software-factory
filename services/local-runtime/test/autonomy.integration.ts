@@ -296,7 +296,7 @@ test('pause and revocation wait for in-flight admission and are then authoritati
   const holder = await admin.connect();
   try {
     await holder.query('BEGIN');
-    await holder.query("SELECT pg_advisory_xact_lock(hashtextextended('factory_autonomy',$1))", [
+    await holder.query('SELECT 1 FROM factory_autonomy_control WHERE repository_id=$1 FOR UPDATE', [
       policy.repository.id,
     ]);
     let settled = false;
@@ -315,4 +315,63 @@ test('pause and revocation wait for in-flight admission and are then authoritati
   }
   const pending = await admitExecute();
   await assert.rejects(ledger.consume(pending.decisionId, NOW), /autonomy_paused/);
+});
+
+test('a re-rendered approval of the same action cannot admit a second request', async () => {
+  const gated = policyFixture({ mode: 'human_gated' });
+  await ledger.activatePolicy(gated, ['initial_activation'], 'owner', NOW);
+  await ledger.grantScope(
+    {
+      scopeId: 'goal-1',
+      repositoryId: gated.repository.id,
+      taskIds: ['TASK_1'],
+      models: ['claude-sonnet-5'],
+      budgetMicrousd: 20_000_000,
+      maxTaskRuns: 3,
+      expiresAt: NOW + DAY,
+    },
+    'owner',
+    NOW,
+  );
+  const first = requestFor(gated, 'execute');
+  const second = { ...structuredClone(first), requestId: '22222222-2222-4222-8222-222222222222' };
+  const fromReview = approvalFor(gated, first);
+  const fromConsole = approvalFor(gated, first, {
+    source: 'operator_console',
+    approvedAt: NOW - 1000,
+  });
+  const admitted = await ledger.admit(gated, first, { approval: fromReview }, NOW);
+  const mirrored = await ledger.admit(gated, second, { approval: fromConsole }, NOW);
+  assert.equal(mirrored.decision.outcome, 'allow');
+  await ledger.consume(admitted.decisionId, NOW);
+  await assert.rejects(ledger.consume(mirrored.decisionId, NOW), /approval_already_used/);
+});
+
+test('the read-only runtime role cannot take the ledger lock or stall pause', async () => {
+  await activate();
+  const runtimeClient = await runtimePool.connect();
+  try {
+    await runtimeClient.query('BEGIN');
+    await assert.rejects(
+      runtimeClient.query(
+        'SELECT 1 FROM factory_autonomy_control WHERE repository_id=$1 FOR UPDATE',
+        [policy.repository.id],
+      ),
+      /permission denied/,
+    );
+    await runtimeClient.query('ROLLBACK');
+    await runtimeClient.query('BEGIN');
+    await runtimeClient.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended('factory_autonomy',$1))",
+      [policy.repository.id],
+    );
+    await ledger.setPaused(policy.repository.id, true, 'incident', 'owner', NOW);
+    await runtimeClient.query('ROLLBACK');
+  } finally {
+    runtimeClient.release();
+  }
+  await assert.rejects(
+    ledger.setPaused(999_999, true, 'x', 'owner', NOW),
+    /autonomy_not_configured/,
+  );
 });

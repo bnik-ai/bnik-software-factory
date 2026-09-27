@@ -32,8 +32,29 @@ export interface Reason {
 export interface Classification {
   risk: 'routine' | 'critical';
   reasons: Reason[];
+  /** Decided on the full reason set, before any truncation of `reasons`. */
+  publicationHold: boolean;
   changedFiles: number;
   changedBytes: number;
+}
+/**
+ * Publication is itself an external effect: pushing to the base repository runs
+ * its automation and installs its dependencies with that repository's CI
+ * privileges, and anything pushed is disclosed to everyone with read access.
+ * These reasons, and anything that could not be inspected (and so could hide
+ * them), need approval before publish, not only before merge.
+ */
+const PUBLICATION_HOLD_CODES: readonly string[] = [
+  'ci_or_repository_automation',
+  'developer_hooks',
+  'test_runner_configuration',
+  'dependency_manifest',
+  'code_execution_primitive',
+  'secret_material',
+  'secret_material_path',
+];
+export function holdsPublication(reason: Reason): boolean {
+  return reason.category === 'uninspectable' || PUBLICATION_HOLD_CODES.includes(reason.code);
 }
 
 /** Parse-time safety bounds, far above any policy limit, so parsing itself stays bounded. */
@@ -129,7 +150,7 @@ export const BUILT_IN_PATH_RULES: readonly PathRule[] = [
     code: 'test_runner_configuration',
     category: 'governance',
     pattern:
-      /(^|\/)(jest|vitest|vitest\.workspace|karma\.conf|playwright|cypress|ava|wdio\.conf)(\.config)?\.[cm]?[jt]s(on)?$|(^|\/)(pytest\.ini|tox\.ini|noxfile\.py|phpunit\.xml(\.dist)?|\.mocharc(\.[a-z]+)?|\.nycrc(\.[a-z]+)?|\.c8rc(\.[a-z]+)?)$/,
+      /(^|\/)(jest[^/]*|vitest|vitest\.workspace|vite|karma\.conf|playwright|cypress|ava|wdio\.conf)(\.config)?\.[cm]?[jt]s(on)?$|(^|\/)(pytest\.ini|tox\.ini|noxfile\.py|phpunit\.xml(\.dist)?|\.mocharc(\.[a-z]+)?|\.nycrc(\.[a-z]+)?|\.c8rc(\.[a-z]+)?)$/,
   },
   { code: 'factory_configuration', category: 'governance', pattern: /(^|\/)\.factory(\/|$)/ },
   { code: 'security_policy', category: 'governance', pattern: /(^|\/)security\.md$/ },
@@ -161,7 +182,7 @@ export const BUILT_IN_PATH_RULES: readonly PathRule[] = [
     code: 'infrastructure_definition',
     category: 'infrastructure_spend',
     pattern:
-      /(^|\/)(infra|infrastructure|terraform|pulumi|cdk|cloudformation|bicep|ansible)(\/|$)|\.(tf|tfvars|hcl|bicep)$/,
+      /(^|\/)(infra|infrastructure|terraform|pulumi|cdk|cloudformation|bicep|ansible)(\/|$)|\.(tf|tfvars|hcl|bicep|tofu)$|\.tf\.json$/,
   },
   {
     code: 'data_schema_or_migration',
@@ -190,6 +211,8 @@ interface ContentRule {
   testFilesOnly?: boolean;
   /** Not applied to prose, where the words describe rather than act. */
   skipProse?: boolean;
+  /** A second pattern the same line must also match; two linear tests instead of one backtracking one. */
+  requires?: RegExp;
 }
 /** Built from code points so no formatter can turn the class into invisible characters. */
 const HIDDEN_DIRECTION_CONTROLS = new RegExp(
@@ -261,8 +284,39 @@ export const CONTENT_RULES: readonly ContentRule[] = [
     category: 'production_deployment',
     side: 'both',
     skipProse: true,
-    pattern:
-      /\b(kubectl\s+(apply|create|delete|rollout|set|scale)|docker\s+push|terraform\s+(apply|destroy)|helm\s+(install|upgrade|uninstall)|(npm|yarn|pnpm)\s+run\s+deploy\w*|fly\s+deploy|vercel\s+(deploy|--prod)|gcloud\s+\S+(\s+\S+)?\s+deploy|az\s+\S+(\s+\S+)?\s+deploy|serverless\s+deploy|cdk\s+deploy)\b/i,
+    pattern: /\bdeploy\b|\bdocker\s+push\b/i,
+  },
+  {
+    code: 'deployment_action',
+    category: 'production_deployment',
+    side: 'both',
+    skipProse: true,
+    pattern: /\bvercel\b/i,
+    requires: /--prod\b/i,
+  },
+  {
+    code: 'deployment_action',
+    category: 'production_deployment',
+    side: 'both',
+    skipProse: true,
+    pattern: /\bkubectl\b/i,
+    requires: /\b(apply|create|delete|rollout|scale|set|patch|replace|edit)\b/i,
+  },
+  {
+    code: 'deployment_action',
+    category: 'production_deployment',
+    side: 'both',
+    skipProse: true,
+    pattern: /\bhelm\b/i,
+    requires: /\b(install|upgrade|uninstall|rollback)\b/i,
+  },
+  {
+    code: 'deployment_action',
+    category: 'production_deployment',
+    side: 'both',
+    skipProse: true,
+    pattern: /\b(terraform|tofu|pulumi)\b/i,
+    requires: /\b(apply|destroy|import|up)\b/i,
   },
   {
     code: 'infrastructure_resource',
@@ -305,7 +359,7 @@ export const CONTENT_RULES: readonly ContentRule[] = [
     side: 'added',
     testFilesOnly: true,
     pattern:
-      /\.(skip|only|todo)\s*\(|\bx(it|describe|test)\s*\(|@pytest\.mark\.(skip|xfail)|@unittest\.skip|\bt\.skip(now)?\s*\(|\bskipif\b|pytest\.skip\s*\(|\bcollect_ignore\w*/i,
+      /\.(skip|only|todo|exclude)\s*\(|\bx(it|describe|test|context|specify)\b\s*[('"]|@pytest\.mark\.(skip|xfail)|@unittest\.skip|\bself\.skiptest\b|\bt\.skip(now)?\s*\(|\bskipif\b|pytest\.skip\s*\(|\bcollect_ignore\w*|@disabled\b|@ignore\b|#\[ignore\]|\bpending\s*[('"]/i,
   },
   {
     code: 'failure_masking',
@@ -324,8 +378,9 @@ export const CONTENT_RULES: readonly ContentRule[] = [
 ];
 
 const TEST_LOCATION =
-  /(^|\/)(tests?|__tests__|specs?|testing)\/|[._-](test|spec)s?\.[a-z0-9]+$|(^|\/)test_[^/]+\.py$|_test\.go$|(^|\/)conftest\.py$/;
-const RUNNABLE_SOURCE = /\.([cm]?[jt]sx?|py|go|rb|java|kt|kts|cs|rs|php|swift|sh|bats|ex|exs)$/;
+  /(^|\/)(tests?|__tests__|specs?|testing|e2e|cypress|playwright|integration[-_]tests?)\/|[._-](test|spec|cy|e2e)s?\.[a-z0-9]+$|(^|\/)test_[^/]+\.py$|_test\.(go|dart)$|(^|\/)conftest\.py$|tests?\.(java|kt|cs|scala|swift)$/;
+const RUNNABLE_SOURCE =
+  /\.([cm]?[jt]sx?|py|go|rb|java|kt|kts|cs|rs|php|swift|sh|bats|ex|exs|dart|scala|sc|groovy|c|cc|cpp|cxx|h|hpp|m|mm|lua|pl|r|jl|zig|clj|cljs|erl|hs|ml|fs)$/;
 /** A file a test runner would execute: in a test location and a runnable source type. */
 function isTestFile(path: string | null): boolean {
   if (path === null) return false;
@@ -340,6 +395,11 @@ export const MAX_INSPECTED_LINE_LENGTH = 4000;
 /** Beyond these bounds the whole differing middle counts as changed (conservative, bounded cost). */
 const MAX_DIFF_EDITS = 2000;
 const MAX_DIFF_LINES = 50_000;
+/** Shared by every file in one manifest, so many files cannot multiply the per-file bound. */
+const MAX_MANIFEST_DIFF_STEPS = 20_000_000;
+interface DiffBudget {
+  steps: number;
+}
 
 function lines(content: string | null): string[] {
   return content === null ? [] : content.split(/\r?\n/);
@@ -355,7 +415,11 @@ export interface LineChanges {
  * moved and reordered lines count as changed. Beyond MAX_DIFF_EDITS the entire
  * differing middle is treated as changed: over-reporting, never under-reporting.
  */
-export function changedLines(oldContent: string | null, newContent: string | null): LineChanges {
+export function changedLines(
+  oldContent: string | null,
+  newContent: string | null,
+  budget: DiffBudget = { steps: MAX_MANIFEST_DIFF_STEPS },
+): LineChanges {
   const oldLines = lines(oldContent);
   const newLines = lines(newContent);
   let prefix = 0;
@@ -376,7 +440,7 @@ export function changedLines(oldContent: string | null, newContent: string | nul
   const newMiddle = newLines.slice(prefix, newLines.length - suffix);
   const keptOld = new Uint8Array(oldMiddle.length);
   const keptNew = new Uint8Array(newMiddle.length);
-  markCommonSubsequence(oldMiddle, newMiddle, keptOld, keptNew);
+  markCommonSubsequence(oldMiddle, newMiddle, keptOld, keptNew, budget);
 
   const added = newMiddle.filter((_, index) => !keptNew[index]);
   const removed = oldMiddle.filter((_, index) => !keptOld[index]);
@@ -400,10 +464,12 @@ function markCommonSubsequence(
   newLines: string[],
   keptOld: Uint8Array,
   keptNew: Uint8Array,
+  budget: DiffBudget,
 ): void {
   const oldCount = oldLines.length;
   const newCount = newLines.length;
   if (oldCount === 0 || newCount === 0 || oldCount + newCount > MAX_DIFF_LINES) return;
+  if (budget.steps <= 0) return;
   const maxEdits = Math.min(oldCount + newCount, MAX_DIFF_EDITS);
   const offset = maxEdits + 1;
   const frontier = new Int32Array(2 * maxEdits + 3);
@@ -420,6 +486,7 @@ function markCommonSubsequence(
         ? (frontier[offset + diagonal + 1] as number)
         : (frontier[offset + diagonal - 1] as number) + 1;
       let newIndex = oldIndex - diagonal;
+      budget.steps--;
       while (
         oldIndex < oldCount &&
         newIndex < newCount &&
@@ -427,7 +494,10 @@ function markCommonSubsequence(
       ) {
         oldIndex++;
         newIndex++;
+        budget.steps--;
       }
+      // Work budget exhausted: keep nothing, so every middle line is inspected.
+      if (budget.steps <= 0) return;
       frontier[offset + diagonal] = oldIndex;
       if (oldIndex >= oldCount && newIndex >= newCount) {
         backtrack(trace, offset, edits, oldCount, newCount, keptOld, keptNew);
@@ -483,6 +553,7 @@ export function classifyChanges(policy: AutonomyPolicy, manifest: ChangeManifest
   };
   let changedBytes = 0;
   let contentBudgetExceeded = manifest.files.length > policy.changeLimits.maxChangedFiles;
+  const diffBudget: DiffBudget = { steps: MAX_MANIFEST_DIFF_STEPS };
   for (const change of manifest.files) {
     const paths = [change.oldPath, change.newPath].filter((path): path is string => path !== null);
     for (const path of new Set(paths)) {
@@ -518,7 +589,11 @@ export function classifyChanges(policy: AutonomyPolicy, manifest: ChangeManifest
 
     // Limits are enforced before any pattern runs, so oversized input cannot stall classification.
     if (contentBudgetExceeded) continue;
-    const { added, removed, context } = changedLines(change.oldContent, change.newContent);
+    const { added, removed, context } = changedLines(
+      change.oldContent,
+      change.newContent,
+      diffBudget,
+    );
     for (const line of [...added, ...removed]) changedBytes += Buffer.byteLength(line) + 1;
     if (changedBytes > policy.changeLimits.maxChangedBytes) {
       contentBudgetExceeded = true;
@@ -542,7 +617,12 @@ export function classifyChanges(policy: AutonomyPolicy, manifest: ChangeManifest
         ...(rule.side === 'added' ? [] : removedLines),
         ...(rule.context ? contextLines : []),
       ];
-      if (inspected.some((line) => rule.pattern.test(line)))
+      if (
+        inspected.some(
+          (line) =>
+            rule.pattern.test(line) && (rule.requires === undefined || rule.requires.test(line)),
+        )
+      )
         addReason(rule.code, rule.category, displayPath);
     }
     if (oldIsTest && newIsTest) {
@@ -558,17 +638,24 @@ export function classifyChanges(policy: AutonomyPolicy, manifest: ChangeManifest
   // Nothing routine to merge; surface a no-op rather than auto-merging it.
   if (manifest.files.length === 0) addReason('empty_change', 'uninspectable');
 
-  const sortedReasons = [...reasons.values()].sort(compareReasons);
+  const allReasons = [...reasons.values()];
+  const publicationHold = allReasons.some(holdsPublication);
+  // Truncation keeps publication holds first, so a padded change cannot push them out.
+  const prioritized = [
+    ...allReasons.filter(holdsPublication).sort(compareReasons),
+    ...allReasons.filter((reason) => !holdsPublication(reason)).sort(compareReasons),
+  ];
   const boundedReasons =
-    sortedReasons.length > MAX_REASONS
+    prioritized.length > MAX_REASONS
       ? [
-          ...sortedReasons.slice(0, MAX_REASONS - 1),
+          ...prioritized.slice(0, MAX_REASONS - 1),
           { code: 'reasons_truncated', category: 'uninspectable' as const },
-        ]
-      : sortedReasons;
+        ].sort(compareReasons)
+      : prioritized.sort(compareReasons);
   return {
     risk: boundedReasons.length ? 'critical' : 'routine',
     reasons: boundedReasons,
+    publicationHold,
     changedFiles: manifest.files.length,
     changedBytes,
   };

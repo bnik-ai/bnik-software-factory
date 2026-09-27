@@ -12,9 +12,10 @@ CREATE TABLE factory_autonomy_policies (
   activated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   UNIQUE (repository_id, revision)
 );
+-- Also the per-repository lock row; it exists before the first activation completes.
 CREATE TABLE factory_autonomy_control (
   repository_id bigint PRIMARY KEY,
-  active_policy_sha256 text NOT NULL REFERENCES factory_autonomy_policies(policy_sha256),
+  active_policy_sha256 text REFERENCES factory_autonomy_policies(policy_sha256),
   paused boolean NOT NULL DEFAULT false,
   pause_reason text,
   updated_by text NOT NULL,
@@ -49,7 +50,8 @@ CREATE TABLE factory_autonomy_decisions (
   action_sha256 text,
   policy_sha256 text NOT NULL,
   request_summary jsonb,
-  approval_sha256 text CHECK (approval_sha256 IS NULL OR approval_sha256 ~ '^[0-9a-f]{64}$'),
+  -- Set when a human approval admitted this decision: the exact action it approved.
+  approved_action_sha256 text CHECK (approved_action_sha256 IS NULL OR approved_action_sha256 ~ '^[0-9a-f]{64}$'),
   decision jsonb NOT NULL,
   decided_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   consumed_at timestamptz,
@@ -61,7 +63,8 @@ CREATE UNIQUE INDEX factory_autonomy_decisions_consumed_once
   ON factory_autonomy_decisions(request_id) WHERE consumed_at IS NOT NULL;
 -- A human approval authorizes one consequential action, not every re-issued request.
 CREATE UNIQUE INDEX factory_autonomy_approvals_consumed_once
-  ON factory_autonomy_decisions(approval_sha256) WHERE consumed_at IS NOT NULL AND approval_sha256 IS NOT NULL;
+  ON factory_autonomy_decisions(approved_action_sha256)
+  WHERE consumed_at IS NOT NULL AND approved_action_sha256 IS NOT NULL;
 CREATE TABLE factory_autonomy_reservations (
   reservation_id uuid PRIMARY KEY,
   scope_id text NOT NULL REFERENCES factory_autonomy_scopes(scope_id),

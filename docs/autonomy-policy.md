@@ -40,9 +40,10 @@ evidence into a pass.
 
 ## Policy file
 
-The operator selects an absolute host path. It is opened without following a
-final symlink and checked on the open handle: a regular file, not group- or
-world-writable, at most 64 KiB. It is never read
+The operator selects an absolute, canonical host path (no symlink anywhere in
+it) in a directory that is not group- or world-writable. The file is opened
+without following a final symlink and checked on the open handle: a regular
+file, not group- or world-writable, at most 64 KiB. It is never read
 from a PR branch, Task text, labels, worker output or model output. See
 [`runtime/autonomy-policy.example.json`](../runtime/autonomy-policy.example.json).
 
@@ -107,8 +108,9 @@ picks it up (for example `.test.js.disabled`), or a net reduction in assertions
 within a test file is critical. Adding or relocating tests is routine.
 
 **Bounded cost:** file and size limits are applied before any pattern runs; lines
-longer than 4,000 characters are not pattern-matched and need a human. Very large
-or very different files are treated as entirely changed rather than diffed.
+longer than 4,000 characters are not pattern-matched and need a human. Diff work
+has one budget for the whole manifest; very large or very different files are
+treated as entirely changed rather than diffed, so nothing is skipped.
 
 **Uninspectable:** binary content, symlinks, submodules, mode changes, non-ASCII
 paths, over-long lines, empty changes and changes above `changeLimits` need a
@@ -123,9 +125,11 @@ risk; `bugfix` only adds the reproducer requirement.
 Publication is itself an external effect. Pushing to the base repository runs
 its automation and installs its dependencies with that repository's CI
 privileges, and anything pushed is disclosed. CI and hook definitions, test-runner
-configuration, dependency manifests, new code-execution calls and recognizable
-secret material therefore need approval **before publish**. Other critical changes
-may be published for review, but their merge holds.
+configuration, dependency manifests, new code-execution calls, recognizable
+secret material and anything that could not be inspected (and so could hide
+those) therefore need approval **before publish**. This hold is decided on the
+full set of reasons, before the reason list is truncated for display. Other
+critical changes may be published for review, but their merge holds.
 
 **Residual exposure:** published code, including ordinary tests, executes in the
 repository's CI. If that CI can read secrets, agent-written code can reach them;
@@ -181,7 +185,8 @@ recorded decisions, single-use admissions and budget reservations in PostgreSQL.
 - **Scope:** an owner grant listing Tasks, models, a micro-USD budget, a per-Task
   run limit and an expiry of at most 30 days, all within the active policy.
 - **Admission:** an `allow` decision is consumed at most once per controller
-  request, and each human approval admits at most one action. Consumption happens
+  request, and each human approval admits at most one action: single use is keyed
+  on the approved action digest, so re-rendering the same approval does not reuse it. Consumption happens
   within 10 minutes, re-checks active policy, pause, scope revocation, expiry and
   membership, then reserves budget and counts the attempt. Admission, pause and
   revocation are serialized per repository: once a pause or revocation returns,
@@ -193,6 +198,8 @@ recorded decisions, single-use admissions and budget reservations in PostgreSQL.
   estimated cost, which may exceed the reservation.
 - **Access:** migrations grant the internet-facing runtime role `SELECT` only and
   revoke anything else on every run. Writes need the trusted operator identity.
+  Serialization uses a row lock on the repository's control row, which the
+  read-only role cannot take, so it cannot stall pause, revocation or admission.
 
 ## Not provided
 

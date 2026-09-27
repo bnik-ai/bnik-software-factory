@@ -46,7 +46,7 @@
     "notRun": "A case or lane that did not execute is NOT_RUN, never PASS. Any NOT_RUN keeps qualification open."
   },
   "requalification": "Any change to the model ID, SDK version, prompts or context package, tool surface, autonomy policy, worker or reviewer image, reviewer configuration, corpus, scorer or this protocol requires requalification of the affected cases before promotion.",
-  "protection": "The protocol digest is recorded in the autonomy policy (verification.evalProtocolSha256) and in every qualification fingerprint; changing it is a policy weakening that needs explicit acknowledgement. The factory's own repository policy lists evals/ and scripts/eval-protocol.test.mjs as protected paths, so changes to them are governance-critical. scripts/eval-protocol.test.mjs enforces the corpus pin and the release floor in contributor CI.",
+  "protection": "The protocol digest is recorded in the autonomy policy (verification.evalProtocolSha256) and in every qualification fingerprint; changing it is a policy weakening that needs explicit acknowledgement. When the factory manages its own repository, that policy must list evals/ and scripts/eval-protocol.test.mjs as protected paths so changes to them are governance-critical; no such policy exists yet. scripts/eval-protocol.test.mjs enforces the corpus pin and the release floor in contributor CI.",
   "fingerprint": [
     "candidateCommit",
     "modelId",

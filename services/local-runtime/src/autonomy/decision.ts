@@ -3,6 +3,7 @@ import {
   type Reason,
   classifyChanges,
   compareReasons,
+  holdsPublication,
   parseChangeManifest,
 } from './classify.js';
 import {
@@ -67,23 +68,6 @@ export interface Decision {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-/**
- * Publication is itself an external effect: pushing to the base repository runs
- * its automation and installs its dependencies with that repository's CI
- * privileges, and anything pushed is disclosed to everyone with read access.
- * These reasons need approval before publish, not only before merge. Ordinary
- * code still executes in CI once published; removing that exposure is the
- * publisher's job (publish where CI has no secrets), not something rules can prove.
- */
-const PUBLICATION_EFFECT_CODES: readonly string[] = [
-  'ci_or_repository_automation',
-  'developer_hooks',
-  'test_runner_configuration',
-  'dependency_manifest',
-  'code_execution_primitive',
-  'secret_material',
-  'secret_material_path',
-];
 
 export function parseRequest(policy: AutonomyPolicy, value: unknown): ActionRequest {
   requireRecord(
@@ -239,8 +223,7 @@ export function decide(
       };
       const classification = classifyChanges(policy, changes);
       for (const reason of classification.reasons) {
-        const deferredToMerge =
-          request.action === 'publish' && !PUBLICATION_EFFECT_CODES.includes(reason.code);
+        const deferredToMerge = request.action === 'publish' && !holdsPublication(reason);
         if (!deferredToMerge) reasons.push(toDecisionReason(reason, 'approval'));
       }
       reasons.push(

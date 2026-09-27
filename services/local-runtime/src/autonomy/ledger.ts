@@ -51,8 +51,17 @@ const timestamp = (milliseconds: number) => new Date(milliseconds).toISOString()
 function requireActor(actor: unknown): asserts actor is string {
   requireText(actor, 128, 'actor_invalid');
 }
+/**
+ * Serializes every ledger write for a repository on its control row. A row lock
+ * needs UPDATE privilege, which the read-only runtime role lacks, so that role
+ * cannot stall pause, revocation or admission (an advisory lock would let it).
+ */
 async function lockRepository(client: PoolClient, repositoryId: number) {
-  await client.query("SELECT pg_advisory_xact_lock(hashtextextended('factory_autonomy',$1))", [
+  await client.query(
+    "INSERT INTO factory_autonomy_control(repository_id,updated_by) VALUES($1,'ledger') ON CONFLICT(repository_id) DO NOTHING",
+    [repositoryId],
+  );
+  await client.query('SELECT 1 FROM factory_autonomy_control WHERE repository_id=$1 FOR UPDATE', [
     repositoryId,
   ]);
 }
@@ -148,11 +157,11 @@ export class AutonomyLedger {
     // Serialized with admission: once this returns, no admission can commit unpaused.
     await transaction(this.pool, async (client) => {
       await lockRepository(client, repositoryId);
-      const result = await client.query(
+      requireAutonomy(await activeDocument(client, repositoryId), 'autonomy_not_configured');
+      await client.query(
         'UPDATE factory_autonomy_control SET paused=$2,pause_reason=$3,updated_by=$4,updated_at=$5 WHERE repository_id=$1',
         [repositoryId, paused, paused ? reason : null, actor, timestamp(now)],
       );
-      requireAutonomy(result.rowCount === 1, 'autonomy_not_configured');
     });
   }
 
@@ -248,7 +257,7 @@ export class AutonomyLedger {
     }
     const decisionId = randomUUID();
     await this.pool.query(
-      'INSERT INTO factory_autonomy_decisions(decision_id,repository_id,request_id,scope_id,task_id,action,outcome,risk,request_sha256,action_sha256,policy_sha256,request_summary,approval_sha256,decision,decided_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)',
+      'INSERT INTO factory_autonomy_decisions(decision_id,repository_id,request_id,scope_id,task_id,action,outcome,risk,request_sha256,action_sha256,policy_sha256,request_summary,approved_action_sha256,decision,decided_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)',
       [
         decisionId,
         policy.repository.id,
@@ -262,7 +271,7 @@ export class AutonomyLedger {
         decision.actionSha256,
         decision.policySha256,
         summary === null ? null : JSON.stringify(summary),
-        decision.approvalSha256,
+        decision.approvedBy === null ? null : decision.actionSha256,
         JSON.stringify(decision),
         timestamp(decision.decidedAt),
       ],
@@ -327,10 +336,12 @@ export class AutonomyLedger {
         [summary.requestId],
       );
       requireAutonomy(alreadyConsumed.rowCount === 0, 'request_already_admitted');
-      if (row.approval_sha256 !== null) {
+      // Keyed on the approved action, not the approval record, so re-rendering the
+      // same human approval (another timestamp or source) cannot admit it twice.
+      if (row.approved_action_sha256 !== null) {
         const approvalUsed = await client.query(
-          'SELECT 1 FROM factory_autonomy_decisions WHERE approval_sha256=$1 AND consumed_at IS NOT NULL',
-          [row.approval_sha256],
+          'SELECT 1 FROM factory_autonomy_decisions WHERE approved_action_sha256=$1 AND consumed_at IS NOT NULL',
+          [row.approved_action_sha256],
         );
         requireAutonomy(approvalUsed.rowCount === 0, 'approval_already_used');
       }
