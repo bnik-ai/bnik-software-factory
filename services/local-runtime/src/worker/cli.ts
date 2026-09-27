@@ -62,6 +62,43 @@ async function main() {
       console.log(JSON.stringify({ requested: await records.cancel(id, repository) }));
       return;
     }
+    if (command === 'activations') {
+      const repositoryId = Number(process.env.FACTORY_REPOSITORY_ID);
+      const installationId = Number(process.env.GITHUB_INSTALLATION_ID);
+      if (![repositoryId, installationId].every((id) => Number.isSafeInteger(id) && id > 0))
+        throw new Error('live_repository_identity_required');
+      console.log(
+        JSON.stringify(
+          (
+            await pool.query(
+              'SELECT id,issue_number,comment_id,actor_login,source_commit,task_hash,created_at FROM factory_task_activations WHERE repository_id=$1 AND installation_id=$2 ORDER BY created_at DESC LIMIT 100',
+              [repositoryId, installationId],
+            )
+          ).rows,
+        ),
+      );
+      return;
+    }
+    if (command === 'recover') {
+      const repository = process.env.FACTORY_REPOSITORY;
+      const mode = process.env.FACTORY_MODE;
+      if (
+        !repository ||
+        !/^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(repository) ||
+        (mode !== 'live' && mode !== 'demo')
+      )
+        throw new Error('recovery_configuration_required');
+      await new CodingSupervisor({
+        pool,
+        repository,
+        mode,
+        image: process.env.FACTORY_WORKER_IMAGE ?? 'software-factory-worker:development',
+        signal: controller.signal,
+        limits: runLimits(process.env),
+      }).recover();
+      console.log(JSON.stringify({ recoveredRepository: repository }));
+      return;
+    }
     const config = resolveConfig();
     const github = new InstallationClient(config, controller.signal);
     if (command === 'record-pr') {
@@ -106,19 +143,6 @@ async function main() {
       console.log(JSON.stringify(await github.check()));
       return;
     }
-    if (command === 'activations') {
-      console.log(
-        JSON.stringify(
-          (
-            await pool.query(
-              'SELECT id,issue_number,comment_id,actor_login,source_commit,task_hash,created_at FROM factory_task_activations WHERE repository_id=$1 AND installation_id=$2 ORDER BY created_at DESC LIMIT 100',
-              [config.repositoryId, config.installationId],
-            )
-          ).rows,
-        ),
-      );
-      return;
-    }
     if (command === 'prepare-task') {
       if (config.mode !== 'live') throw new Error('live_configuration_required');
       const snapshot = await prepareTask(
@@ -155,11 +179,6 @@ async function main() {
       authorize,
       limits: runLimits(process.env),
     });
-    if (command === 'recover') {
-      await supervisor.recover();
-      console.log(JSON.stringify({ recoveredRepository: config.repository }));
-      return;
-    }
     const argument = process.argv[3];
     if (!argument) throw new Error('worker_argument_required');
     const output = process.argv[4];

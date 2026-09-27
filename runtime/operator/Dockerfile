@@ -15,6 +15,9 @@ COPY services /app/services
 COPY runtime /app/runtime
 COPY examples /app/examples
 COPY LICENSE THIRD_PARTY.md PROVENANCE.md /app/
+# Normalize image-owned source modes even when the host checkout uses umask 077.
+# Host files and separately mounted secrets are not changed.
+RUN chmod -R a+rX /app
 ENV NODE_ENV=production TSX_DISABLE_CACHE=1 PYTHONDONTWRITEBYTECODE=1 HOME=/tmp
 USER node
 WORKDIR /artifacts

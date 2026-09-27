@@ -1,3 +1,44 @@
+# Mount individual files: never expose the whole private state directory.
+x-config: &config
+  type: bind
+  source: ${FACTORY_STATE_DIR}/.env
+  target: /state/.env
+  read_only: true
+  bind: {create_host_path: false}
+x-database: &database
+  type: bind
+  source: ${FACTORY_STATE_DIR}/secrets/database_password
+  target: /state/secrets/database_password
+  read_only: true
+  bind: {create_host_path: false}
+x-webhook: &webhook
+  type: bind
+  source: ${FACTORY_STATE_DIR}/secrets/webhook_secret
+  target: /state/secrets/webhook_secret
+  read_only: true
+  bind: {create_host_path: false}
+x-app: &app
+  type: bind
+  source: ${FACTORY_STATE_DIR}/secrets/app_private_key
+  target: /state/secrets/app_private_key
+  read_only: true
+  bind: {create_host_path: false}
+x-model: &model
+  type: bind
+  source: ${FACTORY_STATE_DIR}/secrets/model_key
+  target: /state/secrets/model_key
+  read_only: true
+  bind: {create_host_path: false}
+x-artifacts: &artifacts
+  type: bind
+  source: ${FACTORY_STATE_DIR}/artifacts
+  target: /artifacts
+  bind: {create_host_path: false}
+x-socket: &socket
+  type: bind
+  source: ${FACTORY_DOCKER_SOCKET:-/var/run/docker.sock}
+  target: /var/run/docker.sock
+  bind: {create_host_path: false}
 x-operator: &operator
   image: ${FACTORY_OPERATOR_IMAGE:?Use ./sfac}
   profiles: [operator]
@@ -8,21 +49,44 @@ x-operator: &operator
     FACTORY_RUNTIME_URL: http://runtime:8787
     FACTORY_WORKER_IMAGE: ${FACTORY_WORKER_IMAGE:?Use ./sfac}
     HOME: /tmp
-  volumes:
-    - ${FACTORY_STATE_DIR:?Use ./sfac}:/state:ro
-    - ${FACTORY_STATE_DIR}/artifacts:/artifacts
   init: true
   read_only: true
-  tmpfs: [/tmp]
+  tmpfs: ["/tmp:size=128m,mode=1777"]
   cap_drop: [ALL]
   security_opt: [no-new-privileges:true]
+  mem_limit: 512m
+  memswap_limit: 512m
+  cpus: 1
+  pids_limit: 128
+  logging: {driver: none}
+x-supervisor: &supervisor
+  <<: *operator
+  group_add: ["${FACTORY_DOCKER_GID:-0}"]
+  mem_limit: 1g
+  memswap_limit: 1g
+  pids_limit: 256
 services:
   operator:
     <<: *operator
-  supervisor:
+    network_mode: none
+    volumes: [*artifacts]
+  probe:
     <<: *operator
-    group_add: ["${FACTORY_DOCKER_GID:-0}"]
-    volumes:
-      - ${FACTORY_STATE_DIR}:/state:ro
-      - ${FACTORY_STATE_DIR}/artifacts:/artifacts
-      - ${FACTORY_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
+  database-operator:
+    <<: *operator
+    volumes: [*config, *database]
+  demo-operator:
+    <<: *operator
+    volumes: [*config, *webhook]
+  github-operator:
+    <<: *operator
+    volumes: [*config, *database, *webhook, *app, *artifacts]
+  supervisor:
+    <<: *supervisor
+    volumes: [*config, *database, *socket]
+  demo-supervisor:
+    <<: *supervisor
+    volumes: [*config, *database, *webhook, *artifacts, *socket]
+  live-supervisor:
+    <<: *supervisor
+    volumes: [*config, *database, *webhook, *app, *model, *artifacts, *socket]

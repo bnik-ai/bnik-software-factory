@@ -13,6 +13,9 @@ COPY services/local-runtime/test/worker-proxy-fixture.ts services/local-runtime/
 COPY runtime/worker/extract.py runtime/worker/extract.py
 COPY THIRD_PARTY.md PROVENANCE.md /app/
 RUN mkdir -p /run/egress /workspace && chown node:node /run/egress /workspace
+# Normalize image-owned source modes even when the host checkout uses umask 077.
+# Host files and separately mounted secrets are not changed.
+RUN chmod -R a+rX /app
 ENV NODE_ENV=production TSX_DISABLE_CACHE=1
 USER 1000:1000
 WORKDIR /app/services/local-runtime

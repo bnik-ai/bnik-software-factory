@@ -8,8 +8,7 @@ SFAC_STATE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/factory-operator-test.XXXXXX")
 cleanup() {
   if [ -f "$SFAC_STATE_DIR/.env" ]; then "$root/sfac" down --volumes; fi
   if [ -f "$SFAC_STATE_DIR/project" ]; then
-    project=$(cat "$SFAC_STATE_DIR/project")
-    for component in operator local worker; do docker image rm "$project-$component:development" >/dev/null 2>&1 || true; done
+    "$root/sfac" clean-images
   fi
   rm -rf "$SFAC_STATE_DIR"
 }
@@ -28,6 +27,7 @@ cd "$root"
 ./sfac init --mode demo --port "${FACTORY_TEST_PORT:-18789}"
 ./sfac build
 ./sfac up
+if ./sfac clean-images; then echo 'Active installation images were removed' >&2; exit 1; fi
 ./sfac ready | grep '"ready":true'
 ./sfac demo
 count=0
@@ -61,3 +61,22 @@ assert.match(r.outcome.patch, /a \+ b/);
 assert.deepEqual(r.outcome.testSideEffects, {modifiedPaths:[],generatedPaths:[]});
 assert.equal(fs.statSync("/artifacts/demo.dump").mode & 0o777, 0o600);
 console.log("Container operator integration passed; no host Python/Node used.");'
+
+# Synthetic credentials test the live mount boundary without any provider request.
+printf 'synthetic-app-canary\n' > "$SFAC_STATE_DIR/secrets/app_private_key"
+printf 'synthetic-model-canary\n' > "$SFAC_STATE_DIR/secrets/model_key"
+printf '{}\n' > "$SFAC_STATE_DIR/merge-policy.json"
+export FACTORY_STATE_DIR="$SFAC_STATE_DIR"
+export FACTORY_OPERATOR_IMAGE="$project-operator:development"
+export FACTORY_LOCAL_IMAGE="$project-local:development"
+export FACTORY_WORKER_IMAGE="$project-worker:development"
+for role in operator probe database-operator demo-operator github-operator supervisor demo-supervisor live-supervisor; do
+  docker compose --project-directory "$root/runtime" --env-file "$SFAC_STATE_DIR/.env" -p "$project" -f "$root/runtime/compose.yaml" -f "$root/runtime/compose.operator.yaml" -f "$root/runtime/compose.operator-review.yaml" run --rm --no-deps -T --entrypoint node "$role" /app/runtime/operator/assert-boundary.mjs "$role"
+done
+./sfac down --volumes
+./sfac clean-images
+for component in operator local worker; do
+  if docker image inspect "$project-$component:development" >/dev/null 2>&1; then echo 'Installation tag remains' >&2; exit 1; fi
+done
+[ -f "$SFAC_STATE_DIR/.env" ] && [ -f "$SFAC_STATE_DIR/artifacts/demo.dump" ]
+echo 'Scoped image cleanup passed; configuration and backup retained.'

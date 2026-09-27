@@ -24,9 +24,34 @@ Host: shell + Docker CLI                   .factory/ (private state/artifacts)
 The supervisor has full local Docker daemon authority, including the ability to
 start containers with host mounts. Containerizing it does not make it untrusted or
 remove that authority. Use trusted factory source/images and a dedicated host for
-sensitive workloads. The operator and supervisor read the private configuration
-mount; only the supervisor commands `worker run`, `run-activation` and `recover`
-receive the Docker socket. Workers retain their existing restricted boundaries.
+sensitive workloads. Commands mount individual configuration/secret files according to the table below.
+No operator or supervisor command receives the database administrator password.
+Only `worker run`, `run-activation` and `recover` receive the Docker socket.
+Workers retain their existing restricted boundaries.
+
+| Command | Mounted credentials | Other mounts |
+| --- | --- | --- |
+| `ready` | None | None |
+| `demo-source`, `prepare-result` | None; network disabled | Artifacts |
+| `status`, `demo-status`, `verify-database`, `compact`, `recovery`; worker `status`, `cancel`, `prune`, `activations` | Runtime database password | Configuration |
+| `demo` | Webhook signing secret | Configuration |
+| Worker `github-check`, `prepare-task`, `record-pr`, `track-pr`, `review-scan`, `review-status` | Runtime database password, webhook secret, App key | Configuration, artifacts, optional trusted merge policy |
+| Worker `recover` | Runtime database password | Configuration, Docker socket |
+| Worker `run` | Runtime database password, webhook secret | Configuration, artifacts, Docker socket |
+| Worker `run-activation` | Runtime database password, webhook secret, App key, model key | Configuration, artifacts, optional trusted merge policy, Docker socket |
+
+`init` is the bootstrap exception: it writes the fresh state directory and refuses
+existing configuration or secrets. Database backup/restore runs inside the database
+service under its existing administrator identity; it does not mount that password
+into an operator container. Configuration contains non-secret identifiers/settings;
+keep credentials in the designated secret files, never in `.env`.
+
+Operator containers have a 512 MiB memory/swap ceiling, one CPU, 128 PIDs and a
+128 MiB temporary filesystem. Supervisors use 1 GiB and 256 PIDs, with the same CPU
+and temporary-filesystem limits. Ephemeral operator/supervisor Docker logging is
+disabled; command output still reaches the caller and may contain source content.
+These limits bound the supervisor process, not the privileged Docker daemon or the
+separate containers it starts. Socket access remains full daemon authority.
 The default daemon socket is `/var/run/docker.sock`; `FACTORY_DOCKER_SOCKET` can
 select a daemon-host socket path, but rootless/remote configurations are unqualified.
 
@@ -76,6 +101,10 @@ needs no daemon socket. `worker recover` does, because it removes labeled orphan
 worker resources after leases expire; it never replays a paid run.
 
 ## Builds and verification
+
+Image builds normalize image-owned source to readable files/searchable directories,
+including exports made with `umask 077`. Host source and private secret modes are
+unchanged. The contributor harness tests an actual restrictive source export.
 
 Each installation builds its own operator/control/worker tags. Debian packages are
 resolved at build time, so these are not byte-reproducible image claims. Existing

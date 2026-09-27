@@ -4,6 +4,7 @@ import os
 import sys
 from pathlib import Path
 
+command = sys.argv[1] if len(sys.argv) > 1 else ''
 source_root = Path(__file__).resolve().parent
 root = Path(os.environ.get('FACTORY_STATE_DIR', source_root)).resolve()
 settings = dict(line.split('=', 1) for line in (root / '.env').read_text().splitlines() if line and not line.startswith('#'))
@@ -15,12 +16,14 @@ for key in ['FACTORY_MODE', 'FACTORY_REPOSITORY', 'GITHUB_INSTALLATION_ID', 'GIT
 if os.environ.get('FACTORY_WORKER_IMAGE'):
     env['FACTORY_WORKER_IMAGE'] = os.environ['FACTORY_WORKER_IMAGE']
 env.update(POSTGRES_HOST=os.environ.get('FACTORY_DATABASE_HOST', '127.0.0.1'), POSTGRES_PORT='5432' if os.environ.get('FACTORY_DATABASE_HOST') else settings.get('FACTORY_DATABASE_PORT', '55432'), POSTGRES_DATABASE='software_factory', POSTGRES_USER='factory_runtime', POSTGRES_TLS='disable', POSTGRES_PASSWORD_FILE=str(root / 'secrets/database_password'), GITHUB_WEBHOOK_SECRET_FILE=str(root / 'secrets/webhook_secret'))
-if settings.get('FACTORY_MODE') == 'live':
+if settings.get('FACTORY_MODE') == 'live' and command not in ['status', 'cancel', 'prune', 'activations', 'recover']:
     env['GITHUB_APP_PRIVATE_KEY_FILE'] = str(root / 'secrets/app_private_key')
     if (root / 'merge-policy.json').exists():
         env['FACTORY_MERGE_POLICY_FILE'] = str(root / 'merge-policy.json')
-    if settings.get('FACTORY_EXECUTION') == 'manual':
+    if command == 'run-activation' and settings.get('FACTORY_EXECUTION') == 'manual':
         env['ANTHROPIC_API_KEY_FILE'] = str(root / 'secrets/model_key')
+    else:
+        env['FACTORY_EXECUTION'] = 'disabled'
 service = source_root.parent / 'services/local-runtime'
 if not (service / 'node_modules/tsx').exists():
     raise SystemExit('Install services/local-runtime dependencies with npm ci first.')

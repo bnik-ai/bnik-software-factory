@@ -1,5 +1,10 @@
 # Release notes
 
+- Support restrictive source permissions in all three images; mount credentials by
+  command, keep result preparation offline, and bound operator memory/processes.
+- Print migration digests and audit heads, reject tampered verification fixtures,
+  and provide installation-scoped image cleanup.
+
 - Add the local `sfac` container operator for configuration, supervision, recovery,
   backup verification and result preparation; isolate installation image tags.
 - Freeze worker patches before tests; exclude generated outputs and fail validation

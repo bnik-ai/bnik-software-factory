@@ -10,7 +10,7 @@ command=${1:-help}
 [ "$#" -eq 0 ] || shift
 if [ "$command" = help ]; then
   echo 'Usage: ./sfac init --mode demo|live [options]'
-  echo '       ./sfac build|up|stop|down|ps|logs|ready|demo|status|demo-status'
+  echo '       ./sfac build|up|stop|down|clean-images|ps|logs|ready|demo|status|demo-status'
   echo '       ./sfac demo-source NAME | worker COMMAND ... | recovery COMMAND ...'
   echo '       ./sfac backup FILE | restore-check FILE | verify-database | prepare-result ...'
   echo 'Paths passed to operator commands are relative to .factory/artifacts (or /artifacts).'
@@ -40,13 +40,13 @@ export FACTORY_OPERATOR_IMAGE="$project-operator:development"
 build_operator() { docker build -f "$root/runtime/operator/Dockerfile" -t "$FACTORY_OPERATOR_IMAGE" "$root"; }
 if [ "$command" = init ]; then
   build_operator
-  exec docker run --rm --init --user "$(id -u):$(id -g)" --network none --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges --mount "type=bind,src=$state,dst=/state" -e FACTORY_STATE_DIR=/state "$FACTORY_OPERATOR_IMAGE" init "$@"
+  exec docker run --rm --init --user "$(id -u):$(id -g)" --network none --read-only --tmpfs /tmp:size=128m --memory 512m --memory-swap 512m --pids-limit 128 --cpus 1 --log-driver none --cap-drop ALL --security-opt no-new-privileges --mount "type=bind,src=$state,dst=/state" -e FACTORY_STATE_DIR=/state "$FACTORY_OPERATOR_IMAGE" init "$@"
 fi
 [ -f "$state/.env" ] || { echo "Initialization is incomplete; finish ./sfac init first" >&2; exit 2; }
 compose() {
   if grep -qx 'FACTORY_MODE=live' "$state/.env"; then
     if [ -f "$state/merge-policy.json" ]; then
-      docker compose --project-directory "$root/runtime" --env-file "$state/.env" -p "$project" -f "$root/runtime/compose.yaml" -f "$root/runtime/compose.operator.yaml" -f "$root/runtime/compose.live.yaml" -f "$root/runtime/compose.review.yaml" "$@"
+      docker compose --project-directory "$root/runtime" --env-file "$state/.env" -p "$project" -f "$root/runtime/compose.yaml" -f "$root/runtime/compose.operator.yaml" -f "$root/runtime/compose.live.yaml" -f "$root/runtime/compose.review.yaml" -f "$root/runtime/compose.operator-review.yaml" "$@"
     else
       docker compose --project-directory "$root/runtime" --env-file "$state/.env" -p "$project" -f "$root/runtime/compose.yaml" -f "$root/runtime/compose.operator.yaml" -f "$root/runtime/compose.live.yaml" "$@"
     fi
@@ -59,13 +59,25 @@ case "$command" in
   up) compose up -d --wait db migrate runtime;;
   stop|ps|logs) compose "$command" "$@";;
   down) compose down "$@";;
+  clean-images)
+    [ "$#" = 0 ] || { echo 'clean-images accepts no arguments' >&2; exit 2; }
+    [ -z "$(docker ps -aq --filter "label=com.docker.compose.project=$project")" ] || { echo 'Run ./sfac down first; installation containers still exist' >&2; exit 2; }
+    for component in operator local worker; do
+      tag="$project-$component:development"
+      if docker image inspect "$tag" >/dev/null 2>&1; then docker image rm "$tag"; fi
+    done
+    echo 'Installation image tags removed; private configuration and artifacts retained.';;
   worker)
     case "${1:-}" in
       run|run-activation|recover)
-        FACTORY_DOCKER_GID=$(docker run --rm --network none --read-only --cap-drop ALL --mount "type=bind,src=${FACTORY_DOCKER_SOCKET:-/var/run/docker.sock},dst=/var/run/docker.sock,readonly" --entrypoint python3 "$FACTORY_OPERATOR_IMAGE" -c 'import os; print(os.stat("/var/run/docker.sock").st_gid)')
+        FACTORY_DOCKER_GID=$(docker run --rm --network none --read-only --memory 64m --memory-swap 64m --pids-limit 16 --cpus 1 --log-driver none --cap-drop ALL --mount "type=bind,src=${FACTORY_DOCKER_SOCKET:-/var/run/docker.sock},dst=/var/run/docker.sock,readonly" --entrypoint python3 "$FACTORY_OPERATOR_IMAGE" -c 'import os; print(os.stat("/var/run/docker.sock").st_gid)')
         export FACTORY_DOCKER_GID
-        compose run --rm --no-deps -T supervisor worker "$@";;
-      *) compose run --rm --no-deps -T operator worker "$@";;
+        case "$1" in run) service=demo-supervisor;; run-activation) service=live-supervisor;; recover) service=supervisor;; esac
+        compose run --rm --no-deps -T "$service" worker "$@";;
+      status|cancel|prune|activations) compose run --rm --no-deps -T database-operator worker "$@";;
+      github-check|prepare-task|record-pr|track-pr|review-scan|review-status)
+        compose run --rm --no-deps -T github-operator worker "$@";;
+      *) echo 'Unknown worker command' >&2; exit 2;;
     esac;;
   backup)
     [ "$#" = 1 ] || { echo 'Specify one new backup filename' >&2; exit 2; }
@@ -82,8 +94,11 @@ case "$command" in
     trap 'exit 130' INT
     trap 'exit 143' HUP TERM
     compose exec -T db pg_restore --exit-on-error --no-owner -U factory_migrator -d "$restore_db" < "$state/artifacts/$1"
-    compose run --rm --no-deps -T operator verify-database "$restore_db";;
-  ready|demo|status|demo-status|demo-source|recovery|prepare-result|verify-database|compact)
-    compose run --rm --no-deps -T operator "$command" "$@";;
+    compose run --rm --no-deps -T database-operator verify-database "$restore_db";;
+  ready) compose run --rm --no-deps -T probe ready "$@";;
+  demo) compose run --rm --no-deps -T demo-operator demo "$@";;
+  status|demo-status|recovery|verify-database|compact)
+    compose run --rm --no-deps -T database-operator "$command" "$@";;
+  demo-source|prepare-result) compose run --rm --no-deps -T operator "$command" "$@";;
   *) echo 'Unknown command; use ./sfac help' >&2; exit 2;;
 esac

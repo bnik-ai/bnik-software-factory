@@ -89,3 +89,19 @@ The `container-operator` job runs `runtime/operator/test.sh` with fresh state an
 unique image tags. It blocks host Node/npm/Python in PATH and exercises the demo,
 worker/cached result, cancellation, recovery, backup/restore and restart. It uses
 synthetic data only and participates in the required aggregate check.
+
+## Restrictive source and operator boundaries
+
+`python3 runtime/operator/restrictive-test.py` exports the current Git-visible
+source into a private temporary directory with files at 0600, executables at 0700
+and directories at 0700. It runs `runtime/operator/test.sh` with host Python/Node/npm
+blocked for all product commands, then confirms source permissions were unchanged.
+Python and Git are dependencies of this contributor harness only.
+
+The suite builds all three images, exercises onboarding, worker execution and
+cached results, backup/restore and persistence. Synthetic credential canaries check
+the actual mounts of every operator role, including the live role without making
+provider calls. Container assertions verify memory/PID limits and artifact parsing's
+network isolation. Scoped image cleanup must reject active installations and retain
+configuration/backups after teardown. Real PostgreSQL integration tests separately
+reject changed migration digests, invalid ledger hashes, broken links and gaps.

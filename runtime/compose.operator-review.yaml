@@ -1,0 +1,12 @@
+# Trusted review policy only for commands that actually evaluate GitHub work.
+x-policy: &policy
+  type: bind
+  source: ${FACTORY_STATE_DIR}/merge-policy.json
+  target: /state/merge-policy.json
+  read_only: true
+  bind: {create_host_path: false}
+services:
+  github-operator:
+    volumes: [*policy]
+  live-supervisor:
+    volumes: [*policy]

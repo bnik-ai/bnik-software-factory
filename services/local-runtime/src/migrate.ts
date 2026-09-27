@@ -27,7 +27,7 @@ export function migrationFiles() {
     };
   });
 }
-export async function checkSchema(pool: Pool): Promise<void> {
+export async function checkSchema(pool: Pick<Pool, 'query'>): Promise<void> {
   const rows = await pool.query<{ version: string; sha256: string }>(
     'SELECT version,sha256 FROM factory_schema_migrations ORDER BY version',
   );

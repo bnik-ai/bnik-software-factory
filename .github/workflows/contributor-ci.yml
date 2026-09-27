@@ -52,7 +52,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Docker-only operator workflow (synthetic data)
-        run: runtime/operator/test.sh
+        run: python3 runtime/operator/restrictive-test.py
   contributor-ci:
     if: always()
     needs: [source, integration, container-operator]

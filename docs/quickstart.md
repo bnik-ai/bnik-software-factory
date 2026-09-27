@@ -69,16 +69,22 @@ executes real test commands without a paid model.
 
 Counts survive restart. Backups are created with private permissions under
 `.factory/artifacts/`; existing filenames are refused. `restore-check` restores to
-a new temporary database, verifies exact migration checksums, counts and the stored
-audit hash chain, then drops only that temporary database. Compare its counts with
+a new temporary database, verifies migration checksums, counts and the stored
+audit hash chain, then drops only that temporary database. Both verification commands
+print each migration version and SHA-256, plus `auditRows` and the hex `auditHead`
+(all zeros for an empty ledger). Migration checks compare recorded digests with the
+image's SQL files; they are not a complete inspection of the database schema. Compare its counts with
 `verify-database` when no new work is arriving. This verifies the ledger's stored
 hash chain, not independent authenticity of the original webhook contents or
 protection against a database administrator rewriting the whole chain.
 
 Ordinary `down` retains the database volume. To discard only this disposable
 project's data after saving anything needed, use `./sfac down --volumes`.
-Configuration, artifacts and installation-specific image tags remain. Remove them
-only when no longer needed; never use a global Docker prune. Keep the project file
+After `down`, run `./sfac clean-images` to remove only this installation's three
+image tags. It refuses while installation containers still exist and never uses
+force deletion. Configuration, artifacts, retained database volumes and shared
+build cache remain. Remove private state manually only when no longer needed;
+never use a global Docker prune. Rebuild with `./sfac build` before the next `up`. Keep the project file
 until its containers/volume have been removed so the launcher can address them.
 
 ## Troubleshooting and next steps
