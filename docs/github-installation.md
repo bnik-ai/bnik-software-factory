@@ -2,8 +2,8 @@
 
 This candidate supports one explicitly configured GitHub.com repository. Start with
 a disposable repository containing synthetic data. Live intake records events and
-human activation receipts; it never automatically invokes a model. The complete
-PR publication remains under development. The optional [human merge profile](human-merge.md)
+human activation receipts; it never automatically invokes a model. PR publication is an explicit operator step in the
+[end-to-end walkthrough](end-to-end-pilot.md). The optional [human merge profile](human-merge.md)
 adds protected review, CI verification and Task reconciliation for explicitly paired PRs.
 
 ## Register a dedicated App
@@ -32,7 +32,8 @@ Subscribe to **Issues, Issue comment, Pull request, Pull request review, Check r
 Check suite, Status**. Installation lifecycle and ping deliveries are liveness
 records only. Write grants and extra permission categories are rejected by this
 profile. Use a dedicated App instead of expanding an existing broadly privileged
-installation. PR publication will need a separately reviewed contract.
+installation. Use a separate, narrowly scoped publisher for the explicit publication step described
+in the end-to-end walkthrough.
 
 Install using **Only select repositories**, selecting exactly the intended one.
 “All repositories” is rejected even if the account currently has only one repo.
@@ -66,7 +67,9 @@ Current repository write/admin permission is also required; this list alone is
 not authorization.
 
 ```sh
-npm ci --prefix services/local-runtime --ignore-scripts --no-audit --no-fund
+for service in agents github-app orchestrator validator local-runtime; do
+  npm ci --prefix "services/$service" --ignore-scripts --no-audit --no-fund || exit 1
+done
 docker compose -f runtime/compose.yaml -f runtime/compose.live.yaml -f runtime/compose.worker.yaml up --build -d --wait
 python3 runtime/worker.py github-check
 curl --fail http://127.0.0.1:8787/readyz

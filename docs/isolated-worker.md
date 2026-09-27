@@ -3,18 +3,20 @@
 The local executor runs an explicitly submitted coding job in a disposable Docker
 container and returns a patch with command receipts. It uses the existing Claude
 Agent SDK adapter. Live jobs require a verified human Task activation and a separate local command.
-PR publication, review, required CI and human merge enforcement are separate work.
-This candidate does not yet provide the complete Task-to-merge workflow.
+The [end-to-end walkthrough](end-to-end-pilot.md) connects this executor to explicit
+operator publication, required CI, human review/merge and Task reconciliation.
 
 ## Run the credential-free example
 
-Requirements: Docker/Compose, Python 3, and host Node 24–26 with npm. Verified worker containers cover Linux x64 in contributor CI and Linux arm64
+Requirements: Docker/Compose, Python 3, and host Node 24.21.0 with npm. Verified worker containers cover Linux x64 in contributor CI and Linux arm64
 on macOS arm64 Docker Desktop; other platforms are unqualified.
 From the repository root, configure a fresh demo once (preserve existing settings):
 
 ```sh
 python3 runtime/configure.py --mode demo
-npm ci --prefix services/local-runtime --ignore-scripts --no-audit --no-fund
+for service in agents github-app orchestrator validator local-runtime; do
+  npm ci --prefix "services/$service" --ignore-scripts --no-audit --no-fund || exit 1
+done
 docker compose -f runtime/compose.yaml -f runtime/compose.worker.yaml build
 docker compose -f runtime/compose.yaml -f runtime/compose.worker.yaml up -d --wait
 docker build -f runtime/worker/Dockerfile -t software-factory-worker:development .

@@ -6,8 +6,8 @@ on the PR's current head are mandatory. That human performs the squash merge in
 GitHub. The runtime then verifies the merge and completes its paired Task.
 
 This is an optional, conservative review profile for an organization repository
-with enforceable branch protection. It does not publish worker output as PRs or
-provide the complete Task-to-PR workflow yet. Historical Azure Ops/Review handlers
+with enforceable branch protection. It does not publish worker output as PRs; follow the explicit operator publication
+steps in the [end-to-end walkthrough](end-to-end-pilot.md). Historical Azure Ops/Review handlers
 are experimental and are not connected to the local live runtime.
 
 ## Repository prerequisites

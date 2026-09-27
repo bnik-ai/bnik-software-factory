@@ -26,4 +26,30 @@ control-plane Dockerfile installs its four locked packages without lifecycle
 scripts and excludes the installed Agent SDK. Node/PostgreSQL base images pin
 manifest digests; their OS/runtime notices and the full built-image inventory need
 review before distribution. Legacy service Dockerfiles remain experimental.
-The project license is not yet finalized; no license here overrides vendor terms.
+Project-owned code uses [Apache-2.0](LICENSE); it does not override dependency or
+service terms. No SDK/platform binary or installed dependency tree is shipped in
+the source distribution. Exact copyright attribution is being finalized.
+
+
+## Artifact and notice scope
+
+| Artifact | Contents and notice handling |
+| --- | --- |
+| Project source archive | Project source/docs, lockfiles, LICENSE and provenance; preserve any source notices. No installed third-party implementation is vendored. |
+| Locally installed npm packages | Each installed package retains its own license/notice. The lockfile is an inventory reference, not a replacement for license text. |
+| Locally built worker/control-plane image | Includes dependencies, OS tools and possibly the vendor SDK; not an approved distribution artifact. Inventory and satisfy exact artifact obligations before redistribution. |
+| Provider/GitHub services | Account contracts, acceptable-use, billing and data-processing rules apply separately from source licensing. |
+
+For the pinned Agent SDK, `LICENSE.md` points to Anthropic's
+[legal and compliance terms](https://code.claude.com/docs/en/legal-and-compliance).
+The SDK and platform executables remain Anthropic software under their own terms.
+Use your own authorized API key and account; this project supplies no provider
+subscription or resale rights. Local build instructions and use of an unmodified
+vendor package do not by themselves clear every hosted or redistributed use case.
+Review applicable terms for your actual use. Vendor compliance certifications are
+not certifications of this project.
+
+Before distributing anything beyond project source, record exact package/image
+versions and include the license and attribution texts required for those bytes.
+For OS tools such as Git, source-offer or corresponding-source obligations can
+differ from npm notices. No review of an earlier source tree clears a later image.

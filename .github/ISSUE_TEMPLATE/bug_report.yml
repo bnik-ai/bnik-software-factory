@@ -1,0 +1,26 @@
+name: Bug report
+description: Report a reproducible problem without sensitive data.
+title: "Bug: "
+body:
+  - type: markdown
+    attributes:
+      value: "For vulnerabilities, follow SECURITY.md. Do not include credentials, private source or customer data."
+  - type: textarea
+    id: environment
+    attributes:
+      label: Version and environment
+      description: "Factory commit, OS/CPU, Docker/Compose, Node and runtime profile."
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal synthetic reproduction
+      description: "Steps, expected behavior and actual behavior."
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Redacted evidence and recovery tried
+      description: "Use bounded error codes and sanitized output; say what remains unknown."

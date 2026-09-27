@@ -2,64 +2,72 @@
 
 GitHub-native workflows for coding agents.
 
-**Private development candidate.** This tree includes a packaged PostgreSQL control plane
-and an explicit, credential-free demo. It is not a released end-to-end alpha.
-The release license and distribution notices are still being finalized.
+Turn a bounded GitHub Task into a reviewed change using your own repository,
+credentials and local runtime. A human authorizes each coding run, an isolated
+worker returns a patch and test receipts, an operator publishes the reviewed
+output, and a human reviews and merges after required CI. The runtime verifies
+the merge and completes the paired Task.
 
-The intended initial workflow starts from a Task, creates an implementation PR,
-runs agent review and required CI, and waits for a human to approve and merge.
-It targets one explicitly configured repository with the operator's own GitHub
-and Claude credentials. An explicit isolated coding executor is available;
-enforcement of the complete workflow remains under development.
+**Private alpha candidate; not yet released.** Apache-2.0 is selected for project-owned source; public attribution and maintainer
+identity are being finalized. No public repository, installation service or
+prebuilt image is available from this tree. See the [license](LICENSE), [support status](SUPPORT.md),
+[provenance](PROVENANCE.md) and [third-party terms](THIRD_PARTY.md).
 
-Run the [local demo and durable-runtime checks](docs/local-runtime.md), then follow
-the [GitHub App installation and human activation guide](docs/github-installation.md).
-Live intake verifies the configured installation and stores authorized Task receipts.
-Execution requires a separate, explicit local command and current human authorization.
-Run the separate [isolated worker example](docs/isolated-worker.md) to produce a
-patch and actual test-command receipts from a disposable container.
-For explicitly paired PRs, the [human merge profile](docs/human-merge.md) verifies
-GitHub protection, human approval and required CI, then reconciles the Task.
-Use the [recovery runbook](docs/recovery.md) to inspect failures, quarantine work
-and explicitly retry eligible items without bypassing human gates.
-Inspect [run evidence and controls](docs/run-controls.md) for usage, limits,
-cancellation and local content retention.
+```text
+Human Task activation -> Isolated build -> Patch + test receipts
+                                                   |
+                                      Operator reviews and publishes
+                                                   |
+                                 Human review <-> Explicit revision
+                                                   |
+                                     Required CI on current head
+                                                   |
+                                      Human merge -> Task completed
+```
 
-## Explore the source
+## Get started
+
+Start with the [credential-free quickstart](docs/quickstart.md). It verifies the
+local control plane without a GitHub App or model bill. Then try the
+[isolated worker example](docs/isolated-worker.md), followed by the
+[GitHub installation](docs/github-installation.md) and
+[real Task-to-merge walkthrough](docs/end-to-end-pilot.md).
+
+The local profile targets one GitHub.com repository, one operator-controlled
+installation and Claude Agent SDK execution. Publication is an explicit operator
+step. AI review is advisory; the packaged workflow requires native human review.
+This is not an autonomous development or deployment service.
+
+## Documentation
+
+| Need | Guide |
+| --- | --- |
+| Install, see expected output, troubleshoot and tear down | [Quickstart](docs/quickstart.md) |
+| Understand supported and experimental behavior | [Support matrix](SUPPORT.md) and [roadmap](docs/roadmap.md) |
+| Understand components and trust boundaries | [Architecture](docs/architecture.md) |
+| Register an App and authorize one Task | [GitHub installation](docs/github-installation.md) |
+| Configure required CI and human merge | [Human merge](docs/human-merge.md) |
+| Inspect usage, cancel work and prune content | [Run controls](docs/run-controls.md) |
+| Recover failures and back up the database | [Recovery](docs/recovery.md) and [local runtime](docs/local-runtime.md) |
+| Contribute or maintain a release | [Contributing](CONTRIBUTING.md), [maintainer guide](docs/maintaining.md), [CI](docs/contributor-ci.md) |
+| Report a vulnerability | [Security policy](SECURITY.md) |
+| Review changes and limitations | [Release notes](CHANGELOG.md) |
+
+## Source layout
 
 | Package | Responsibility |
 | --- | --- |
-| `services/github-app` | Webhook authentication, intake, and GitHub App surfaces |
-| `services/validator` | Record transitions, policy, audit ledger, and verdicts |
+| `services/github-app` | Webhook authentication and GitHub App surfaces |
+| `services/validator` | Record transitions, policy and audit ledger |
 | `services/orchestrator` | Verdict-gated routing to agent roles |
-| `services/local-runtime` | PostgreSQL queues, atomic handoffs, local authentication and packaging |
-| `services/agents` | Build/review handlers, tools, and model adapters |
+| `services/local-runtime` | PostgreSQL queues, activation, isolated execution and merge reconciliation |
+| `services/agents` | Build/review handlers, tools and model adapters |
 
-See [architecture](docs/architecture.md), [source authority](docs/sources-of-truth.md),
-[upstream policy](docs/upstream.md), and [provenance](PROVENANCE.md).
+The live operator workflow and the fixture validator/router demo use different
+paths; [architecture](docs/architecture.md) explains both. See also the
+[source map](docs/sources-of-truth.md) and [upstream policy](docs/upstream.md).
 
-## Check the source locally
-
-From the repository root, with Node and npm installed:
-
-```sh
-for service in agents github-app orchestrator validator local-runtime; do
-  (cd "services/$service" && npm ci --ignore-scripts --no-audit --no-fund && npm test && npm run lint && npm run type-check) || exit 1
-done
-node --test scripts/*.test.mjs
-node scripts/gen-architecture-diagrams.mjs --check
-```
-
-These checks use fixtures; they do not start a factory or contact a live coding
-model. [Contributor CI and source artifacts](docs/contributor-ci.md) select Linux x64 and
-Node 24.21.0. Linux arm64 runtime containers are also verified on macOS Docker
-Desktop; local source checks have run on macOS arm64 with Node 26. Dependency installation
-fetches packages under their own terms; see [third-party components](THIRD_PARTY.md).
-
-Existing Azure entrypoints and Dockerfiles are experimental source references.
-They are not an installation quickstart. Some entrypoints fall back to stubs
-when credentials are absent; a successful process start does not prove a live run.
-Goal/Spec/Design, Ops, SRE, Terraform and deployment surfaces are also experimental.
-Never enable autonomous merge or deployment for the intended initial profile.
-
-For a real model and human-review pilot, see the [end-to-end walkthrough](docs/end-to-end-pilot.md). Its live execution evidence is a separate requirement; examples alone do not establish completion.
+To check source changes, follow the locked install and test commands in
+[CONTRIBUTING.md](CONTRIBUTING.md). Ordinary contributor CI uses fixtures and never
+calls a paid model. Legacy Azure entrypoints, planning and operations handlers
+remain experimental; their presence is not evidence of a supported deployment.

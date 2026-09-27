@@ -11,7 +11,7 @@ No third-party implementation, installed dependency tree, vendor binary, or imag
 is vendored in this source tree. Package lockfiles retain dependency identities,
 integrities, and license metadata. See [THIRD_PARTY.md](THIRD_PARTY.md).
 
-The rights holder, contributor attribution required for publication, and final
-project license must be confirmed before release. This document grants no new
-license and does not place dependencies under a project license. Required notices
-must accompany any later distributed source, binary, or container artifact.
+Apache-2.0 has been selected for project-owned source; see [LICENSE](LICENSE).
+The exact rights-holder notice and public maintainer attribution are being finalized
+before distribution. Dependencies keep their own terms. Required notices must
+accompany any later distributed source, binary or container artifact.

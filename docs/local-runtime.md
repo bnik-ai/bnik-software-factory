@@ -4,7 +4,7 @@ This private development candidate runs authenticated intake, validation, audit 
 routing with durable PostgreSQL queues. The packaged demo uses synthetic GitHub
 reads and a receipt-only worker. Live mode verifies GitHub installation and human Task activation, storing durable
 authorization receipts. The separate [isolated executor](isolated-worker.md) accepts
-explicit requests bound to those receipts. Automatic Task-to-PR workflow integration remains under development; this is not a complete end-to-end alpha installation.
+explicit requests bound to those receipts. The [end-to-end walkthrough](end-to-end-pilot.md) connects activation, explicit execution, operator publication and human merge. Publication is manual; the demo is not that live workflow.
 
 For explicitly paired PRs, the optional [human merge profile](human-merge.md) checks
 native protection, human review and required CI, then reconciles verified human merges.
@@ -13,8 +13,8 @@ native protection, human review and required CI, then reconciles verified human 
 
 The container target is Linux arm64, verified on macOS arm64 with Docker Desktop
 (Engine 28.0.4, Compose 2.34.0). Images pin official multi-platform manifest digests:
-Node 24.21.0 on Debian Bookworm slim and PostgreSQL 17.11 on Bookworm. Other hosts
-and amd64 are not yet verified. Docker, Compose and Python 3 are required for the
+Node 24.21.0 on Debian Bookworm slim and PostgreSQL 17.11 on Bookworm. Linux x64 database/worker integration has also run in contributor CI; other hosts
+remain unqualified. Docker, Compose and Python 3 are required for the
 launcher and integration exercise. Node source checks also ran on macOS Node 26.
 
 The control-plane image installs locked dependencies with lifecycle scripts

@@ -61,9 +61,9 @@ Review the complete artifact before any disclosure; pattern checks cannot prove
 that all unknown secrets or third-party rights issues are absent.
 
 Only tracked source is shipped. No `.git`, dependencies, credentials, database,
-container image or internal release plan belongs in the artifact. The current
-license/provenance notices are included; they do not grant a release license that
-has not yet been approved.
+container image or internal release plan belongs in the artifact. The project
+license/provenance notices are included; source packaging is not publication
+approval or permission to redistribute separately licensed vendor components.
 
 ## Runtime and build limits
 
