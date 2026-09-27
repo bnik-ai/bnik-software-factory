@@ -84,9 +84,11 @@ not used. An incomplete manifest, a traversal path, a `.git` segment or a
 duplicate path is refused. Rules are case-insensitive; renames are judged on both
 the old and new path.
 
-**Built-in critical paths** (always on): CI and repository automation, CODEOWNERS,
-developer hooks, test-runner configuration, factory configuration, `SECURITY.md`,
-dependency manifests and lockfiles, auth/login/session/permission modules
+**Built-in critical paths** (always on): CI and repository automation (including
+hosted CI configurations, merge bots, dependency bots and composite actions),
+CODEOWNERS, developer hooks, test-runner and build-transform configuration
+(including `conftest.py`), factory configuration, `SECURITY.md`, dependency
+manifests, lockfiles and package-manager hooks, auth/login/session/permission modules
 (including camelCase names such as `requireAuth.js`), secret-bearing files,
 deployment and container definitions, infrastructure code, migrations, schema
 tools and SQL, license and notice files, plus configured `criticalPaths` and
@@ -112,9 +114,10 @@ longer than 4,000 characters are not pattern-matched and need a human. Diff work
 has one budget for the whole manifest; very large or very different files are
 treated as entirely changed rather than diffed, so nothing is skipped.
 
-**Uninspectable:** binary content, symlinks, submodules, mode changes, non-ASCII
-paths, over-long lines, empty changes and changes above `changeLimits` need a
-human.
+**Uninspectable:** binary content, symlinks, submodules, non-ASCII paths,
+over-long lines, empty changes and changes above `changeLimits` need a human.
+File mode changes are critical as permission changes; they hold the merge, not
+publication.
 
 These rules are best-effort tripwires, not proofs, and a determined author can
 evade pattern matching. The deterministic rules and the separate
@@ -126,10 +129,11 @@ Publication is itself an external effect. Pushing to the base repository runs
 its automation and installs its dependencies with that repository's CI
 privileges, and anything pushed is disclosed. CI and hook definitions, test-runner
 configuration, dependency manifests, new code-execution calls, recognizable
-secret material and anything that could not be inspected (and so could hide
-those) therefore need approval **before publish**. This hold is decided on the
-full set of reasons, before the reason list is truncated for display. Other
-critical changes may be published for review, but their merge holds.
+secret material, anything that could not be inspected (and so could hide those),
+and a reviewer's escalation of secrets, security or governance risk therefore
+need approval **before publish**. This hold is decided on the full set of
+reasons, before the reason list is truncated for display. Other critical changes
+may be published for review, but their merge holds.
 
 **Residual exposure:** published code, including ordinary tests, executes in the
 repository's CI. If that CI can read secrets, agent-written code can reach them;

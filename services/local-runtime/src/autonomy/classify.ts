@@ -138,7 +138,7 @@ export const BUILT_IN_PATH_RULES: readonly PathRule[] = [
     code: 'ci_or_repository_automation',
     category: 'governance',
     pattern:
-      /^\.github\/|^\.gitlab\/|(^|\/)\.gitlab-ci\.ya?ml$|^\.circleci\/|(^|\/)jenkinsfile$|^\.buildkite\/|(^|\/)azure-pipelines[^/]*\.ya?ml$|^\.travis\.ya?ml$|(^|\/)bitbucket-pipelines\.ya?ml$|^\.drone\.ya?ml$/,
+      /^\.github\/|^\.gitlab\/|^\.gitea\/|^\.forgejo\/|^\.woodpecker(\/|\.ya?ml$)|(^|\/)\.gitlab-ci\.ya?ml$|^\.circleci\/|(^|\/)jenkinsfile$|^\.buildkite\/|(^|\/)azure-pipelines[^/]*\.ya?ml$|^\.travis\.ya?ml$|(^|\/)bitbucket-pipelines\.ya?ml$|^\.drone\.ya?ml$|^\.semaphore\/|^\.teamcity\/|(^|\/)(\.cirrus|appveyor|\.appveyor|cloudbuild|buildspec|bitrise|codemagic|\.mergify|mergify|\.kodiak|codecov|\.codecov|\.readthedocs)\.ya?ml$|(^|\/)(\.?renovate(rc)?|\.renovaterc|\.kodiak)(\.json5?|\.toml)?$|(^|\/)\.renovaterc$|(^|\/)action\.ya?ml$/,
   },
   { code: 'code_ownership', category: 'governance', pattern: /(^|\/)codeowners$/ },
   {
@@ -150,7 +150,7 @@ export const BUILT_IN_PATH_RULES: readonly PathRule[] = [
     code: 'test_runner_configuration',
     category: 'governance',
     pattern:
-      /(^|\/)(jest[^/]*|vitest|vitest\.workspace|vite|karma\.conf|playwright|cypress|ava|wdio\.conf)(\.config)?\.[cm]?[jt]s(on)?$|(^|\/)(pytest\.ini|tox\.ini|noxfile\.py|phpunit\.xml(\.dist)?|\.mocharc(\.[a-z]+)?|\.nycrc(\.[a-z]+)?|\.c8rc(\.[a-z]+)?)$/,
+      /(^|\/)(jest[^/]*|vitest|vitest\.workspace|vite|karma\.conf|playwright|cypress|ava|wdio\.conf)(\.config)?\.[cm]?[jt]s(on)?$|(^|\/)(pytest\.ini|tox\.ini|noxfile\.py|phpunit\.xml(\.dist)?|\.mocharc(\.[a-z]+)?|\.nycrc(\.[a-z]+)?|\.c8rc(\.[a-z]+)?)$|(^|\/)(conftest\.py|babel\.config\.[cm]?[jt]s(on)?|\.babelrc(\.[a-z]+)?|jest\.setup\.[cm]?[jt]s|vitest\.setup\.[cm]?[jt]s|setuptests\.[cm]?[jt]s)$/,
   },
   { code: 'factory_configuration', category: 'governance', pattern: /(^|\/)\.factory(\/|$)/ },
   { code: 'security_policy', category: 'governance', pattern: /(^|\/)security\.md$/ },
@@ -158,7 +158,7 @@ export const BUILT_IN_PATH_RULES: readonly PathRule[] = [
     code: 'dependency_manifest',
     category: 'security_auth',
     pattern:
-      /(^|\/)(package\.json|package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.npmrc|\.yarnrc(\.yml)?|requirements[^/]*\.(txt|in)|constraints[^/]*\.txt|pipfile(\.lock)?|pyproject\.toml|poetry\.lock|uv\.lock|setup\.py|setup\.cfg|go\.mod|go\.sum|cargo\.toml|cargo\.lock|gemfile(\.lock)?|[^/]*\.gemspec|pom\.xml|build\.gradle(\.kts)?|settings\.gradle(\.kts)?|gradle\.properties|composer\.(json|lock)|[^/]*\.csproj|packages\.lock\.json|nuget\.config|pubspec\.(yaml|lock)|mix\.(exs|lock)|\.gitmodules)$/,
+      /(^|\/)(package\.json|package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.npmrc|\.yarnrc(\.yml)?|requirements[^/]*\.(txt|in)|constraints[^/]*\.txt|pipfile(\.lock)?|pyproject\.toml|poetry\.lock|uv\.lock|setup\.py|setup\.cfg|go\.mod|go\.sum|cargo\.toml|cargo\.lock|gemfile(\.lock)?|[^/]*\.gemspec|pom\.xml|build\.gradle(\.kts)?|settings\.gradle(\.kts)?|gradle\.properties|composer\.(json|lock)|[^/]*\.csproj|packages\.lock\.json|nuget\.config|pubspec\.(yaml|lock)|mix\.(exs|lock)|\.gitmodules)$|(^|\/)(\.pnpmfile\.c?js|bun\.lockb?|go\.work(\.sum)?|deno\.jsonc?|deno\.lock|environment\.ya?ml|directory\.build\.(props|targets)|directory\.packages\.props|[^/]*\.(props|targets))$|(^|\/)\.cargo\//,
   },
   {
     code: 'auth_or_security_module',
@@ -243,7 +243,7 @@ export const CONTENT_RULES: readonly ContentRule[] = [
     category: 'security_auth',
     side: 'added',
     pattern:
-      /\b(child_process|execsync|spawnsync|execfile|subprocess|os\.system|os\.popen|shell\s*=\s*true|dangerouslysetinnerhtml|pickle\.loads?)\b|\b(eval|exec|spawn|fork)\s*\(|\bnew\s+function\s*\(|\beval\b/i,
+      /\b(child_process|execsync|spawnsync|execfile|execa|subprocess|os\.system|os\.popen|shell\s*=\s*true|dangerouslysetinnerhtml|pickle\.loads?|exec\.command|command::new|processbuilder|process\.start|runtime\.getruntime|shell_exec|passthru|proc_open|kernel\.system|io\.popen)\b|\b(eval|exec|spawn|fork|system|popen)\s*\(|\bnew\s+function\s*\(|\bfunction\s*\(\s*["'`]|`[^`]*\$\(|\beval\b/i,
   },
   {
     code: 'transport_verification_disabled',
@@ -263,7 +263,7 @@ export const CONTENT_RULES: readonly ContentRule[] = [
     category: 'secrets_permissions',
     side: 'added',
     pattern:
-      /-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(ghp|gho|ghs|ghu|github_pat)_[A-Za-z0-9_]{20,}|\bsk-ant-[A-Za-z0-9_-]{20,}|\bAKIA[0-9A-Z]{16}\b|\bxox[baprs]-[A-Za-z0-9-]{10,}/,
+      /-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(ghp|gho|ghs|ghu|ghr|github_pat)_[A-Za-z0-9_]{20,}|\bsk-ant-[A-Za-z0-9_-]{20,}|\bsk-(proj|svcacct|admin)-[A-Za-z0-9_-]{20,}|\b(sk|rk)_live_[A-Za-z0-9]{16,}|\bAIza[0-9A-Za-z_-]{35}\b|\bAKIA[0-9A-Z]{16}\b|\bxox[baprse]-[A-Za-z0-9-]{10,}|\bglpat-[A-Za-z0-9_-]{20,}|\bnpm_[A-Za-z0-9]{36}\b|\bhf_[A-Za-z0-9]{30,}/,
   },
   {
     code: 'secret_or_credential_handling',
@@ -545,6 +545,47 @@ function backtrack(
   }
 }
 
+/**
+ * True when the differing middle of a file has more lines than the diff will
+ * examine (so every one of them would count as changed) and more characters than
+ * the remaining byte budget. Linear, allocation-free, and conservative: it can
+ * only mark a change oversized, never let content through uninspected.
+ */
+function exceedsWithoutSplitting(
+  oldContent: string,
+  newContent: string,
+  remaining: number,
+): boolean {
+  let prefix = 0;
+  const shorter = Math.min(oldContent.length, newContent.length);
+  while (prefix < shorter && oldContent.charCodeAt(prefix) === newContent.charCodeAt(prefix))
+    prefix++;
+  let suffix = 0;
+  while (
+    suffix < shorter - prefix &&
+    oldContent.charCodeAt(oldContent.length - 1 - suffix) ===
+      newContent.charCodeAt(newContent.length - 1 - suffix)
+  )
+    suffix++;
+  const middleCharacters = oldContent.length + newContent.length - 2 * (prefix + suffix);
+  if (middleCharacters <= remaining) return false;
+  let middleLines = 0;
+  for (const [content, end] of [
+    [oldContent, oldContent.length - suffix],
+    [newContent, newContent.length - suffix],
+  ] as const) {
+    for (
+      let index = content.indexOf('\n', prefix);
+      index !== -1 && index < end;
+      index = content.indexOf('\n', index + 1)
+    ) {
+      middleLines++;
+      if (middleLines > MAX_DIFF_LINES) return true;
+    }
+  }
+  return false;
+}
+
 export function classifyChanges(policy: AutonomyPolicy, manifest: ChangeManifest): Classification {
   const reasons = new Map<string, Reason>();
   const addReason = (code: string, category: ReasonCategory, path?: string) => {
@@ -589,12 +630,25 @@ export function classifyChanges(policy: AutonomyPolicy, manifest: ChangeManifest
 
     // Limits are enforced before any pattern runs, so oversized input cannot stall classification.
     if (contentBudgetExceeded) continue;
+    // Cheap pre-check on the raw strings before splitting: a huge differing region
+    // that will not be diffed line by line cannot fit the remaining budget anyway.
+    if (
+      exceedsWithoutSplitting(
+        change.oldContent ?? '',
+        change.newContent ?? '',
+        policy.changeLimits.maxChangedBytes - changedBytes,
+      )
+    ) {
+      contentBudgetExceeded = true;
+      continue;
+    }
     const { added, removed, context } = changedLines(
       change.oldContent,
       change.newContent,
       diffBudget,
     );
-    for (const line of [...added, ...removed]) changedBytes += Buffer.byteLength(line) + 1;
+    for (const line of added) changedBytes += Buffer.byteLength(line) + 1;
+    for (const line of removed) changedBytes += Buffer.byteLength(line) + 1;
     if (changedBytes > policy.changeLimits.maxChangedBytes) {
       contentBudgetExceeded = true;
       continue;

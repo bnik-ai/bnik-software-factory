@@ -69,6 +69,17 @@ export interface Decision {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+/**
+ * Either the rules or the reviewer can escalate. A reviewer finding of secrets,
+ * security or governance risk also holds publication, since pushing discloses
+ * secrets and runs code in CI; other reviewer escalations hold the merge.
+ */
+const REVIEW_PUBLICATION_HOLD_CATEGORIES: readonly string[] = [
+  'secrets_permissions',
+  'security_auth',
+  'governance',
+];
+
 export function parseRequest(policy: AutonomyPolicy, value: unknown): ActionRequest {
   requireRecord(
     value,
@@ -226,6 +237,13 @@ export function decide(
         const deferredToMerge = request.action === 'publish' && !holdsPublication(reason);
         if (!deferredToMerge) reasons.push(toDecisionReason(reason, 'approval'));
       }
+      // Truncation keeps holds first, so this only fires if that invariant ever breaks.
+      if (
+        request.action === 'publish' &&
+        classification.publicationHold &&
+        !classification.reasons.some(holdsPublication)
+      )
+        reasons.push({ code: 'publication_hold', category: 'uninspectable', effect: 'approval' });
       reasons.push(
         ...acceptanceReasons(policy, subject, request.task.intentKind, evidence.acceptance, now),
       );
@@ -237,7 +255,12 @@ export function decide(
         now,
       );
       reasons.push(
-        ...review.filter((reason) => request?.action === 'merge' || reason.effect !== 'approval'),
+        ...review.filter(
+          (reason) =>
+            request?.action === 'merge' ||
+            reason.effect !== 'approval' ||
+            REVIEW_PUBLICATION_HOLD_CATEGORIES.includes(reason.category),
+        ),
       );
       const semanticCritical = review.some((reason) => reason.effect === 'approval');
       risk = classification.risk === 'critical' || semanticCritical ? 'critical' : 'routine';
