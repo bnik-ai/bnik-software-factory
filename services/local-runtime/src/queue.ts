@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { transaction } from './database.js';
 
-export type WorkState = 'pending' | 'running' | 'done' | 'dead';
+export type WorkState = 'pending' | 'running' | 'done' | 'dead' | 'quarantined';
 export interface Work {
   id: string;
   queue_name: string;

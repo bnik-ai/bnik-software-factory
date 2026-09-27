@@ -124,8 +124,9 @@ of GitHub/model effects; future workers must reconcile uncertain external effect
 
 Malformed work is dead-lettered with a reason; transient failures retry within the
 attempt bound, including leases abandoned by crashed processes. Status shows queue
-and state counts. Inspect dead-letter records with an authorized database operator;
-there is no automatic replay of them or unsupported generic replay CLI here.
+and state counts. The [recovery runbook](recovery.md) provides authenticated
+inspection, quarantine and one-attempt replay for eligible intake/reconciliation
+items. Paid coding jobs require fresh human activation.
 
 Completed raw payloads and result snapshots can be compacted after a chosen number
 of days while delivery hashes/keys remain to prevent duplicate execution:

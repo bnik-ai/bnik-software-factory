@@ -20,6 +20,8 @@ Run the separate [isolated worker example](docs/isolated-worker.md) to produce a
 patch and actual test-command receipts from a disposable container.
 For explicitly paired PRs, the [human merge profile](docs/human-merge.md) verifies
 GitHub protection, human approval and required CI, then reconciles the Task.
+Use the [recovery runbook](docs/recovery.md) to inspect failures, quarantine work
+and explicitly retry eligible items without bypassing human gates.
 
 ## Explore the source
 
