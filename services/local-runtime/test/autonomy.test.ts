@@ -190,7 +190,7 @@ test('built-in critical paths cannot be dodged by case, renames or deletion', ()
 });
 
 test('content tripwires inspect only changed lines, including removed security checks', () => {
-  const existing = 'const password = read();\nfunction total(a) {\n  return a;\n}\n';
+  const existing = 'const password = read();\n\nfunction total(a) {\n  return a;\n}\n';
   assert.equal(
     classify(modified('src/total.js', existing, existing.replace('return a;', 'return a + 1;')))
       .risk,
@@ -207,10 +207,14 @@ test('content tripwires inspect only changed lines, including removed security c
       'auth_or_crypto_code',
     ),
   );
-  assert.deepEqual(changedLines('a\nb\na\n', 'a\nb\n'), { added: [], removed: ['a'] });
-  const hidden = 'const isAdmin = false; /* ‮ } ⁦ if (isAdmin) */\n';
+  const hidden = `const isAdmin = false; /* ${String.fromCharCode(0x202e)} } ${String.fromCharCode(0x2066)} if (isAdmin) */\n`;
   assert.ok(
     classifiedCodes(added('src/flag.js', hidden)).includes('hidden_text_direction_controls'),
+  );
+  assert.ok(
+    classifiedCodes(added('src/flag.js', `x = 1;${String.fromCharCode(0x061c)}\n`)).includes(
+      'hidden_text_direction_controls',
+    ),
   );
   assert.ok(
     classifiedCodes(added('src/key.js', `const k = 'ghp_${'x'.repeat(36)}';\n`)).includes(
@@ -229,12 +233,94 @@ test('content tripwires inspect only changed lines, including removed security c
   );
 });
 
+test('the line diff is ordered: moved and reordered lines are changes, unchanged lines are not', () => {
+  assert.deepEqual(changedLines('a\nb\na\n', 'a\nb\n'), {
+    added: [],
+    removed: ['a'],
+    context: ['b', ''],
+  });
+  const swapped = changedLines('check();\nwipe();\n', 'wipe();\ncheck();\n');
+  assert.equal(swapped.added.length + swapped.removed.length, 2);
+  const guard = 'if (!isAllowed(user)) throw denied();';
+  const before = `function remove(user) {\n  ${guard}\n  wipe(user);\n}\n`;
+  const after = `function remove(user) {\n  wipe(user);\n  ${guard}\n}\n`;
+  assert.ok(classifiedCodes(modified('src/api.js', before, after)).includes('auth_or_crypto_code'));
+  const nested = 'if (isAdmin) {\n  purge();\n}\nlog();\n';
+  assert.equal(
+    classify(modified('src/api.js', nested, 'if (isAdmin) {\n}\npurge();\nlog();\n')).risk,
+    'critical',
+  );
+  assert.deepEqual(changedLines('same\n', 'same\n'), { added: [], removed: [], context: [] });
+});
+
+test('ordered diff keeps a longest common subsequence (property check against dynamic programming)', () => {
+  let seed = 7;
+  const random = () => {
+    seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
+    return seed / 2_147_483_648;
+  };
+  const lcsLength = (left: string[], right: string[]) => {
+    const width = right.length + 1;
+    const table = new Int32Array((left.length + 1) * width);
+    const at = (row: number, column: number) => table[row * width + column] as number;
+    for (let row = 1; row <= left.length; row++)
+      for (let column = 1; column <= right.length; column++)
+        table[row * width + column] =
+          left[row - 1] === right[column - 1]
+            ? at(row - 1, column - 1) + 1
+            : Math.max(at(row - 1, column), at(row, column - 1));
+    return at(left.length, right.length);
+  };
+  for (let trial = 0; trial < 300; trial++) {
+    const make = () =>
+      Array.from(
+        { length: Math.floor(random() * 12) },
+        () => 'abcd'[Math.floor(random() * 4)] as string,
+      );
+    const left = make();
+    const right = make();
+    const { added, removed } = changedLines(left.join('\n'), right.join('\n'));
+    const leftLines = left.join('\n').split(/\r?\n/);
+    const rightLines = right.join('\n').split(/\r?\n/);
+    const kept = rightLines.length - added.length;
+    assert.equal(leftLines.length - removed.length, kept);
+    assert.equal(kept, lcsLength(leftLines, rightLines), `${left} -> ${right}`);
+  }
+});
+
+test('oversized lines and changes are bounded before any pattern runs', () => {
+  const started = Date.now();
+  const hostile = added('src/x.js', `${'curl '.repeat(40_000)}\n`);
+  const reasons = classifiedCodes(hostile);
+  assert.ok(Date.now() - started < 2000);
+  assert.ok(
+    reasons.includes('change_exceeds_routine_size_limit') ||
+      reasons.includes('line_too_long_to_inspect'),
+  );
+  const longLine = added('src/min.js', `${'a'.repeat(5000)}\n`);
+  assert.ok(classifiedCodes(longLine).includes('line_too_long_to_inspect'));
+  const lines = Array.from({ length: 3000 }, (_, index) => `line ${index}`).join('\n');
+  const shuffled = Array.from({ length: 3000 }, (_, index) => `line ${(index * 7) % 3000}`).join(
+    '\n',
+  );
+  const diffStarted = Date.now();
+  classifyChanges(
+    policyFixture({ changeLimits: { maxChangedFiles: 50, maxChangedBytes: 8_000_000 } }),
+    manifest(modified('src/big.js', lines, shuffled)),
+  );
+  assert.ok(Date.now() - diffStarted < 5000);
+});
+
 test('weakening tests is critical; adding tests is routine', () => {
   const testFile = "test('a', () => {\n  assert.equal(f(), 1);\n  assert.equal(g(), 2);\n});\n";
   assert.ok(classifiedCodes(deleted('test/a.test.js', testFile)).includes('test_file_removed'));
-  assert.ok(
-    classifiedCodes(renamed('test/a.test.js', 'src/a.js', testFile)).includes('test_file_removed'),
-  );
+  for (const disabledPath of ['src/a.js', 'test/a.test.js.disabled', 'test/fixtures/a.txt'])
+    assert.ok(
+      classifiedCodes(renamed('test/a.test.js', disabledPath, testFile)).includes(
+        'test_file_removed',
+      ),
+      disabledPath,
+    );
   assert.ok(
     classifiedCodes(
       modified('test/a.test.js', testFile, testFile.replace('  assert.equal(g(), 2);\n', '')),
@@ -243,16 +329,79 @@ test('weakening tests is critical; adding tests is routine', () => {
   for (const weakened of [
     testFile.replace("test('a'", "test.skip('a'"),
     testFile.replace("test('a'", "it.only('a'"),
-    `${testFile}// run: npm test || true\n`,
   ])
     assert.ok(
       classifiedCodes(modified('test/a.test.js', testFile, weakened)).includes(
-        'test_skip_or_failure_masking',
+        'test_skip_or_focus',
       ),
+    );
+  assert.ok(
+    classifiedCodes(
+      modified('test/a.test.js', testFile, `${testFile}// npm test || true\n`),
+    ).includes('failure_masking'),
+  );
+  for (const config of ['test/jest.config.js', 'vitest.config.ts', 'pytest.ini', '.mocharc.json'])
+    assert.ok(
+      classifiedCodes(added(config, 'module.exports = {};\n')).includes(
+        'test_runner_configuration',
+      ),
+      config,
     );
   const strengthened = testFile.replace('});', '  assert.equal(h(), 3);\n});');
   assert.equal(classify(modified('test/a.test.js', testFile, strengthened)).risk, 'routine');
   assert.equal(classify(added('test/b.test.js', testFile)).risk, 'routine');
+  assert.equal(
+    classify(renamed('test/a.test.js', 'test/unit/a.test.js', testFile)).risk,
+    'routine',
+  );
+});
+
+test('security modules, destructive data APIs and execution calls are recognized under common names', () => {
+  const edit = (path: string) =>
+    modified(path, 'if (hash === expected) ok();\n', 'if (true) ok();\n');
+  for (const path of [
+    'src/authentication/verify.js',
+    'src/authorization/check.js',
+    'src/authMiddleware.js',
+    'src/middleware/requireAuth.js',
+    'src/login/handler.js',
+    'src/passport.js',
+  ])
+    assert.ok(classifiedCodes(edit(path)).includes('auth_or_security_module'), path);
+  assert.equal(classify(edit('src/authors.js')).risk, 'routine');
+  for (const line of [
+    'TRUNCATE users CASCADE;',
+    'op.drop_table("users")',
+    'await knex.schema.dropTable("users")',
+    'await queryInterface.dropTable("users")',
+    'db.collection("users").drop()',
+    'metadata.drop_all(engine)',
+    "db.run('UPDATE users SET email = NULL')",
+  ])
+    assert.equal(classify(added('src/db.js', `${line}\n`)).risk, 'critical', line);
+  assert.ok(
+    classifiedCodes(added('src/alembic/versions/1.py', 'x = 1\n')).includes(
+      'data_schema_or_migration',
+    ),
+  );
+  assert.ok(
+    classifiedCodes(added('src/run.js', 'exec(q.cmd);\n')).includes('code_execution_primitive'),
+  );
+});
+
+test('common routine code does not trip deployment, infrastructure, secret or skip rules', () => {
+  for (const [path, line] of [
+    ['src/env.js', "if (process.env.NODE_ENV === 'production') enableCache();"],
+    ['docs/guide.md', 'See the deployment guide and kubectl apply examples.'],
+    ['src/query.js', 'return query.skip(20).limit(10);'],
+    ['src/config.js', "const region = config.aws_region ?? 'us-east-1';"],
+    ['src/people.js', "const role = 'secretary';"],
+  ])
+    assert.equal(classify(added(path as string, `${line}\n`)).risk, 'routine', line);
+  assert.equal(
+    classify(added('src/deploy.js', 'run("kubectl apply -f prod.yaml");\n')).risk,
+    'critical',
+  );
 });
 
 test('uninspectable content, links, submodules, odd names and oversize changes need a human', () => {
@@ -597,7 +746,7 @@ test('bug fixes need a reproducer that fails on base and passes on the candidate
   assert.equal(withReproducer({ baseline: 'error', candidate: 'passed' }).outcome, 'blocked');
 });
 
-test('publication: routine and most critical changes publish; CI definitions and secrets need approval first', () => {
+test('publication: routine and most critical changes publish; code that runs in CI or discloses secrets needs approval first', () => {
   const policy = policyFixture();
   const routine = requestFor(policy, 'publish');
   assert.equal(decide(policy, routine, evidenceFor(policy, routine), NOW).outcome, 'allow');
@@ -606,7 +755,14 @@ test('publication: routine and most critical changes publish; CI definitions and
     'publish',
     manifest(modified('package.json', '{}\n', '{"a":1}\n')),
   );
-  const published = decide(policy, dependency, evidenceFor(policy, dependency), NOW);
+  const held = decide(policy, dependency, evidenceFor(policy, dependency), NOW);
+  assert.equal(held.outcome, 'approval_required');
+  const migration = requestFor(
+    policy,
+    'publish',
+    manifest(added('src/migrations/1.sql', 'SELECT 1;\n')),
+  );
+  const published = decide(policy, migration, evidenceFor(policy, migration), NOW);
   assert.equal(published.outcome, 'allow');
   assert.equal(published.risk, 'critical');
   for (const disclosed of [

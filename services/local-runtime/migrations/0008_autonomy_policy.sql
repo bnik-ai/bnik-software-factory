@@ -49,6 +49,7 @@ CREATE TABLE factory_autonomy_decisions (
   action_sha256 text,
   policy_sha256 text NOT NULL,
   request_summary jsonb,
+  approval_sha256 text CHECK (approval_sha256 IS NULL OR approval_sha256 ~ '^[0-9a-f]{64}$'),
   decision jsonb NOT NULL,
   decided_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   consumed_at timestamptz,
@@ -58,6 +59,9 @@ CREATE INDEX factory_autonomy_decisions_request ON factory_autonomy_decisions(re
 -- One consequential effect per controller request, however many times it is re-decided.
 CREATE UNIQUE INDEX factory_autonomy_decisions_consumed_once
   ON factory_autonomy_decisions(request_id) WHERE consumed_at IS NOT NULL;
+-- A human approval authorizes one consequential action, not every re-issued request.
+CREATE UNIQUE INDEX factory_autonomy_approvals_consumed_once
+  ON factory_autonomy_decisions(approval_sha256) WHERE consumed_at IS NOT NULL AND approval_sha256 IS NOT NULL;
 CREATE TABLE factory_autonomy_reservations (
   reservation_id uuid PRIMARY KEY,
   scope_id text NOT NULL REFERENCES factory_autonomy_scopes(scope_id),

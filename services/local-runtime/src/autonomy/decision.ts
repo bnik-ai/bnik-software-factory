@@ -61,17 +61,26 @@ export interface Decision {
   policySha256: string;
   evidenceSha256: string;
   approvedBy: number | null;
+  /** Digest of the approval used, so the ledger can admit each approval at most once. */
+  approvalSha256: string | null;
   decidedAt: number;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /**
  * Publication is itself an external effect: pushing to the base repository runs
- * its automation, and anything pushed is disclosed to everyone with read access.
- * These reasons need approval before publish, not only before merge.
+ * its automation and installs its dependencies with that repository's CI
+ * privileges, and anything pushed is disclosed to everyone with read access.
+ * These reasons need approval before publish, not only before merge. Ordinary
+ * code still executes in CI once published; removing that exposure is the
+ * publisher's job (publish where CI has no secrets), not something rules can prove.
  */
 const PUBLICATION_EFFECT_CODES: readonly string[] = [
   'ci_or_repository_automation',
+  'developer_hooks',
+  'test_runner_configuration',
+  'dependency_manifest',
+  'code_execution_primitive',
   'secret_material',
   'secret_material_path',
 ];
@@ -275,10 +284,13 @@ export function decide(
       reasons.push({ code: 'human_gated_mode', category: 'control', effect: 'approval' });
 
     let approvedBy: number | null = null;
+    let approvalSha256: string | null = null;
     if (reasons.some((reason) => reason.effect === 'approval')) {
       const approval = checkApproval(policy, request.action, actionSha256, evidence.approval, now);
-      if (approval.status === 'valid') approvedBy = approval.approval.approver.githubUserId;
-      else if (approval.status !== 'absent')
+      if (approval.status === 'valid') {
+        approvedBy = approval.approval.approver.githubUserId;
+        approvalSha256 = sha256Json(approval.approval);
+      } else if (approval.status !== 'absent')
         reasons.push({
           code: `approval_${approval.status}`,
           category: 'control',
@@ -302,6 +314,7 @@ export function decide(
       requestSha256: sha256Json(request),
       actionSha256,
       approvedBy: outcome === 'allow' ? approvedBy : null,
+      approvalSha256: outcome === 'allow' ? approvalSha256 : null,
     };
   } catch (error) {
     const code = error instanceof AutonomyError ? error.reason : 'decision_input_unreadable';
@@ -314,6 +327,7 @@ export function decide(
       requestSha256: request ? sha256Json(request) : null,
       actionSha256: request ? actionDigest(request) : null,
       approvedBy: null,
+      approvalSha256: null,
     };
   }
 }

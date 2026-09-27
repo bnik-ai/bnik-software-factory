@@ -145,11 +145,15 @@ export class AutonomyLedger {
     requireActor(actor);
     requireAutonomy(typeof paused === 'boolean', 'pause_invalid');
     if (paused) requireText(reason, 500, 'pause_reason_required');
-    const result = await this.pool.query(
-      'UPDATE factory_autonomy_control SET paused=$2,pause_reason=$3,updated_by=$4,updated_at=$5 WHERE repository_id=$1',
-      [repositoryId, paused, paused ? reason : null, actor, timestamp(now)],
-    );
-    requireAutonomy(result.rowCount === 1, 'autonomy_not_configured');
+    // Serialized with admission: once this returns, no admission can commit unpaused.
+    await transaction(this.pool, async (client) => {
+      await lockRepository(client, repositoryId);
+      const result = await client.query(
+        'UPDATE factory_autonomy_control SET paused=$2,pause_reason=$3,updated_by=$4,updated_at=$5 WHERE repository_id=$1',
+        [repositoryId, paused, paused ? reason : null, actor, timestamp(now)],
+      );
+      requireAutonomy(result.rowCount === 1, 'autonomy_not_configured');
+    });
   }
 
   async grantScope(grant: ScopeGrant, actor: string, now: number) {
@@ -205,11 +209,21 @@ export class AutonomyLedger {
   async revokeScope(scopeId: string, reason: string, actor: string, now: number) {
     requireActor(actor);
     requireText(reason, 500, 'revoke_reason_required');
-    const result = await this.pool.query(
-      'UPDATE factory_autonomy_scopes SET revoked_at=$2,revoked_by=$3,revoke_reason=$4 WHERE scope_id=$1 AND revoked_at IS NULL',
-      [scopeId, timestamp(now), actor, reason],
-    );
-    requireAutonomy(result.rowCount === 1, 'scope_missing_or_already_revoked');
+    await transaction(this.pool, async (client) => {
+      const owner = (
+        await client.query('SELECT repository_id FROM factory_autonomy_scopes WHERE scope_id=$1', [
+          scopeId,
+        ])
+      ).rows[0];
+      requireAutonomy(owner, 'scope_missing_or_already_revoked');
+      // Serialized with admission: once this returns, the scope admits nothing further.
+      await lockRepository(client, Number(owner.repository_id));
+      const result = await client.query(
+        'UPDATE factory_autonomy_scopes SET revoked_at=$2,revoked_by=$3,revoke_reason=$4 WHERE scope_id=$1 AND revoked_at IS NULL',
+        [scopeId, timestamp(now), actor, reason],
+      );
+      requireAutonomy(result.rowCount === 1, 'scope_missing_or_already_revoked');
+    });
   }
 
   /** Decide and record. Recording never grants anything; only consume() does. */
@@ -234,7 +248,7 @@ export class AutonomyLedger {
     }
     const decisionId = randomUUID();
     await this.pool.query(
-      'INSERT INTO factory_autonomy_decisions(decision_id,repository_id,request_id,scope_id,task_id,action,outcome,risk,request_sha256,action_sha256,policy_sha256,request_summary,decision,decided_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',
+      'INSERT INTO factory_autonomy_decisions(decision_id,repository_id,request_id,scope_id,task_id,action,outcome,risk,request_sha256,action_sha256,policy_sha256,request_summary,approval_sha256,decision,decided_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)',
       [
         decisionId,
         policy.repository.id,
@@ -248,6 +262,7 @@ export class AutonomyLedger {
         decision.actionSha256,
         decision.policySha256,
         summary === null ? null : JSON.stringify(summary),
+        decision.approvalSha256,
         JSON.stringify(decision),
         timestamp(decision.decidedAt),
       ],
@@ -312,6 +327,13 @@ export class AutonomyLedger {
         [summary.requestId],
       );
       requireAutonomy(alreadyConsumed.rowCount === 0, 'request_already_admitted');
+      if (row.approval_sha256 !== null) {
+        const approvalUsed = await client.query(
+          'SELECT 1 FROM factory_autonomy_decisions WHERE approval_sha256=$1 AND consumed_at IS NOT NULL',
+          [row.approval_sha256],
+        );
+        requireAutonomy(approvalUsed.rowCount === 0, 'approval_already_used');
+      }
 
       let reservationId: string | null = null;
       if (summary.action === 'execute') {
@@ -321,16 +343,28 @@ export class AutonomyLedger {
           (scope.models as string[]).includes(execution.model),
           'model_outside_scope',
         );
-        const usage = (
+        // Attempts count per Task across every scope of the repository, so the policy
+        // ceiling cannot be multiplied by granting overlapping scopes.
+        const attempts = (
           await client.query(
-            `SELECT count(*) FILTER (WHERE task_id=$2) AS task_runs,
-               COALESCE(sum(CASE WHEN state='settled' THEN settled_microusd ELSE reserved_microusd END),0) AS committed
-             FROM factory_autonomy_reservations WHERE scope_id=$1 AND state<>'released'`,
-            [summary.scopeId, summary.taskId],
+            `SELECT count(*) FILTER (WHERE r.scope_id=$1) AS scope_runs, count(*) AS repository_runs
+             FROM factory_autonomy_reservations r JOIN factory_autonomy_scopes s USING(scope_id)
+             WHERE s.repository_id=$2 AND r.task_id=$3 AND r.state<>'released'`,
+            [summary.scopeId, Number(row.repository_id), summary.taskId],
           )
         ).rows[0];
-        const runLimit = Math.min(Number(scope.max_task_runs), active.policy.execution.maxTaskRuns);
-        requireAutonomy(Number(usage.task_runs) < runLimit, 'task_run_limit_reached');
+        requireAutonomy(
+          Number(attempts.scope_runs) < Number(scope.max_task_runs) &&
+            Number(attempts.repository_runs) < active.policy.execution.maxTaskRuns,
+          'task_run_limit_reached',
+        );
+        const usage = (
+          await client.query(
+            `SELECT COALESCE(sum(CASE WHEN state='settled' THEN settled_microusd ELSE reserved_microusd END),0) AS committed
+             FROM factory_autonomy_reservations WHERE scope_id=$1 AND state<>'released'`,
+            [summary.scopeId],
+          )
+        ).rows[0];
         requireAutonomy(
           Number(usage.committed) + execution.budgetMicrousd <= Number(scope.budget_microusd),
           'scope_budget_exhausted',

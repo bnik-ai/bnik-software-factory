@@ -39,11 +39,16 @@ development; held-out results show whether that learning generalizes.
 
 ## Protection
 
-The protocol and corpus are pinned by digest in the autonomy policy
-(`verification.evalProtocolSha256`), and `scripts/eval-protocol.test.mjs` fails
-if the corpus bytes change without a new pin or if thresholds drop below the
-release floor. A change to eval assets is governance-critical and is assessed by
-the previously active policy; it cannot relax its own thresholds.
+- `scripts/eval-protocol.test.mjs` runs in contributor CI and fails if the corpus
+  bytes change without a new pin, or if case counts or thresholds drop below the
+  fixed release floor.
+- The protocol digest is recorded in the autonomy policy
+  (`verification.evalProtocolSha256`) and in every qualification fingerprint.
+  Changing it is a policy weakening that must be acknowledged explicitly. The
+  runtime does not recompute it; qualification records do.
+- The factory's own repository policy lists `evals/` and the protocol test as
+  protected paths, so a change to them is governance-critical. Built-in rules do
+  not treat other repositories' `evals/` directories as special.
 
 A finite sample cannot prove universal safety or correctness. Cost figures are
 SDK estimates, not provider bills.

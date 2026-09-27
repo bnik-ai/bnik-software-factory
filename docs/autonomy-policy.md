@@ -40,8 +40,9 @@ evidence into a pass.
 
 ## Policy file
 
-The operator selects an absolute host path. The file must be a regular file (not
-a symlink), not group- or world-writable, and at most 64 KiB. It is never read
+The operator selects an absolute host path. It is opened without following a
+final symlink and checked on the open handle: a regular file, not group- or
+world-writable, at most 64 KiB. It is never read
 from a PR branch, Task text, labels, worker output or model output. See
 [`runtime/autonomy-policy.example.json`](../runtime/autonomy-policy.example.json).
 
@@ -83,34 +84,56 @@ duplicate path is refused. Rules are case-insensitive; renames are judged on bot
 the old and new path.
 
 **Built-in critical paths** (always on): CI and repository automation, CODEOWNERS,
-developer hooks, factory configuration, `SECURITY.md`, dependency manifests and
-lockfiles, auth/security modules, secret-bearing files, deployment and container
-definitions, infrastructure code, migrations and SQL, license and notice files,
-plus configured `criticalPaths` and `verification.protectedPaths`.
+developer hooks, test-runner configuration, factory configuration, `SECURITY.md`,
+dependency manifests and lockfiles, auth/login/session/permission modules
+(including camelCase names such as `requireAuth.js`), secret-bearing files,
+deployment and container definitions, infrastructure code, migrations, schema
+tools and SQL, license and notice files, plus configured `criticalPaths` and
+`verification.protectedPaths`.
 
-**Content tripwires** run on changed lines only (added and/or removed), so an
-unchanged mention elsewhere in a file does not escalate: auth and crypto code
-(including removed checks), code-execution primitives, disabled TLS verification,
-hidden text-direction controls, recognizable secrets, credential handling,
-permission changes, deployment actions, infrastructure resources, destructive SQL
-and filesystem operations, removed license notices, publication commands, and
-test skipping or failure masking.
+**Content tripwires** run on an ordered line diff, so moved and reordered lines
+count as changes and unchanged lines elsewhere do not escalate. Authorization
+rules also look at the unchanged line on each side of a change, so a guard that
+code was moved around is noticed. Rules cover auth and crypto code (including
+removed checks), code-execution calls, disabled TLS verification, hidden
+text-direction controls, recognizable secrets, credential handling, permission
+changes, deployment commands, infrastructure resources, destructive SQL, ORM and
+filesystem operations, removed license notices, publication commands, test
+skipping or focusing (in test files) and failure masking. Deployment and
+infrastructure rules do not apply to prose files.
 
-**Test weakening:** deleting or moving a test file out of test locations, or a net
-reduction in assertions within a test file, is critical. Adding tests is routine.
+**Test weakening:** deleting a runnable test, renaming it so a runner no longer
+picks it up (for example `.test.js.disabled`), or a net reduction in assertions
+within a test file is critical. Adding or relocating tests is routine.
+
+**Bounded cost:** file and size limits are applied before any pattern runs; lines
+longer than 4,000 characters are not pattern-matched and need a human. Very large
+or very different files are treated as entirely changed rather than diffed.
 
 **Uninspectable:** binary content, symlinks, submodules, mode changes, non-ASCII
-paths, empty changes and changes above `changeLimits` need a human.
+paths, over-long lines, empty changes and changes above `changeLimits` need a
+human.
 
-These rules are tripwires, not proofs. The deterministic rules and the separate
+These rules are best-effort tripwires, not proofs, and a determined author can
+evade pattern matching. The deterministic rules and the separate
 reviewer must **both** find a change routine; either one can escalate it, and
 neither can downgrade the other. Task text, labels and `intentKind` never lower
 risk; `bugfix` only adds the reproducer requirement.
 
-Publication is itself an external effect. CI definitions (which run on push) and
-recognizable secret material (disclosed once pushed) need approval **before
-publish**. Other critical changes may be published for review, but their merge
-holds.
+Publication is itself an external effect. Pushing to the base repository runs
+its automation and installs its dependencies with that repository's CI
+privileges, and anything pushed is disclosed. CI and hook definitions, test-runner
+configuration, dependency manifests, new code-execution calls and recognizable
+secret material therefore need approval **before publish**. Other critical changes
+may be published for review, but their merge holds.
+
+**Residual exposure:** published code, including ordinary tests, executes in the
+repository's CI. If that CI can read secrets, agent-written code can reach them;
+no content rule can prove otherwise. The planned publisher must publish where CI
+has no secrets (for example, pull requests from a fork, which GitHub runs without
+repository secrets) or the repository must provide secretless CI for factory
+branches. Until then automatic publication is not safe for repositories whose
+pull-request CI holds secrets.
 
 ## Evidence receipts
 
@@ -158,9 +181,13 @@ recorded decisions, single-use admissions and budget reservations in PostgreSQL.
 - **Scope:** an owner grant listing Tasks, models, a micro-USD budget, a per-Task
   run limit and an expiry of at most 30 days, all within the active policy.
 - **Admission:** an `allow` decision is consumed at most once per controller
-  request, within 10 minutes. Consumption re-checks active policy, pause, scope
-  revocation, expiry and membership, then reserves budget and counts the attempt
-  in one serialized transaction.
+  request, and each human approval admits at most one action. Consumption happens
+  within 10 minutes, re-checks active policy, pause, scope revocation, expiry and
+  membership, then reserves budget and counts the attempt. Admission, pause and
+  revocation are serialized per repository: once a pause or revocation returns,
+  nothing further is admitted.
+- **Attempts:** the per-Task run limit counts across every scope of the
+  repository, so overlapping scopes cannot multiply the policy ceiling.
 - **Reservations:** `released` only when execution provably never started;
   `unknown` keeps the full reservation until reconciled; `settled` records the
   estimated cost, which may exceed the reservation.

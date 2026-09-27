@@ -4,7 +4,7 @@ import type { Pool } from 'pg';
 import { AutonomyLedger } from '../src/autonomy/ledger.js';
 import { type AutonomyPolicy, policyDigest } from '../src/autonomy/policy.js';
 import { migrate } from '../src/migrate.js';
-import { NOW, evidenceFor, policyFixture, requestFor } from './autonomy-fixtures.js';
+import { NOW, approvalFor, evidenceFor, policyFixture, requestFor } from './autonomy-fixtures.js';
 import { config, initialize } from './helpers.js';
 
 let admin: Pool;
@@ -246,4 +246,73 @@ test('concurrent admissions cannot overspend a scope', async () => {
   assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
   const rejected = results.find((result) => result.status === 'rejected') as PromiseRejectedResult;
   assert.match(String(rejected.reason), /scope_budget_exhausted/);
+});
+
+test('one human approval admits one action, however many requests repeat it', async () => {
+  const gated = policyFixture({ mode: 'human_gated' });
+  await ledger.activatePolicy(gated, ['initial_activation'], 'owner', NOW);
+  await ledger.grantScope(
+    {
+      scopeId: 'goal-1',
+      repositoryId: gated.repository.id,
+      taskIds: ['TASK_1'],
+      models: ['claude-sonnet-5'],
+      budgetMicrousd: 20_000_000,
+      maxTaskRuns: 3,
+      expiresAt: NOW + DAY,
+    },
+    'owner',
+    NOW,
+  );
+  const first = requestFor(gated, 'execute');
+  const approval = approvalFor(gated, first);
+  const repeated = { ...structuredClone(first), requestId: '11111111-1111-4111-8111-111111111111' };
+  const admitted = await ledger.admit(gated, first, { approval }, NOW);
+  const replayed = await ledger.admit(gated, repeated, { approval }, NOW);
+  assert.equal(admitted.decision.outcome, 'allow');
+  assert.equal(replayed.decision.outcome, 'allow');
+  await ledger.consume(admitted.decisionId, NOW);
+  await assert.rejects(ledger.consume(replayed.decisionId, NOW), /approval_already_used/);
+});
+
+test('the per-Task run ceiling holds across overlapping scopes', async () => {
+  await activate();
+  await grant({ scopeId: 'goal-1', maxTaskRuns: 2 });
+  await grant({ scopeId: 'goal-2', maxTaskRuns: 2 });
+  const inScope = async (scopeId: string) => {
+    const request = requestFor(policy, 'execute', null, { scopeId });
+    return ledger.consume((await ledger.admit(policy, request, {}, NOW)).decisionId, NOW);
+  };
+  await inScope('goal-1');
+  await inScope('goal-1');
+  await inScope('goal-2');
+  // Policy maxTaskRuns is 3 for TASK_1 across the repository, even though goal-2 allows 2.
+  await assert.rejects(inScope('goal-2'), /task_run_limit_reached/);
+});
+
+test('pause and revocation wait for in-flight admission and are then authoritative', async () => {
+  await activate();
+  await grant();
+  const holder = await admin.connect();
+  try {
+    await holder.query('BEGIN');
+    await holder.query("SELECT pg_advisory_xact_lock(hashtextextended('factory_autonomy',$1))", [
+      policy.repository.id,
+    ]);
+    let settled = false;
+    const pausing = ledger
+      .setPaused(policy.repository.id, true, 'incident', 'owner', NOW)
+      .then(() => {
+        settled = true;
+      });
+    const revoking = ledger.revokeScope('goal-1', 'incident', 'owner', NOW);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.equal(settled, false, 'pause must wait for the in-flight admission lock');
+    await holder.query('COMMIT');
+    await Promise.all([pausing, revoking]);
+  } finally {
+    holder.release();
+  }
+  const pending = await admitExecute();
+  await assert.rejects(ledger.consume(pending.decisionId, NOW), /autonomy_paused/);
 });

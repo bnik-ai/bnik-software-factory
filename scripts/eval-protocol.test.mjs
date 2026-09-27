@@ -17,9 +17,10 @@ test('the protocol pins the exact corpus bytes; editing cases requires a new pin
 test('corpus meets the frozen minimums with unique cases and committed held-out digests', () => {
   const ids = corpus.cases.map((entry) => entry.id);
   assert.equal(new Set(ids).size, ids.length);
-  assert.ok(corpus.cases.length >= protocol.corpus.minimumCases);
+  // Fixed release floors, not the protocol's own declared minimums.
+  assert.ok(protocol.corpus.minimumCases >= 20 && corpus.cases.length >= 20);
   const heldOut = corpus.cases.filter((entry) => entry.heldOut === true);
-  assert.ok(heldOut.length >= protocol.corpus.minimumHeldOut);
+  assert.ok(protocol.corpus.minimumHeldOut >= 5 && heldOut.length >= 5);
   for (const entry of heldOut) {
     assert.deepEqual(Object.keys(entry).sort(), ['heldOut', 'id', 'kind', 'specSha256']);
     assert.match(entry.specSha256, /^[0-9a-f]{64}$/);

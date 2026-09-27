@@ -1,4 +1,4 @@
-import { lstatSync, readFileSync } from 'node:fs';
+import { constants, closeSync, fstatSync, openSync, readFileSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import {
   AutonomyError,
@@ -254,20 +254,35 @@ export function parsePolicy(value: unknown): AutonomyPolicy {
 export function policyDigest(policy: AutonomyPolicy): string {
   return sha256Json(policy);
 }
-/** The operator chooses this path; never pass a worker-, Task- or PR-supplied path. */
+/**
+ * The operator chooses this path; never pass a worker-, Task- or PR-supplied path.
+ * Opened without following a final symlink and checked on the open handle, so the
+ * file cannot be swapped between the check and the read. Ownership is not checked:
+ * container and host user IDs legitimately differ.
+ */
 export function loadPolicy(filename: string): AutonomyPolicy {
   requireAutonomy(isAbsolute(filename), 'policy_path_must_be_absolute');
   let document: unknown;
+  let descriptor: number | null = null;
   try {
-    const stat = lstatSync(filename);
+    try {
+      descriptor = openSync(filename, constants.O_RDONLY | constants.O_NOFOLLOW);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ELOOP')
+        throw new AutonomyError('policy_file_unsafe');
+      throw error;
+    }
+    const stat = fstatSync(descriptor);
     requireAutonomy(
       stat.isFile() && (stat.mode & 0o022) === 0 && stat.size > 0 && stat.size <= 65_536,
       'policy_file_unsafe',
     );
-    document = JSON.parse(readFileSync(filename, 'utf8'));
+    document = JSON.parse(readFileSync(descriptor, 'utf8'));
   } catch (error) {
     if (error instanceof AutonomyError) throw error;
     throw new AutonomyError('policy_file_unreadable');
+  } finally {
+    if (descriptor !== null) closeSync(descriptor);
   }
   return parsePolicy(document);
 }
