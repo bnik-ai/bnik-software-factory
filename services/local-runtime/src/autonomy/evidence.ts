@@ -5,6 +5,7 @@ import {
   requireGitObject,
   requireInteger,
   requireRecord,
+  requireRepositoryPath,
   requireSha256,
   requireText,
   requireTimestamp,
@@ -98,6 +99,8 @@ export const DEPENDENCY_FINDING_SEVERITIES = [
   'low',
   'unknown',
 ] as const;
+export type DependencySeverity = (typeof DEPENDENCY_FINDING_SEVERITIES)[number];
+export const PACKAGE_SOURCES = ['registry', 'git', 'url', 'file', 'link', 'workspace'] as const;
 export interface PackageChange {
   ecosystem: string;
   name: string;
@@ -106,10 +109,12 @@ export interface PackageChange {
   /** SPDX identifier as the runner determined it; `null` when it could not. */
   license: string | null;
   major: boolean;
+  /** Where the resolved artifact comes from; only `registry` can be routine. */
+  source: (typeof PACKAGE_SOURCES)[number];
 }
 export interface DependencyFinding {
   id: string;
-  severity: (typeof DEPENDENCY_FINDING_SEVERITIES)[number];
+  severity: DependencySeverity;
   ecosystem: string;
   name: string;
   version: string;
@@ -118,8 +123,9 @@ export interface DependencyFinding {
 /**
  * Written by the trusted runner after re-resolving the candidate's manifests in a
  * clean sandbox with install scripts disabled and running the pinned scanner
- * adapter over the result. It can make a manifest or lockfile change routine; it
- * never affects registry or hook configuration, which stays critical.
+ * adapter over the result. It can make the data manifests and lockfiles it lists
+ * routine; it never affects executable manifests, registry or hook configuration,
+ * patches or vendored code, which stay critical.
  */
 export interface DependencyReceipt {
   version: 1;
@@ -127,16 +133,20 @@ export interface DependencyReceipt {
   runId: string;
   subject: CandidateSubject;
   scanner: { adapter: string; image: string; databaseUpdatedAt: number };
+  /** Repository paths of the manifests and lockfiles this receipt re-resolved and inspected. */
+  manifests: string[];
   /** `unsupported`: the runner cannot re-resolve this ecosystem; the change stays critical. */
   status: 'complete' | 'error' | 'timeout' | 'unsupported';
-  /** Whether the committed lockfile is byte-identical to a clean re-resolution of the manifests. */
+  /** Whether the committed lockfiles are byte-identical to a clean re-resolution of the manifests. */
   resolution: 'reproduced' | 'mismatch' | 'not_attempted';
-  /** The project's own manifest scripts changed (what an install or CI run executes). */
-  rootScriptsChanged: boolean;
-  /** An added or upgraded package declares install-time scripts. */
-  packageInstallScripts: boolean;
+  /** Manifest fields outside dependency version specifications that changed (`scripts.postinstall`, `overrides`, `workspaces`, …). */
+  manifestFieldsChanged: string[];
+  /** The set of packages whose install-time scripts run after installation is not the same as before. */
+  installScriptsChanged: boolean;
   packages: { added: PackageChange[]; removed: PackageChange[]; upgraded: PackageChange[] };
   findings: DependencyFinding[];
+  /** Findings strictly below this severity were left out to bound the list; `null` when complete. */
+  findingsOmittedBelow: Exclude<DependencySeverity, 'unknown'> | null;
   completedAt: number;
 }
 export interface Evidence {
@@ -486,7 +496,7 @@ export function mergeGateReasons(
   return reasons;
 }
 
-const SEVERITY_RANK: Record<(typeof DEPENDENCY_FINDING_SEVERITIES)[number], number> = {
+const SEVERITY_RANK: Record<DependencySeverity, number> = {
   critical: 4,
   high: 3,
   medium: 2,
@@ -494,10 +504,15 @@ const SEVERITY_RANK: Record<(typeof DEPENDENCY_FINDING_SEVERITIES)[number], numb
   unknown: 0,
 };
 const ECOSYSTEM = /^[a-z][a-z0-9.-]{0,31}$/;
+const LEADING_MAJOR = /^v?(\d+)(?:[.+-]|$)/;
+function majorOf(version: string): number | null {
+  const match = LEADING_MAJOR.exec(version);
+  return match ? Number(match[1]) : null;
+}
 function requirePackageChange(value: unknown, reason: string): asserts value is PackageChange {
   requireRecord(
     value,
-    ['ecosystem', 'name', 'version', 'previousVersion', 'license', 'major'],
+    ['ecosystem', 'name', 'version', 'previousVersion', 'license', 'major', 'source'],
     reason,
   );
   requireAutonomy(typeof value.ecosystem === 'string' && ECOSYSTEM.test(value.ecosystem), reason);
@@ -506,24 +521,29 @@ function requirePackageChange(value: unknown, reason: string): asserts value is 
   if (value.previousVersion !== null) requireText(value.previousVersion, 128, reason);
   if (value.license !== null) requireText(value.license, 128, reason);
   requireAutonomy(typeof value.major === 'boolean', reason);
+  requireAutonomy((PACKAGE_SOURCES as readonly unknown[]).includes(value.source), reason);
 }
 export interface DependencyAssessment {
   reasons: DecisionReason[];
-  /** True only when every deterministic check and the scanner passed; nothing else lowers risk. */
-  verified: boolean;
+  /** Manifest paths the receipt made routine; empty unless every check passed. */
+  verifiedManifests: string[];
 }
+/**
+ * `manifestPaths` are the changed paths the classifier flagged as data manifests.
+ * The receipt may cover some of them; uncovered ones simply stay critical.
+ */
 export function dependencyReasons(
   policy: AutonomyPolicy,
   subject: CandidateSubject,
+  manifestPaths: readonly string[],
   value: unknown,
   now: number,
 ): DependencyAssessment {
-  // Without verification configured or a receipt present, manifest changes stay critical.
-  if (policy.dependencies === null || value === undefined) return { reasons: [], verified: false };
-  const settings = policy.dependencies;
+  const unverified: DependencyAssessment = { reasons: [], verifiedManifests: [] };
+  if (value === undefined) return unverified;
   const block = (code: string): DependencyAssessment => ({
     reasons: [{ code, category: 'evidence', effect: 'block' }],
-    verified: false,
+    verifiedManifests: [],
   });
   requireRecord(
     value,
@@ -533,12 +553,14 @@ export function dependencyReasons(
       'runId',
       'subject',
       'scanner',
+      'manifests',
       'status',
       'resolution',
-      'rootScriptsChanged',
-      'packageInstallScripts',
+      'manifestFieldsChanged',
+      'installScriptsChanged',
       'packages',
       'findings',
+      'findingsOmittedBelow',
       'completedAt',
     ],
     'dependency_receipt_invalid',
@@ -558,6 +580,8 @@ export function dependencyReasons(
   requireText(receipt.scanner.adapter, 32, 'dependency_receipt_invalid');
   requireText(receipt.scanner.image, 71, 'dependency_receipt_invalid');
   requireTimestamp(receipt.scanner.databaseUpdatedAt, 'dependency_receipt_invalid');
+  requireUniqueList<string>(receipt.manifests, 1, 200, 'dependency_receipt_invalid');
+  for (const path of receipt.manifests) requireRepositoryPath(path, 'dependency_receipt_invalid');
   requireAutonomy(
     ['complete', 'error', 'timeout', 'unsupported'].includes(receipt.status),
     'dependency_receipt_invalid',
@@ -566,19 +590,31 @@ export function dependencyReasons(
     ['reproduced', 'mismatch', 'not_attempted'].includes(receipt.resolution),
     'dependency_receipt_invalid',
   );
-  requireAutonomy(
-    typeof receipt.rootScriptsChanged === 'boolean' &&
-      typeof receipt.packageInstallScripts === 'boolean',
-    'dependency_receipt_invalid',
-  );
+  requireUniqueList<string>(receipt.manifestFieldsChanged, 0, 200, 'dependency_receipt_invalid');
+  for (const field of receipt.manifestFieldsChanged)
+    requireText(field, 256, 'dependency_receipt_invalid');
+  requireAutonomy(typeof receipt.installScriptsChanged === 'boolean', 'dependency_receipt_invalid');
   requireRecord(receipt.packages, ['added', 'removed', 'upgraded'], 'dependency_receipt_invalid');
-  for (const list of [
-    receipt.packages.added,
-    receipt.packages.removed,
-    receipt.packages.upgraded,
-  ]) {
-    requireUniqueList<unknown>(list, 0, 5000, 'dependency_receipt_invalid');
-    for (const entry of list) requirePackageChange(entry, 'dependency_receipt_invalid');
+  const seenPackages = new Map<string, string>();
+  for (const [list, entries] of Object.entries(receipt.packages)) {
+    requireUniqueList<unknown>(entries, 0, 5000, 'dependency_receipt_invalid');
+    for (const entry of entries) {
+      requirePackageChange(entry, 'dependency_receipt_invalid');
+      const key = `${entry.ecosystem}/${entry.name}`.toLowerCase();
+      // One package, one story: a removal plus an addition is an upgrade the runner must report as such.
+      requireAutonomy(!seenPackages.has(key), 'dependency_receipt_inconsistent');
+      seenPackages.set(key, list);
+      requireAutonomy(
+        (list === 'upgraded') === (entry.previousVersion !== null),
+        'dependency_receipt_inconsistent',
+      );
+      if (entry.previousVersion !== null) {
+        const before = majorOf(entry.previousVersion);
+        const after = majorOf(entry.version);
+        if (before !== null && after !== null)
+          requireAutonomy(entry.major === (before !== after), 'dependency_receipt_inconsistent');
+      }
+    }
   }
   requireUniqueList<unknown>(receipt.findings, 0, 5000, 'dependency_receipt_invalid');
   for (const finding of receipt.findings) {
@@ -604,8 +640,18 @@ export function dependencyReasons(
     if (finding.fixedVersion !== null)
       requireText(finding.fixedVersion, 128, 'dependency_finding_invalid');
   }
+  requireAutonomy(
+    receipt.findingsOmittedBelow === null ||
+      (['critical', 'high', 'medium', 'low'] as readonly unknown[]).includes(
+        receipt.findingsOmittedBelow,
+      ),
+    'dependency_receipt_invalid',
+  );
   requireTimestamp(receipt.completedAt, 'dependency_receipt_invalid');
 
+  // Without verification configured, a receipt is checked for shape but grants nothing.
+  if (policy.dependencies === null) return unverified;
+  const settings = policy.dependencies;
   if (!sameSubject(receipt.subject, subject)) return block('dependency_subject_mismatch');
   if (
     receipt.scanner.adapter !== settings.scanner.adapter ||
@@ -620,6 +666,9 @@ export function dependencyReasons(
     receipt.completedAt - receipt.scanner.databaseUpdatedAt > settings.scanner.databaseMaxAgeMs
   )
     return block('dependency_database_stale');
+  // A receipt about manifests this change does not touch describes some other change.
+  if (!receipt.manifests.every((path) => manifestPaths.includes(path)))
+    return block('dependency_receipt_inconsistent');
   if (receipt.status === 'error' || receipt.status === 'timeout')
     return block('dependency_scan_inconclusive');
   if (receipt.status === 'unsupported')
@@ -627,16 +676,32 @@ export function dependencyReasons(
       reasons: [
         { code: 'dependency_ecosystem_unsupported', category: 'security_auth', effect: 'approval' },
       ],
-      verified: false,
+      verifiedManifests: [],
     };
   if (receipt.resolution === 'not_attempted') return block('dependency_receipt_inconsistent');
+  const threshold = SEVERITY_RANK[settings.holdSeverity];
+  if (receipt.findingsOmittedBelow !== null) {
+    // Omitting anything at or above the hold threshold leaves the decision without evidence.
+    if (SEVERITY_RANK[receipt.findingsOmittedBelow] > threshold)
+      return block('dependency_findings_incomplete');
+    if (
+      receipt.findings.some(
+        (finding) =>
+          finding.severity !== 'unknown' &&
+          SEVERITY_RANK[finding.severity] <
+            SEVERITY_RANK[receipt.findingsOmittedBelow as DependencySeverity],
+      )
+    )
+      return block('dependency_receipt_inconsistent');
+  }
 
   const reasons: DecisionReason[] = [];
   const hold = (code: string, category: DecisionReason['category']) =>
     reasons.push({ code, category, effect: 'approval' });
   if (receipt.resolution === 'mismatch') hold('lockfile_not_reproducible', 'security_auth');
-  if (receipt.rootScriptsChanged) hold('manifest_scripts_changed', 'governance');
-  if (receipt.packageInstallScripts) hold('install_scripts_in_dependencies', 'security_auth');
+  for (const field of receipt.manifestFieldsChanged)
+    hold(`manifest_field_changed:${field}`, 'governance');
+  if (receipt.installScriptsChanged) hold('install_scripts_changed', 'security_auth');
   const label = (entry: PackageChange) => `${entry.ecosystem}/${entry.name}`;
   if (!settings.allowNewDependencies)
     for (const entry of receipt.packages.added)
@@ -644,15 +709,17 @@ export function dependencyReasons(
   if (!settings.allowMajorUpgrades)
     for (const entry of receipt.packages.upgraded)
       if (entry.major) hold(`major_upgrade:${label(entry)}`, 'security_auth');
-  for (const entry of [...receipt.packages.added, ...receipt.packages.upgraded])
+  for (const entry of [...receipt.packages.added, ...receipt.packages.upgraded]) {
+    if (entry.source !== 'registry')
+      hold(`dependency_source_not_registry:${label(entry)}`, 'security_auth');
     if (entry.license === null || !settings.licenseAllowlist.includes(entry.license))
       hold(`license_not_allowed:${label(entry)}`, 'release_licensing');
+  }
   // Unknown severity is not "below threshold"; it holds like the threshold itself.
-  const threshold = SEVERITY_RANK[settings.holdSeverity];
   for (const finding of receipt.findings)
     if (finding.severity === 'unknown' || SEVERITY_RANK[finding.severity] >= threshold)
       hold(`vulnerability:${finding.id}`, 'security_auth');
-  return { reasons, verified: reasons.length === 0 };
+  return { reasons, verifiedManifests: reasons.length === 0 ? [...receipt.manifests] : [] };
 }
 
 export type ApprovalCheck =

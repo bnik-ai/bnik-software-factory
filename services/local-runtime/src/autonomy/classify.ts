@@ -49,7 +49,9 @@ const PUBLICATION_HOLD_CODES: readonly string[] = [
   'developer_hooks',
   'test_runner_configuration',
   'dependency_manifest',
+  'dependency_manifest_executable',
   'dependency_configuration',
+  'vendored_dependency',
   'code_execution_primitive',
   'secret_material',
   'secret_material_path',
@@ -156,17 +158,31 @@ export const BUILT_IN_PATH_RULES: readonly PathRule[] = [
   { code: 'factory_configuration', category: 'governance', pattern: /(^|\/)\.factory(\/|$)/ },
   { code: 'security_policy', category: 'governance', pattern: /(^|\/)security\.md$/ },
   {
+    // Data manifests and lockfiles: routine only with a passing dependency receipt.
     code: 'dependency_manifest',
     category: 'security_auth',
     pattern:
-      /(^|\/)(package\.json|package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|pnpm-workspace\.yaml|requirements[^/]*\.(txt|in)|constraints[^/]*\.txt|pipfile(\.lock)?|pyproject\.toml|poetry\.lock|uv\.lock|setup\.py|setup\.cfg|environment\.ya?ml|go\.mod|go\.sum|go\.work(\.sum)?|cargo\.toml|cargo\.lock|gemfile(\.lock)?|[^/]*\.gemspec|pom\.xml|build\.gradle(\.kts)?|settings\.gradle(\.kts)?|gradle\.properties|composer\.(json|lock)|[^/]*\.csproj|packages\.lock\.json|directory\.build\.(props|targets)|directory\.packages\.props|[^/]*\.(props|targets)|pubspec\.(yaml|lock)|mix\.(exs|lock)|bun\.lockb?|deno\.jsonc?|deno\.lock)$/,
+      /(^|\/)(package\.json|package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|pnpm-workspace\.yaml|requirements[^/]*\.(txt|in)|constraints[^/]*\.txt|pipfile(\.lock)?|pyproject\.toml|poetry\.lock|uv\.lock|setup\.cfg|environment\.ya?ml|go\.mod|go\.sum|go\.work(\.sum)?|cargo\.toml|cargo\.lock|gemfile\.lock|pom\.xml|gradle\.properties|composer\.(json|lock)|packages\.lock\.json|pubspec\.(yaml|lock)|mix\.lock|bun\.lockb?|deno\.jsonc?|deno\.lock)$/,
   },
   {
-    // Registry, mirror and install-hook configuration: never made routine by a receipt.
+    // Manifests that are programs: executed at install or build time, never made routine.
+    code: 'dependency_manifest_executable',
+    category: 'security_auth',
+    pattern:
+      /(^|\/)(setup\.py|gemfile|[^/]*\.gemspec|podfile|build\.gradle(\.kts)?|settings\.gradle(\.kts)?|mix\.exs|[^/]*\.csproj|[^/]*\.fsproj|[^/]*\.vbproj|directory\.build\.(props|targets)|directory\.packages\.props|[^/]*\.(props|targets)|build\.sbt|project\.clj|deps\.edn|rebar\.config)$/,
+  },
+  {
+    // Registry, mirror, toolchain, wrapper, patch and install-hook configuration: never made routine.
     code: 'dependency_configuration',
     category: 'security_auth',
     pattern:
-      /(^|\/)(\.npmrc|\.yarnrc(\.yml)?|\.pnpmfile\.c?js|nuget\.config|pip\.conf|\.pypirc|\.piprc|\.gemrc|\.gitmodules|\.tool-versions|\.nvmrc|\.python-version|rust-toolchain(\.toml)?)$|(^|\/)\.cargo\/|(^|\/)\.m2\/|(^|\/)\.gradle\//,
+      /(^|\/)(\.npmrc|\.yarnrc(\.yml)?|\.pnpmfile\.c?js|bunfig\.toml|nuget\.config|pip\.conf|\.pypirc|\.piprc|uv\.toml|\.condarc|\.gemrc|\.gitmodules|\.tool-versions|\.nvmrc|\.python-version|\.node-version|\.ruby-version|\.go-version|\.java-version|\.terraform-version|rust-toolchain(\.toml)?|global\.json|gradlew(\.bat)?|mvnw(\.cmd)?|gradle-wrapper\.properties|maven-wrapper\.properties)$|(^|\/)(\.cargo|\.m2|\.gradle|\.mvn|\.yarn|\.bundle|patches)\/|^[^/]+\.patch$/,
+  },
+  {
+    // Committed third-party code: an edit here is an edit to a dependency.
+    code: 'vendored_dependency',
+    category: 'security_auth',
+    pattern: /(^|\/)(vendor|vendored|third[_-]?party|node_modules|bower_components)\//,
   },
   {
     code: 'auth_or_security_module',

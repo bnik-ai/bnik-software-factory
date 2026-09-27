@@ -88,9 +88,11 @@ the old and new path.
 **Built-in critical paths** (always on): CI and repository automation (including
 hosted CI configurations, merge bots, dependency bots and composite actions),
 CODEOWNERS, developer hooks, test-runner and build-transform configuration
-(including `conftest.py`), factory configuration, `SECURITY.md`, dependency
+(including `conftest.py`), factory configuration, `SECURITY.md`, data dependency
 manifests and lockfiles (routine only with a passing dependency receipt, below),
-registry and install-hook configuration (always critical), auth/login/session/permission modules
+executable manifests such as `setup.py`, `Gemfile` and `build.gradle`, registry,
+toolchain, wrapper, patch and install-hook configuration, and vendored third-party
+code (all always critical), auth/login/session/permission modules
 (including camelCase names such as `requireAuth.js`), secret-bearing files,
 deployment and container definitions, infrastructure code, migrations, schema
 tools and SQL, license and notice files, plus configured `criticalPaths` and
@@ -151,7 +153,8 @@ pull-request CI holds secrets.
 Receipts are written by trusted factory code from observed facts: exit statuses
 the trusted runner collected, a reviewer's structured output parsed by the
 supervisor, and GitHub API reads. Worker output, test logs, PR text and labels are
-data inside receipts, never their authors. Unknown fields are refused.
+data inside receipts, never their authors. Unknown fields are refused, including in
+receipts for checks the policy has not enabled.
 
 | Receipt | Bound to | Passes only when |
 | --- | --- | --- |
@@ -159,7 +162,7 @@ data inside receipts, never their authors. Unknown fields are refused.
 | Review | same subject, intent digest, reviewer configuration digest | Fresh-context, `complete`, no limitations, risk consistent with categories, no high or medium findings. Low findings are nits and never interrupt. |
 | Merge gate | repository, base branch, PR head, head tree, base | Observed within 5 minutes; PR open; head tree equals the tested tree; base unchanged; protection verified; required checks passed; no human change request. |
 | Approval | action digest (policy, Task, base, head, tree, changes, limits) | From a configured human GitHub user for that exact action. A new head, base, tree or policy needs a new approval. |
-| Dependency | same subject; scanner adapter and image from the policy | Fresh; scanner database within its maximum age at scan time; `complete`; lockfile reproduced from the manifests; no manifest script changes; no install scripts in added or upgraded packages; no new dependency or major upgrade unless the policy allows it; every added or upgraded license in the allowlist; no finding at or above `holdSeverity` and none of unknown severity. Passing makes `dependency_manifest` routine; each failed check holds for a human instead; `unsupported` holds; `error`, `timeout` or a stale database blocks. |
+| Dependency | same subject; scanner adapter and image from the policy; the manifest paths it covered | Fresh; scanner database within its maximum age at scan time; `complete`; lockfiles reproduced from the manifests; no manifest field outside dependency specifications changed; the set of packages whose install scripts run is unchanged; every added or upgraded package comes from a registry; no new dependency or major upgrade unless the policy allows it; every added or upgraded license in the allowlist; no finding at or above `holdSeverity` and none of unknown severity. Passing makes `dependency_manifest` routine for exactly the listed paths; each failed check holds for a human instead; `unsupported` holds; `error`, `timeout`, a stale database, an inconsistent package story or omitted findings at the threshold block. |
 
 A human change request blocks any PR, routine or not. Failed required checks
 send the change to repair.
@@ -194,16 +197,24 @@ therefore combines deterministic checks with the scanner, and both must pass:
 
 | Check | Routine when | Otherwise |
 | --- | --- | --- |
-| Reproduction | The committed lockfile is byte-identical to a clean re-resolution of the manifests in a fresh sandbox with install scripts disabled | `lockfile_not_reproducible` holds |
-| Scripts | The project's own manifest scripts are unchanged and no added or upgraded package declares install-time scripts | holds |
-| Shape | No new dependency and no major upgrade, unless the policy allows them | holds per package |
+| Coverage | The receipt lists exactly which manifest and lockfile paths it re-resolved; only those become routine, and a listed path outside the change blocks | uncovered paths stay critical |
+| Reproduction | The committed lockfiles are byte-identical to a clean re-resolution of the manifests in a fresh sandbox with install scripts disabled | `lockfile_not_reproducible` holds |
+| Manifest fields | Nothing outside dependency version specifications changed: no `scripts`, `overrides`, `resolutions`, `replace`, `workspaces`, `patchedDependencies`, `onlyBuiltDependencies` or embedded tool configuration | holds per field |
+| Install scripts | The set of packages whose install-time scripts run is the same before and after | holds |
+| Source | Every added or upgraded package resolves from a registry, not git, a URL, a path, a link or a workspace | holds per package |
+| Shape | No new dependency and no major upgrade, unless the policy allows them; the runner's `major` flag must agree with the versions, and a removal plus an addition of one package is reported as an upgrade | holds per package; disagreement blocks |
 | Licenses | Every added or upgraded package carries an allowlisted SPDX identifier | holds per package |
-| Scanner | No finding at or above `holdSeverity`; a finding of unknown severity counts as at the threshold | holds per finding |
+| Scanner | No finding at or above `holdSeverity`; a finding of unknown severity counts as at the threshold. The runner may omit findings below a stated severity to bound the list, but never at or above the threshold | holds per finding; omission at the threshold blocks |
 | Scanner health | Adapter and image match the policy; the database was no older than `databaseMaxAgeMs` at scan time; status `complete` | `error`, `timeout` or stale database blocks; `unsupported` holds |
 
-Registry, mirror and install-hook configuration (`.npmrc`, `.yarnrc`,
-`.pnpmfile.cjs`, `.cargo/`, `nuget.config`, `.gitmodules`, toolchain pins) is
-never made routine by a receipt.
+Never made routine by a receipt: executable manifests (`setup.py`, `Gemfile`,
+`*.gemspec`, `build.gradle`, `mix.exs`, MSBuild project files and others that run
+at install or build time); registry, mirror and install-hook configuration
+(`.npmrc`, `.yarnrc`, `.pnpmfile.cjs`, `.cargo/`, `nuget.config`, `.gitmodules`);
+toolchain and wrapper pins (`.tool-versions`, `.node-version`, `rust-toolchain`,
+`gradlew`, `mvnw`, wrapper properties); `patches/` and `.yarn/`; and vendored
+third-party code (`vendor/`, `third_party/`, committed `node_modules/`). Content
+rules also apply to all of these.
 
 The scanner is a pluggable adapter chosen by name and digest-pinned image in the
 policy; the trusted runner normalizes its output into the receipt. The default

@@ -484,13 +484,19 @@ export function comparePolicies(current: AutonomyPolicy, proposed: AutonomyPolic
       strengthens('approver_removed', String(userId));
 
   // Dependency verification turns critical changes routine, so enabling or loosening it weakens.
-  if (current.dependencies === null && proposed.dependencies !== null)
-    weakens('dependency_verification_enabled');
-  else if (current.dependencies !== null && proposed.dependencies === null)
+  // Enabling is compared against the strictest settings, so every loosened field is named.
+  if (current.dependencies !== null && proposed.dependencies === null)
     strengthens('dependency_verification_disabled');
-  else if (current.dependencies !== null && proposed.dependencies !== null) {
-    const before = current.dependencies;
+  else if (proposed.dependencies !== null) {
     const after = proposed.dependencies;
+    const before: DependencyPolicy = current.dependencies ?? {
+      scanner: { ...after.scanner, databaseMaxAgeMs: 3_600_000 },
+      holdSeverity: 'high',
+      licenseAllowlist: [],
+      allowNewDependencies: false,
+      allowMajorUpgrades: false,
+    };
+    if (current.dependencies === null) weakens('dependency_verification_enabled');
     if (before.scanner.adapter !== after.scanner.adapter)
       weakens('trust_root_changed', 'dependencies.scanner.adapter');
     if (before.scanner.image !== after.scanner.image)

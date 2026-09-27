@@ -235,14 +235,29 @@ export function decide(
       };
       const classification = classifyChanges(policy, changes);
       // A passing dependency receipt is the only thing that lowers a classification
-      // reason, and only `dependency_manifest`; configuration and hooks stay critical.
+      // reason, and only `dependency_manifest` for the manifests it lists; executable
+      // manifests, configuration, patches and vendored code stay critical.
       let classificationReasons = classification.reasons;
-      if (classification.reasons.some((reason) => reason.code === 'dependency_manifest')) {
-        const dependency = dependencyReasons(policy, subject, evidence.dependency, now);
+      const manifestPaths = classification.reasons
+        .filter((reason) => reason.code === 'dependency_manifest' && reason.path !== undefined)
+        .map((reason) => reason.path as string);
+      if (manifestPaths.length > 0) {
+        const dependency = dependencyReasons(
+          policy,
+          subject,
+          manifestPaths,
+          evidence.dependency,
+          now,
+        );
         reasons.push(...dependency.reasons);
-        if (dependency.verified)
+        if (dependency.verifiedManifests.length > 0)
           classificationReasons = classification.reasons.filter(
-            (reason) => reason.code !== 'dependency_manifest',
+            (reason) =>
+              !(
+                reason.code === 'dependency_manifest' &&
+                reason.path !== undefined &&
+                dependency.verifiedManifests.includes(reason.path)
+              ),
           );
       }
       for (const reason of classificationReasons) {

