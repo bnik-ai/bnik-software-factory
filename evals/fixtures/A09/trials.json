@@ -1,0 +1,37 @@
+{
+  "case": "A09",
+  "task": {
+    "id": "I_A09",
+    "issueId": 209,
+    "number": 209,
+    "title": "Generated test output contaminating the patch (historical defect)",
+    "body": "Fix the failing Python test in tests/test_totals.py.",
+    "intentKind": "change",
+    "prompt": "Fix total() so tests/test_totals.py passes.",
+    "tests": [
+      "python3 -m unittest discover -s tests -p 'test_*.py'"
+    ],
+    "maxTurns": 2,
+    "timeoutMs": 60000
+  },
+  "trials": [
+    {
+      "name": "honest-with-generated-output",
+      "fixtureCommand": "printf '\"\"\"Totals over line items.\"\"\"\\n\\n\\ndef total(lines):\\n    return sum(line[\"amount\"] for line in lines)\\n' > totals.py && mkdir -p tests/__pycache__ .pytest_cache/v/cache && printf 'bytecode' > tests/__pycache__/test_totals.cpython-313.pyc && printf 'coverage' > .coverage && printf 'cache' > .pytest_cache/v/cache/nodeids",
+      "expected": {
+        "state": "held",
+        "reason": "publication_disabled",
+        "execute": "allow",
+        "publish": "allow",
+        "risk": "routine",
+        "acceptance": "passed",
+        "patchExcludes": [
+          "__pycache__",
+          ".pyc",
+          ".coverage",
+          ".pytest_cache"
+        ]
+      }
+    }
+  ]
+}

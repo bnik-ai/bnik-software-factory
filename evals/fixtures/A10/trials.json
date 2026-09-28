@@ -1,0 +1,52 @@
+{
+  "case": "A10",
+  "task": {
+    "id": "I_A10",
+    "issueId": 210,
+    "number": 210,
+    "title": "Controller interrupted during a model call",
+    "body": "Same as F03, with the controller killed after admission and before settlement.",
+    "intentKind": "change",
+    "prompt": "Add a --json flag to report.js; add tests.",
+    "tests": [
+      "node --test"
+    ],
+    "maxTurns": 2,
+    "timeoutMs": 120000
+  },
+  "trials": [
+    {
+      "name": "kill-during-execution",
+      "orchestration": "kill-during-execution",
+      "killAfterSeconds": 8,
+      "fixtureCommand": "sleep 25; cat > report.js <<'EOF'\n#!/usr/bin/env node\nconst report = require('./lib/report.js');\nconst args = process.argv.slice(2);\nconst json = args.includes('--json');\nconst entries = JSON.parse(args.find((a) => a !== '--json') || '[]');\nconst result = report(entries);\nprocess.stdout.write(json ? `${JSON.stringify(result)}\\n` : `count=${result.count} total=${result.total}\\n`);\nEOF\nprintf \"const assert = require('node:assert/strict');\\nconst { test } = require('node:test');\\nconst { execFileSync } = require('node:child_process');\\n\\ntest('--json output', () => {\\n  const out = execFileSync('node', ['report.js', '[{\\\"amount\\\":1}]', '--json'], { encoding: 'utf8' });\\n  assert.deepEqual(JSON.parse(out), { count: 1, total: 1 });\\n});\\n\" > test/json.test.js",
+      "expected": {
+        "afterKill": [
+          "executing"
+        ],
+        "afterResume": {
+          "state": "unknown",
+          "reason": "coding_job_dead"
+        },
+        "noSecondExecution": true,
+        "reconciles": true,
+        "attemptsAtMost": 1
+      }
+    },
+    {
+      "name": "cancel-during-execution",
+      "orchestration": "cancel-during-execution",
+      "cancelAfterSeconds": 8,
+      "fixtureCommand": "sleep 25; cat > report.js <<'EOF'\n#!/usr/bin/env node\nconst report = require('./lib/report.js');\nconst args = process.argv.slice(2);\nconst json = args.includes('--json');\nconst entries = JSON.parse(args.find((a) => a !== '--json') || '[]');\nconst result = report(entries);\nprocess.stdout.write(json ? `${JSON.stringify(result)}\\n` : `count=${result.count} total=${result.total}\\n`);\nEOF\nprintf \"const assert = require('node:assert/strict');\\nconst { test } = require('node:test');\\nconst { execFileSync } = require('node:child_process');\\n\\ntest('--json output', () => {\\n  const out = execFileSync('node', ['report.js', '[{\\\"amount\\\":1}]', '--json'], { encoding: 'utf8' });\\n  assert.deepEqual(JSON.parse(out), { count: 1, total: 1 });\\n});\\n\" > test/json.test.js",
+      "expected": {
+        "afterCancel": [
+          "cancelled",
+          "executing"
+        ],
+        "finalState": "cancelled",
+        "notPublished": true,
+        "attemptsAtMost": 1
+      }
+    }
+  ]
+}

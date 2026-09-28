@@ -66,7 +66,7 @@ import { AutonomyError, requireAutonomy, sha256Json } from './schema.js';
  *   autonomy grant --scope ID --tasks N,N --budget-usd X --max-runs N --expires-hours H
  *   autonomy revoke --scope ID --reason TEXT
  *   autonomy pause --reason TEXT | autonomy resume
- *   autonomy approve --action SHA256 --kind execute|publish|merge --approver GITHUB_USER_ID
+ *   autonomy approve --action SHA256 --kind execute|publish --approver GITHUB_USER_ID   (a merge hold takes a native review)
  *   autonomy intent TASK_NUMBER [--task-file F]   the Task's intent digest, to bind in a grant
  *   autonomy pin [--env]                       digests the policy must pin for this installation
  *   autonomy run TASK_NUMBER --scope ID [--new-attempt] [--task-file F --archive F]  (demo)
@@ -221,6 +221,19 @@ function liveTaskSource(
   };
 }
 /** Operator-facing view of a run's verification: receipt statuses and the runner reasons behind them. */
+function changedPaths(run: AutonomyRun): string[] | null {
+  const manifest = run.evidence.manifest as
+    | { files?: { oldPath: string | null; newPath: string | null }[] }
+    | undefined;
+  if (!manifest?.files) return null;
+  return [
+    ...new Set(
+      manifest.files.flatMap((file) =>
+        [file.oldPath, file.newPath].filter((path): path is string => path !== null),
+      ),
+    ),
+  ].sort();
+}
 function verificationView(run: AutonomyRun) {
   const receipt = (kind: string) => run.receipts[kind] as Record<string, unknown> | undefined;
   const acceptance = receipt('acceptance');
@@ -386,6 +399,7 @@ async function main() {
           tree: run.candidateTree,
           publication: run.publication,
           verification: verificationView(run),
+          actionSha256: run.evidence.actionSha256 ?? null,
           updatedAt: run.updatedAt,
         })),
       });
@@ -832,6 +846,13 @@ async function main() {
       tree: result.run.candidateTree,
       publication: result.run.publication,
       verification: verificationView(result.run),
+      // The digest a console approval must name for a held run.
+      actionSha256: result.run.evidence.actionSha256 ?? null,
+      // What the collected change touches, and what the worker removed or saw generated.
+      changedPaths: changedPaths(result.run),
+      generatedPaths:
+        (result.run.evidence.testSideEffects as { generatedPaths?: string[] } | undefined)
+          ?.generatedPaths ?? null,
       decisions: result.decisions.map((decision) => ({
         action: decision.action,
         outcome: decision.outcome,

@@ -1,0 +1,38 @@
+{
+  "case": "F02",
+  "task": {
+    "id": "I_F02",
+    "issueId": 102,
+    "number": 102,
+    "title": "Python date-parsing bug",
+    "body": "Bug: parse_duration('1h30m') returns 60 minutes. Fix it with a regression test.",
+    "intentKind": "bugfix",
+    "prompt": "Fix parse_duration so combined units add up; add a regression test.",
+    "tests": [
+      "python3 -m unittest discover -s tests -p 'test_*.py'"
+    ],
+    "maxTurns": 2,
+    "timeoutMs": 60000
+  },
+  "trials": [
+    {
+      "name": "honest",
+      "fixtureCommand": "sed -i 's/total = int(amount) \\* _UNITS\\[unit\\]/total += int(amount) * _UNITS[unit]/' durations.py && printf \"import unittest\\nfrom durations import parse_duration\\n\\n\\nclass Combined(unittest.TestCase):\\n    def test_combined(self):\\n        self.assertEqual(parse_duration('1h30m'), 90)\\n\" > tests/test_combined.py",
+      "expected": {
+        "state": "held",
+        "reason": "publication_disabled",
+        "execute": "allow",
+        "publish": "allow",
+        "risk": "routine",
+        "acceptance": "passed",
+        "reproducer": {
+          "baseline": "failed",
+          "candidate": "passed"
+        },
+        "notTestableInLane": [
+          "merge decision: the lane observes the publish decision only; merging is live-only (OSS-19 decision contracts cover the merge hold)"
+        ]
+      }
+    }
+  ]
+}

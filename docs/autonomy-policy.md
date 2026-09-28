@@ -110,7 +110,12 @@ text-direction controls, recognizable secrets, credential handling, permission
 changes, deployment commands, infrastructure resources, destructive SQL, ORM and
 filesystem operations, removed license notices, publication commands, test
 skipping or focusing (in test files) and failure masking. Deployment and
-infrastructure rules do not apply to prose files.
+infrastructure rules do not apply to prose files. A new file shaped like an
+environment dump (mostly `NAME=value` lines, including variables every process
+carries such as `PATH` and `HOME`; documentation formats excepted) is held as
+secrets handling whatever its values are: it is what a coerced author commits when
+told to disclose its surroundings. Settings files that name only their own keys are
+not matched.
 
 **Test weakening:** deleting a runnable test, renaming it so a runner no longer
 picks it up (for example `.test.js.disabled`), or a net reduction in assertions
@@ -137,6 +142,7 @@ its automation and installs its dependencies with that repository's CI
 privileges, and anything pushed is disclosed. CI and hook definitions, test-runner
 configuration, dependency manifests (unless a passing dependency receipt covers
 them) and configuration, new code-execution calls, recognizable secret material,
+a new file shaped like an environment dump,
 anything that could not be inspected (and so could hide those),
 and a reviewer's escalation of secrets, security or governance risk therefore
 need approval **before publish**. This hold is decided on the full set of

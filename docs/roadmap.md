@@ -16,8 +16,11 @@ acceptance tests, a separate fresh-context reviewer and a frozen
 [agent-quality protocol](../evals/README.md) must pass first. The
 [policy contract](autonomy-policy.md) and the opt-in
 [controller, trusted runners and publisher](autonomy-operations.md) exist and pass
-synthetic contracts, as does the opt-in automatic merge; the live proof is still open,
-and the alpha remains human-gated until that work is verified.
+synthetic contracts, as does the opt-in automatic merge. The protocol's deterministic lane
+(scripted authors against every visible corpus case in real sandboxes) runs without
+credentials; its model lane and the [live proof](live-qualification.md) of a routine merge
+and a critical hold on a real repository are still open, and the alpha remains human-gated
+until that work is verified and recorded.
 
 Potential later work includes safer publication automation, clearer revision inputs,
 additional qualified runtime/model adapters, expanded platform coverage and smoother

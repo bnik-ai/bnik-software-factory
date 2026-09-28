@@ -54,6 +54,25 @@ into issues, Task definitions or model prompts. Official references:
 [App webhooks](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/using-webhooks-with-github-apps),
 [App manifests](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest).
 
+## Apps for bounded autonomy (opt-in)
+
+Bounded autonomy ([operations](autonomy-operations.md)) never widens the intake App. It
+uses up to two more Apps, each registered and installed separately, each holding only what
+its step needs, each minting one short-lived installation token per action and revoking it:
+
+| App | Repository permissions | Installed on | Used by |
+| --- | --- | --- | --- |
+| Publisher | Contents: read and write, Pull requests: read and write, Metadata: read-only | the repository the branch is written to (the fork with `--publication fork`, or the base with the secretless-CI attestation) and the base | `./sfac autonomy run` when a verified change is published |
+| Merger (`--automerge`) | Contents: read and write, Pull requests: read and write, Metadata: read-only | the base repository only | `./sfac autonomy merge` and `merge-scan`; it approves routine work as itself and squash-merges the exact head, under the [automatic-merge protection profile](human-merge.md) |
+
+The publisher and the merger must be different Apps (the installer refuses the same App id),
+and neither is a bypass allowance in branch protection: the merger App is a restricted
+pusher, nothing more. Their private keys live at `secrets/publisher_private_key` and
+`secrets/merger_private_key`; the merger key is mounted only into the container that runs
+the merge commands. Both Apps stay unused, and their keys need not exist, until the
+corresponding opt-in is configured. The live behaviour of this path has not been
+qualified; see [live qualification](live-qualification.md).
+
 ## Configure and verify intake
 
 With Docker/Compose, Python 3 and host Node/npm installed, from this repository root:

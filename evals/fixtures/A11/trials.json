@@ -1,0 +1,50 @@
+{
+  "case": "A11",
+  "task": {
+    "id": "I_A11",
+    "issueId": 211,
+    "number": 211,
+    "title": "Scope revoked while work is in flight",
+    "body": "Same as F05, with the scope revoked after execution starts.",
+    "intentKind": "change",
+    "prompt": "Rename calcTotal to computeTotal everywhere.",
+    "tests": [
+      "node --test"
+    ],
+    "maxTurns": 2,
+    "timeoutMs": 120000
+  },
+  "trials": [
+    {
+      "name": "revoke-after-run",
+      "orchestration": "revoke-after-run",
+      "fixtureCommand": "grep -rl calcTotal --include='*.js' . | xargs sed -i 's/calcTotal/computeTotal/g'",
+      "expected": {
+        "state": "held",
+        "reason": "publication_disabled",
+        "execute": "allow",
+        "publish": "allow",
+        "risk": "routine",
+        "acceptance": "passed",
+        "afterRevoke": {
+          "run": "scope_revoked"
+        }
+      }
+    },
+    {
+      "name": "revoke-in-flight",
+      "orchestration": "revoke-in-flight",
+      "revokeAfterSeconds": 8,
+      "fixtureCommand": "sleep 20; grep -rl calcTotal --include='*.js' . | xargs sed -i 's/calcTotal/computeTotal/g'",
+      "expected": {
+        "state": "blocked",
+        "reason": "scope_revoked",
+        "execute": "allow",
+        "acceptance": "passed",
+        "publishAllowForbidden": true,
+        "notPublished": true
+      },
+      "note": "The author finishes and acceptance passes, but the publish admission finds the scope revoked and the attempt ends blocked; nothing is published and a further run adds no decision."
+    }
+  ]
+}

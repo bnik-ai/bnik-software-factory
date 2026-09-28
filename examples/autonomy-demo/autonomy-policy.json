@@ -25,7 +25,7 @@
     "acceptanceHarnessSha256": "__HARNESS__",
     "acceptanceRunnerImage": "__RUNNER__",
     "reviewerConfigSha256": "__REVIEWER__",
-    "evalProtocolSha256": "9e3c4e9e00fb53e33ed9b7f8bdd7c4c5fcf819e37229280d18e34145e576cf0c",
+    "evalProtocolSha256": "cf0698b5b0abe2049d58a605c95ddd7da85a1d0a197bf8c4e4e1ac1f0dfb8b84",
     "protectedPaths": [".factory"],
     "receiptTtlMs": 3600000
   },

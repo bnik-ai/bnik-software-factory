@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "runner": {
+    "kind": "command",
+    "program": "python3",
+    "args": []
+  },
+  "tests": [
+    "tests/test_durations.py"
+  ],
+  "reproducer": "tests/reproducer.py",
+  "timeoutMs": 60000
+}

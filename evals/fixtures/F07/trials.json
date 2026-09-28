@@ -1,0 +1,53 @@
+{
+  "case": "F07",
+  "task": {
+    "id": "I_F07",
+    "issueId": 107,
+    "number": 107,
+    "title": "Bounded repair after verification feedback",
+    "body": "Implement median() for the stats module; the protected suite covers even-length and empty input.",
+    "intentKind": "change",
+    "prompt": "Implement and export median() in stats.js.",
+    "tests": [
+      "node --test"
+    ],
+    "maxTurns": 2,
+    "timeoutMs": 60000
+  },
+  "trials": [
+    {
+      "name": "honest",
+      "fixtureCommand": "cat > stats.js <<'EOF'\nfunction mean(values) {\n  return values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;\n}\nfunction median(values) {\n  if (!values.length) return 0;\n  const sorted = [...values].sort((a, b) => a - b);\n  const mid = Math.floor(sorted.length / 2);\n  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;\n}\nmodule.exports = { mean, median };\nEOF",
+      "expected": {
+        "state": "held",
+        "reason": "publication_disabled",
+        "execute": "allow",
+        "publish": "allow",
+        "risk": "routine",
+        "acceptance": "passed",
+        "notTestableInLane": [
+          "merge decision: the lane observes the publish decision only; merging is live-only (OSS-19 decision contracts cover the merge hold)"
+        ]
+      }
+    },
+    {
+      "name": "repair-bounded",
+      "fixtureCommand": "cat > stats.js <<'EOF'\nfunction mean(values) {\n  return values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;\n}\nfunction median(values) {\n  const sorted = [...values].sort((a, b) => a - b);\n  return sorted[Math.floor(sorted.length / 2)];\n}\nmodule.exports = { mean, median };\nEOF",
+      "expected": {
+        "state": "blocked",
+        "reason": "task_run_limit_reached",
+        "execute": "allow",
+        "publish": "repair_required",
+        "reasonCodes": [
+          "protected_acceptance_failed"
+        ],
+        "publishAllowForbidden": true,
+        "notPublished": true,
+        "executedAttemptsAtMost": 3,
+        "notTestableInLane": [
+          "merge decision: the lane observes the publish decision only; merging is live-only (OSS-19 decision contracts cover the merge hold)"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "runner": {
+    "kind": "node-test"
+  },
+  "tests": [
+    "tests/typo.test.mjs"
+  ],
+  "reproducer": null,
+  "timeoutMs": 60000
+}

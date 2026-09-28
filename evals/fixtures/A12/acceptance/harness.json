@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "runner": {
+    "kind": "node-test"
+  },
+  "tests": [
+    "tests/owners.test.mjs"
+  ],
+  "reproducer": null,
+  "timeoutMs": 60000
+}

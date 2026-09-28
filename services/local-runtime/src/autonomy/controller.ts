@@ -577,6 +577,8 @@ export class AutonomyController {
               patch: result.outcome.patch,
               estimatedUsd: estimated,
               testsStatus: result.outcome.testsStatus,
+              // What the worker removed before the freeze or saw its tests generate.
+              testSideEffects: result.outcome.testSideEffects ?? null,
             },
           });
           break;

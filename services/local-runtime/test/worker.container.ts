@@ -709,6 +709,40 @@ test('completed run evidence and cached result survive a real PostgreSQL SIGKILL
   });
 });
 
+test('generated artifacts the author leaves before the freeze are removed from the patch and reported', async () => {
+  const archive = source();
+  const runId = randomUUID();
+  const output = await executeIsolated({
+    job: fixture(archive, {
+      fixtureCommand:
+        "printf 'module.exports = (a, b) => a + b;\\n' > sum.js && mkdir -p tests/__pycache__ .pytest_cache/v/cache coverage && printf 'bytecode' > tests/__pycache__/test_sum.cpython-313.pyc && printf 'coverage' > .coverage && printf 'ids' > .pytest_cache/v/cache/nodeids && printf 'lcov' > coverage/lcov.info && printf 'kept' > notes.txt",
+      tests: [],
+    }),
+    archive,
+    runId,
+    image,
+    signal: new AbortController().signal,
+  });
+  assert.equal(output.outcome.ok, true);
+  assert.match(output.outcome.patch, /a \+ b/);
+  assert.match(output.outcome.patch, /notes\.txt/);
+  assert.doesNotMatch(
+    output.outcome.patch,
+    /__pycache__|\.pyc|\.coverage|\.pytest_cache|lcov\.info/,
+  );
+  assert.deepEqual(output.outcome.testSideEffects?.generatedPaths, [
+    '.coverage',
+    '.pytest_cache/v/cache/nodeids',
+    'coverage/lcov.info',
+    'tests/__pycache__/test_sum.cpython-313.pyc',
+  ]);
+  await clean(runId);
+  evidence.push({
+    check: 'generated artifacts stripped from the frozen patch and reported',
+    paidApi: false,
+  });
+});
+
 test('validation outputs never enter the frozen patch and source mutations fail validation', async () => {
   for (const mutate of [false, true]) {
     const archive = source();

@@ -55,6 +55,7 @@ const PUBLICATION_HOLD_CODES: readonly string[] = [
   'code_execution_primitive',
   'secret_material',
   'secret_material_path',
+  'environment_dump',
 ];
 export function holdsPublication(reason: Reason): boolean {
   return reason.category === 'uninspectable' || PUBLICATION_HOLD_CODES.includes(reason.code);
@@ -610,6 +611,22 @@ function exceedsWithoutSplitting(
   return false;
 }
 
+const DOCUMENTATION = /\.(md|markdown|mdx|rst|adoc)$/;
+const ENVIRONMENT_LINE = /^(export\s+|declare\s+-x\s+)?[A-Za-z_][A-Za-z0-9_]*=/;
+/** Variables every process environment carries; a configuration file names none of them. */
+const ENVIRONMENT_IDENTITY =
+  /^(export\s+|declare\s+-x\s+)?(PATH|HOME|PWD|OLDPWD|HOSTNAME|SHLVL|_|TERM|USER|LOGNAME|SHELL|LANG|LC_ALL|TMPDIR)=/;
+/**
+ * The shape of `env` output: at least five non-empty lines, four in five of them `NAME=value`,
+ * and at least two of the variables a process always has. A settings file with five keys is not.
+ */
+export function isEnvironmentDump(content: string): boolean {
+  const lines = content.split(/\r?\n/).filter((line) => line.trim().length > 0);
+  if (lines.length < 5) return false;
+  const assignments = lines.filter((line) => ENVIRONMENT_LINE.test(line)).length;
+  const identity = lines.filter((line) => ENVIRONMENT_IDENTITY.test(line)).length;
+  return assignments * 5 >= lines.length * 4 && identity >= 2;
+}
 export function classifyChanges(policy: AutonomyPolicy, manifest: ChangeManifest): Classification {
   const reasons = new Map<string, Reason>();
   const addReason = (code: string, category: ReasonCategory, path?: string) => {
@@ -703,6 +720,15 @@ export function classifyChanges(policy: AutonomyPolicy, manifest: ChangeManifest
       )
         addReason(rule.code, rule.category, displayPath);
     }
+    // A new file made of NAME=value lines is an environment dump: what a coerced author commits
+    // when told to disclose its surroundings. Held as secrets handling whatever the values are.
+    // Documentation that lists settings is not a dump; a `.txt` or `.log` file may well be one.
+    if (
+      change.status === 'added' &&
+      !DOCUMENTATION.test(displayPath.toLowerCase()) &&
+      isEnvironmentDump(change.newContent ?? '')
+    )
+      addReason('environment_dump', 'secrets_permissions', displayPath);
     if (oldIsTest && newIsTest) {
       const removedAssertions = removedLines.filter((line) => ASSERTION.test(line)).length;
       const addedAssertions = addedLines.filter((line) => ASSERTION.test(line)).length;

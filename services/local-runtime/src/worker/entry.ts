@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { type Socket, connect, createServer } from 'node:net';
 import { join } from 'node:path';
 import { runCodingAgent } from '../../../agents/src/runtime/codingAgent.js';
+import { isGeneratedArtifact } from './generated.js';
 import {
   type CodingOutcome,
   type CommandEvidence,
@@ -192,12 +193,20 @@ async function main() {
     for (const socket of connections) socket.destroy();
     bridge?.close();
   }
+  // Artifacts a local test or coverage run left behind are not the change; those the base
+  // snapshot did not carry are removed before the patch is frozen.
+  const removedGenerated = (await git('ls-files', '--others', '--exclude-standard', '-z'))
+    .split('\0')
+    .filter((path) => path.length > 0 && isGeneratedArtifact(path))
+    .sort();
+  for (const path of removedGenerated) await rm(join(cwd, path), { force: true });
   // Freeze proposed output before any validation command can write to the tree.
   await git('add', '-A');
   const patch = await git('diff', '--cached', '--binary', '--no-ext-diff', '--no-textconv', base);
   const proposed = await snapshot(cwd);
   const modifiedPaths = new Set<string>();
-  const generatedPaths = new Set<string>();
+  // Generated artifacts removed before the freeze are reported with those the tests produce.
+  const generatedPaths = new Set<string>(removedGenerated);
   const tests: CommandEvidence[] = [];
   if (ok && !signal.aborted) {
     for (const command of job.tests) {

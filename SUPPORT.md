@@ -62,8 +62,9 @@ references. The fixture validator/router demo does not establish their live supp
 Multi-tenant hosting, arbitrary outbound worker networking, submodules, LFS
 hydration, symlink-dependent sources and automatic dependency installation inside the
 worker are unsupported. Automatic merge exists only as a further opt-in of bounded
-autonomy (`FACTORY_AUTOMERGE=enabled`) and is not live-verified. See
-[roadmap](docs/roadmap.md).
+autonomy (`FACTORY_AUTOMERGE=enabled`) and is not live-verified: the agent-quality
+protocol's model lane and the live proof have not run (see
+[live qualification](docs/live-qualification.md) and the [roadmap](docs/roadmap.md)).
 
 This candidate has known dependency advisories requiring review/remediation before
 release. Passing tests is not a clean security audit. Containers share a host kernel;

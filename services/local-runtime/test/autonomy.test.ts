@@ -50,6 +50,67 @@ const classify = (...files: Parameters<typeof manifest>) =>
 const classifiedCodes = (...files: Parameters<typeof manifest>) =>
   classify(...files).reasons.map((r) => r.code);
 
+test('a new file shaped like an environment dump is held as secrets handling; configuration and code are not', () => {
+  const dump = [
+    'PATH=/usr/bin',
+    'HOME=/tmp/worker-home',
+    'NODE_OPTIONS=--max-old-space-size=512',
+    'PYTHONDONTWRITEBYTECODE=1',
+    'GIT_TERMINAL_PROMPT=0',
+    'LANG=C.UTF-8',
+  ].join('\n');
+  assert.ok(classifiedCodes(added('ENV_DUMP.txt', `${dump}\n`)).includes('environment_dump'));
+  assert.ok(
+    classifiedCodes(added('notes/env.log', `# captured\n${dump}\n`)).includes('environment_dump'),
+  );
+  assert.ok(
+    classifiedCodes(
+      added('scripts/setup.sh', `export ${dump.split('\n').join('\nexport ')}\n`),
+    ).includes('environment_dump'),
+  );
+  assert.ok(
+    classifiedCodes(
+      added('vars.sh', `declare -x ${dump.split('\n').join('\ndeclare -x ')}\n`),
+    ).includes('environment_dump'),
+  );
+  for (const [path, content] of [
+    ['config.ini', 'name=app\nport=8080\n'],
+    [
+      'mypy.ini',
+      '[mypy]\nstrict=True\nwarn_unused_ignores=True\ndisallow_untyped_defs=True\nshow_error_codes=True\n',
+    ],
+    ['config.mk', 'CC=gcc\nCFLAGS=-O2\nLDFLAGS=\nPREFIX=/usr/local\nDESTDIR=\nBINDIR=bin\n'],
+    [
+      'scripts/ci-env.sh',
+      'export CI=1\nexport NODE_ENV=test\nexport FORCE_COLOR=0\nexport TZ=UTC\nexport DEBUG=\n',
+    ],
+    [
+      'docs/config.md',
+      '# Settings\nHOST=localhost\nPORT=8080\nDEBUG=0\nLOG_LEVEL=info\nWORKERS=2\n',
+    ],
+    [
+      'src/settings.js',
+      'const a = 1;\nconst b = 2;\nconst c = 3;\nconst d = 4;\nconst e = 5;\nmodule.exports = { a, b, c, d, e };\n',
+    ],
+    [
+      'README.md',
+      'Set PATH=/usr/bin before running.\n\nThen run the tests.\n\nThen commit.\n\nDone.\n\nThanks.\n',
+    ],
+    ['.env.example', 'A=1\nB=2\n'],
+  ] as const)
+    assert.ok(!classifiedCodes(added(path, content)).includes('environment_dump'), path);
+  // Modifying an existing file with the same shape is not a dump of the author's surroundings.
+  assert.ok(
+    !classifiedCodes(modified('vars.txt', 'X=1\n', `${dump}\n`)).includes('environment_dump'),
+  );
+  // Disclosure happens when the pull request is published, so the dump holds publication, not only merge.
+  assert.equal(classify(added('ENV_DUMP.txt', `${dump}\n`)).publicationHold, true);
+  assert.equal(
+    classify(added('deploy/config.yml', 'replicas: 2\nimage: x\n')).publicationHold,
+    false,
+  );
+});
+
 test('policy is strict, digest-pinned and bounded by worker ceilings', () => {
   const policy = policyFixture();
   assert.deepEqual(parsePolicy(policy), policy);
