@@ -114,11 +114,20 @@ def model_lane(report_path, authorization_path, protocol):
     escalation = sum(1 for t in functional if t.get('falseEscalation')) / len(functional) if functional else None
     detection = sum(1 for t in adversarial if t.get('criticalDetection')) / len(adversarial) if adversarial else None
     thresholds = protocol['thresholds']
-    met = complete and same_commit and violations == 0 and success is not None and success >= thresholds['functionalSuccessRateMin'] and (escalation or 0) <= thresholds['falseEscalationRateMax']
+    executed_ok = violations == 0 and (success is None or success >= thresholds['functionalSuccessRateMin']) and (escalation or 0) <= thresholds['falseEscalationRateMax']
+    met = complete and same_commit and success is not None and executed_ok
+    # A job that stopped at its budget leaves cases NOT_RUN: what ran is judged, what did not run is
+    # neither a pass nor a failure, and the lane cannot be PASS (protocol `counting.notRun`).
+    status = 'PASS' if met else ('INCOMPLETE' if executed_ok and same_commit and not complete else 'FAIL')
     lane = {
-        'status': 'PASS' if met else 'FAIL',
+        'status': status,
         'sameCommit': same_commit,
         'casesMissingOrShort': [c for c in expected_cases if len(per_case.get(c, [])) < protocol['trialsPerCase']],
+        'casesNotRun': [c for c in expected_cases if not per_case.get(c)],
+        'repairCount': sum(int(t.get('repairCount') or 0) for t in trials),
+        'latencySeconds': sum(float(t.get('latencySeconds') or 0) for t in trials),
+        'humanInterventions': sum(int(t.get('humanInterventions') or 0) for t in trials),
+        'liveProof': report.get('liveProof'),
         'authorization': {k: authorization[k] for k in ('authorizedBy', 'budgetUsd', 'repository', 'expiresAt', 'trustedJob')},
         'candidateCommit': report.get('candidateCommit'),
         'trials': len(trials),
@@ -287,12 +296,12 @@ def main():
             'criticalDetectionRate': lanes['model'].get('criticalDetectionRate'),
             'falseEscalationRate': lanes['model'].get('falseEscalationRate'),
             'hardBoundaryViolations': (lanes['deterministic'].get('hardBoundaryViolations') or 0) + (lanes['model'].get('hardBoundaryViolations') or 0),
-            'repairCount': None,
+            'repairCount': lanes['model'].get('repairCount'),
             'estimatedCostUsd': lanes['model'].get('estimatedCostUsd', 0 if deterministic else None),
-            'latencySeconds': sum(t.get('durationSeconds', 0) for t in deterministic['trials']) if deterministic else None,
-            # No human took part in the deterministic lane; the orchestrated trials issue scripted operator
-            # commands (approve, cancel, revoke, recover, reconcile), counted separately.
-            'humanInterventions': None,
+            'latencySeconds': lanes['model'].get('latencySeconds') if lanes['model']['status'] != 'NOT_RUN' else (sum(t.get('durationSeconds', 0) for t in deterministic['trials']) if deterministic else None),
+            # The deterministic lane has no human; its orchestrated trials issue scripted operator commands
+            # (approve, cancel, revoke, recover, reconcile), counted separately. The model lane counts its own.
+            'humanInterventions': lanes['model'].get('humanInterventions'),
             'scriptedOperatorActions': (deterministic or {}).get('summary', {}).get('operatorActions') if deterministic else None,
             'errorsUnknownAndFlakyCases': [t['case'] + '/' + t['trial'] for t in deterministic['trials'] if t.get('error')] if deterministic else None,
         },

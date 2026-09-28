@@ -55,6 +55,7 @@ import {
 import { type AutonomyRun, AutonomyRuns } from './runs.js';
 import { sweepSandboxes } from './sandbox.js';
 import { AutonomyError, requireAutonomy, sha256Json } from './schema.js';
+import { costView } from './views.js';
 
 /**
  * Operator CLI for bounded autonomy. Every command runs with the controller database
@@ -400,6 +401,7 @@ async function main() {
           publication: run.publication,
           verification: verificationView(run),
           actionSha256: run.evidence.actionSha256 ?? null,
+          ...costView(run),
           updatedAt: run.updatedAt,
         })),
       });
@@ -853,6 +855,7 @@ async function main() {
       generatedPaths:
         (result.run.evidence.testSideEffects as { generatedPaths?: string[] } | undefined)
           ?.generatedPaths ?? null,
+      ...costView(result.run),
       decisions: result.decisions.map((decision) => ({
         action: decision.action,
         outcome: decision.outcome,
