@@ -103,6 +103,9 @@ assert.match(a.tree, /^[0-9a-f]{40}$/);
 assert.equal(a.publication, null);
 console.log("Autonomy demo run held at the recorded decision; no external effect.");'
 ./sfac autonomy status | grep '"state":"held"'
+# Automatic merge is live-only: the demo refuses before touching anything.
+if ./sfac autonomy merge 1 --task-file input/task.json --archive input/source.tar.gz 2> "$SFAC_STATE_DIR/artifacts/merge-refusal.txt"; then echo 'Demo merge was accepted' >&2; exit 1; fi
+grep -q 'automerge_requires_live_mode' "$SFAC_STATE_DIR/artifacts/merge-refusal.txt"
 ./sfac autonomy recover | grep '"recovered"'
 [ -z "$(docker ps -aq --filter label=io.software-factory.autonomy-run)" ]
 
@@ -110,12 +113,13 @@ console.log("Autonomy demo run held at the recorded decision; no external effect
 printf 'synthetic-app-canary\n' > "$SFAC_STATE_DIR/secrets/app_private_key"
 printf 'synthetic-model-canary\n' > "$SFAC_STATE_DIR/secrets/model_key"
 printf 'synthetic-publisher-canary\n' > "$SFAC_STATE_DIR/secrets/publisher_private_key"
+printf 'synthetic-merger-canary\n' > "$SFAC_STATE_DIR/secrets/merger_private_key"
 printf '{}\n' > "$SFAC_STATE_DIR/merge-policy.json"
 export FACTORY_STATE_DIR="$SFAC_STATE_DIR"
 export FACTORY_OPERATOR_IMAGE="$project-operator:development"
 export FACTORY_LOCAL_IMAGE="$project-local:development"
 export FACTORY_WORKER_IMAGE="$project-worker:development"
-for role in operator probe database-operator demo-operator github-operator supervisor demo-supervisor live-supervisor autonomy-operator demo-autonomy-supervisor live-autonomy-supervisor; do
+for role in operator probe database-operator demo-operator github-operator supervisor demo-supervisor live-supervisor autonomy-operator demo-autonomy-supervisor live-autonomy-supervisor live-automerge-supervisor; do
   docker compose --project-directory "$root/runtime" --env-file "$SFAC_STATE_DIR/.env" -p "$project" -f "$root/runtime/compose.yaml" -f "$root/runtime/compose.operator.yaml" -f "$root/runtime/compose.operator-review.yaml" run --rm --no-deps -T --entrypoint node "$role" /app/runtime/operator/assert-boundary.mjs "$role"
 done
 ./sfac down --volumes

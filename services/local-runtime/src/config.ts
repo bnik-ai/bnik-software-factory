@@ -35,6 +35,13 @@ export interface AutonomyConfig {
     forkRepository: string | null;
     forkRepositoryId: number | null;
   } | null;
+  /** OSS-21: the App that merges routine pull requests; present only with FACTORY_AUTOMERGE=enabled (live). */
+  merger: {
+    appId: string;
+    appPrivateKey: string;
+    installationId: number;
+    appSlug: string;
+  } | null;
 }
 export interface RuntimeConfig {
   mode: 'demo' | 'live';
@@ -220,6 +227,17 @@ export function resolveConfig(env: Env = process.env): RuntimeConfig {
       throw new Error('disabled_execution_must_not_receive_model_credentials');
     if (execution === 'bounded') config.autonomy = autonomyConfig(env, 'live');
     else if (env.FACTORY_AUTONOMY) throw new Error('FACTORY_AUTONOMY_requires_bounded_execution');
+    else if (env.FACTORY_AUTOMERGE) throw new Error('FACTORY_AUTOMERGE_requires_bounded_execution');
+    // Automatic merge needs the merge policy (protections, checks, merger App) to be configured.
+    if (config.autonomy?.merger) {
+      if (!config.mergePolicy) throw new Error('automerge_requires_merge_policy');
+      if (
+        config.mergePolicy.merger === undefined ||
+        String(config.mergePolicy.merger.appId) !== config.autonomy.merger.appId ||
+        config.mergePolicy.merger.appSlug !== config.autonomy.merger.appSlug
+      )
+        throw new Error('merge_policy_merger_must_match_FACTORY_MERGER_settings');
+    }
   } else if (
     ['GITHUB_APP_ID', 'GITHUB_APP_PRIVATE_KEY', 'ANTHROPIC_API_KEY'].some(
       (key) => env[key] || env[`${key}_FILE`],
@@ -318,6 +336,40 @@ function autonomyConfig(env: Env, mode: 'demo' | 'live'): AutonomyConfig {
       forkRepositoryId,
     };
   }
+  let merger: AutonomyConfig['merger'] = null;
+  const mergerKeys = [
+    'FACTORY_MERGER_APP_ID',
+    'FACTORY_MERGER_APP_PRIVATE_KEY',
+    'FACTORY_MERGER_APP_PRIVATE_KEY_FILE',
+    'FACTORY_MERGER_INSTALLATION_ID',
+    'FACTORY_MERGER_APP_SLUG',
+  ];
+  if (env.FACTORY_AUTOMERGE !== undefined && env.FACTORY_AUTOMERGE !== 'enabled')
+    throw new Error('FACTORY_AUTOMERGE_must_be_enabled_or_unset');
+  if (env.FACTORY_AUTOMERGE === 'enabled') {
+    if (mode === 'demo') throw new Error('demo_autonomy_cannot_merge');
+    const appId = required(env, 'FACTORY_MERGER_APP_ID');
+    if (!/^\d+$/.test(appId)) throw new Error('FACTORY_MERGER_APP_ID_is_invalid');
+    const appPrivateKey = secret(env, 'FACTORY_MERGER_APP_PRIVATE_KEY');
+    try {
+      if (createPrivateKey(appPrivateKey).asymmetricKeyType !== 'rsa') throw new Error();
+    } catch {
+      throw new Error('FACTORY_MERGER_APP_PRIVATE_KEY_must_be_an_RSA_private_key');
+    }
+    const appSlug = required(env, 'FACTORY_MERGER_APP_SLUG');
+    if (!/^[a-z0-9][a-z0-9-]{0,38}$/.test(appSlug))
+      throw new Error('FACTORY_MERGER_APP_SLUG_is_invalid');
+    // Two identities: the publisher writes agent code, the merger merges it.
+    if (publisher && publisher.appId === appId)
+      throw new Error('merger_app_must_differ_from_publisher_app');
+    merger = {
+      appId,
+      appPrivateKey,
+      installationId: integer(env, 'FACTORY_MERGER_INSTALLATION_ID', 0, 1, Number.MAX_SAFE_INTEGER),
+      appSlug,
+    };
+  } else if (mergerKeys.some((key) => env[key]))
+    throw new Error('merger_settings_require_FACTORY_AUTOMERGE_enabled');
   return {
     policyFile: absolutePath(env, 'FACTORY_AUTONOMY_POLICY_FILE'),
     bundleDirectory: absolutePath(env, 'FACTORY_ACCEPTANCE_BUNDLE_DIR'),
@@ -331,5 +383,6 @@ function autonomyConfig(env: Env, mode: 'demo' | 'live'): AutonomyConfig {
     },
     scanner,
     publisher,
+    merger,
   };
 }

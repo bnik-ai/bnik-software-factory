@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "baseBranch": "main",
+  "reviewers": ["example-maintainer"],
+  "mergers": ["example-maintainer"],
+  "requiredChecks": [{ "name": "test", "appId": 12345 }],
+  "merger": { "appSlug": "example-factory-merger", "appId": 67890 }
+}

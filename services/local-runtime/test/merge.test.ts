@@ -7,6 +7,8 @@ import {
   reviewEvidence,
 } from '../src/github/merge-gate.js';
 import {
+  classifyChecks,
+  latestReviews,
   parseMergePolicy,
   verifyChecks,
   verifyProtection,
@@ -85,6 +87,20 @@ test('native human approval is tied to exact head and cannot be replaced by bots
     ),
   );
   assert.throws(() => verifyReviews(policy, g.reviews, head, 44, 0));
+  // Automatic profile: the merger App's approval counts only for the App's own merge.
+  const automatic = { ...policy, merger: { appSlug: 'factory-merger', appId: 7001 } };
+  const botApproval = {
+    ...present(g.reviews[0]),
+    id: 9,
+    user: { id: 9001, login: 'factory-merger[bot]', type: 'Bot' },
+  };
+  assert.throws(
+    () => verifyReviews(automatic, [botApproval], head, 44),
+    /human_approval_missing_or_stale/,
+  );
+  assert.throws(() => verifyReviews(automatic, [botApproval], head, 44, undefined, false));
+  assert.equal(verifyReviews(automatic, [botApproval], head, 44, undefined, true).length, 1);
+  assert.throws(() => verifyReviews(policy, [botApproval], head, 44, undefined, true));
 });
 test('required CI uses latest attempt from trusted App on exact head and fails closed', () => {
   const g = new MergeFixture();
@@ -164,3 +180,110 @@ function present<T>(value: T | undefined): T {
   assert.ok(value);
   return value;
 }
+
+test('the automatic-merge profile names the merger App and reshapes the protection it accepts', () => {
+  const automatic = parseMergePolicy({
+    ...policy,
+    merger: { appSlug: 'factory-merger', appId: 9001 },
+  });
+  assert.deepEqual(automatic.merger, { appSlug: 'factory-merger', appId: 9001 });
+  for (const merger of [
+    { appSlug: 'Factory Merger', appId: 9001 },
+    { appSlug: 'factory-merger', appId: 0 },
+    { appSlug: 'factory-merger', appId: 9001, extra: true },
+    'factory-merger',
+  ])
+    assert.throws(() => parseMergePolicy({ ...policy, merger }), /merge_policy_merger_invalid/);
+  const g = new MergeFixture();
+  // The human profile protection is not enough for automatic merges, and vice versa.
+  assert.throws(
+    () => verifyProtection(automatic, g.protection, g.owners),
+    /automatic_review_protection_missing/,
+  );
+  const protection = structuredClone(g.protection);
+  protection.required_pull_request_reviews = {
+    ...(protection.required_pull_request_reviews as NonNullable<
+      typeof protection.required_pull_request_reviews
+    >),
+    require_code_owner_reviews: false,
+  };
+  assert.throws(
+    () => verifyProtection(automatic, protection, g.owners),
+    /automatic_merge_restriction_missing/,
+  );
+  protection.restrictions = {
+    users: [{ login: 'example-maintainer' }],
+    teams: [],
+    apps: [{ slug: 'factory-merger' }],
+  };
+  verifyProtection(automatic, protection, g.owners);
+  assert.throws(
+    () => verifyProtection(policy, protection, g.owners),
+    /human_review_protection_missing/,
+  );
+  protection.restrictions.apps = [{ slug: 'factory-merger' }, { slug: 'other-app' }];
+  assert.throws(
+    () => verifyProtection(automatic, protection, g.owners),
+    /automatic_merge_restriction_missing/,
+  );
+  protection.restrictions.apps = [{ slug: 'other-app' }];
+  assert.throws(
+    () => verifyProtection(automatic, protection, g.owners),
+    /automatic_merge_restriction_missing/,
+  );
+  // Nothing may bypass either profile.
+  protection.restrictions.apps = [{ slug: 'factory-merger' }];
+  (
+    protection.required_pull_request_reviews as NonNullable<
+      typeof protection.required_pull_request_reviews
+    >
+  ).bypass_pull_request_allowances = { apps: [{}] };
+  assert.throws(
+    () => verifyProtection(automatic, protection, g.owners),
+    /automatic_review_protection_missing/,
+  );
+});
+
+test('required checks are graded for the observation: the latest trusted attempt per check decides', () => {
+  const g = new MergeFixture();
+  const run = present(g.checks[0]);
+  assert.equal(classifyChecks(policy, g.checks, head), 'passed');
+  assert.equal(classifyChecks(policy, [], head), 'missing');
+  assert.equal(classifyChecks(policy, [{ ...run, head_sha: base }], head), 'missing');
+  assert.equal(classifyChecks(policy, [{ ...run, app: { id: 321 } }], head), 'missing');
+  assert.equal(
+    classifyChecks(policy, [{ ...run, status: 'in_progress', conclusion: null }], head),
+    'pending',
+  );
+  assert.equal(classifyChecks(policy, [{ ...run, conclusion: 'failure' }], head), 'failed');
+  assert.equal(classifyChecks(policy, [{ ...run, conclusion: 'neutral' }], head), 'failed');
+  assert.equal(
+    classifyChecks(policy, [run, { ...run, id: 2, conclusion: 'failure' }], head),
+    'failed',
+  );
+  assert.equal(
+    classifyChecks(
+      policy,
+      [
+        { ...run, conclusion: 'failure' },
+        { ...run, id: 2 },
+      ],
+      head,
+    ),
+    'passed',
+  );
+  assert.deepEqual(
+    latestReviews([
+      ...g.reviews,
+      { ...present(g.reviews[0]), id: 2, state: 'COMMENTED' },
+      {
+        ...present(g.reviews[0]),
+        id: 3,
+        state: 'CHANGES_REQUESTED',
+        submitted_at: '2026-01-03T00:00:00Z',
+      },
+    ]).map((r) => r.id),
+    [3],
+  );
+  assert.deepEqual(latestReviews(g.reviews, 0), []);
+});

@@ -142,6 +142,7 @@ function harness(scenario: Scenario) {
       fixtureCommand: 'true',
     },
     sourceCommit: SOURCE,
+    status: 'status:proposed',
   };
   const publisher = new FixtureGitHost(REPOSITORY, REPOSITORY, BASE_FILES);
   // The fixture host's base commit stands in for the Task's pinned source commit.
@@ -361,6 +362,30 @@ test('a routine change travels from admission to a published PR with no human st
     runtimePool.query("UPDATE factory_autonomy_runs SET state='cancelled'"),
     /permission denied/,
   );
+});
+
+test("a Task already in review is this factory's only while its published attempt exists", async () => {
+  const foreign = harness({
+    patch: JSON.stringify({ 'sum.js': 'module.exports = (a, b) => a + b;\n' }),
+  });
+  await grant(foreign.ledger);
+  // Someone else's Task in review (no attempt of ours): refused before anything runs or is reserved.
+  foreign.task.status = 'status:in_review';
+  await assert.rejects(foreign.controller.process(7, 'goal-1', signal()), /task_not_proposed/);
+  assert.equal(foreign.executions.length, 0);
+  assert.equal(
+    (await admin.query('SELECT count(*)::int AS n FROM factory_autonomy_runs')).rows[0].n,
+    0,
+  );
+  // Our own publication paired the Task: the published attempt is still reachable, and a revision may start.
+  foreign.task.status = 'status:proposed';
+  const first = await foreign.controller.process(7, 'goal-1', signal());
+  assert.equal(first.run.state, 'published');
+  foreign.task.status = 'status:in_review';
+  const again = await foreign.controller.process(7, 'goal-1', signal());
+  assert.equal(again.run.runId, first.run.runId);
+  const revision = await foreign.controller.process(7, 'goal-1', signal(), { newAttempt: true });
+  assert.equal(revision.run.attempt, 2);
 });
 
 test('a crashed controller resumes mid-pipeline without repeating execution or creating a second PR', async () => {

@@ -26,6 +26,10 @@ p.add_argument("--fork-repository-id", type=int)
 p.add_argument("--publisher-app-id", type=int)
 p.add_argument("--publisher-installation-id", type=int)
 p.add_argument("--secretless-ci-attested", action="store_true", help="Base publication: you attest the repository's pull-request CI holds no secrets")
+p.add_argument("--automerge", action="store_true", help="Live bounded execution: merge routine pull requests under the autonomy policy with a separate merger App")
+p.add_argument("--merger-app-id", type=int)
+p.add_argument("--merger-installation-id", type=int)
+p.add_argument("--merger-app-slug")
 p.add_argument("--installation-id", type=int)
 p.add_argument("--app-slug")
 p.add_argument("--app-id", type=int)
@@ -79,6 +83,10 @@ if a.mode == "live":
 bounded = (a.mode == "live" and a.execution == "bounded") or (a.mode == "demo" and a.autonomy)
 if a.autonomy and a.mode == "live":
     p.error("Live mode selects autonomy with --execution bounded")
+if a.automerge and not bounded:
+    p.error("--automerge requires live bounded execution")
+if a.automerge and a.mode == "demo":
+    p.error("Demo autonomy cannot merge")
 if bounded:
     reviewer = a.reviewer or ("fixture" if a.mode == "demo" else None)
     if reviewer is None:
@@ -109,6 +117,12 @@ if bounded:
             p.error("--publication base requires --secretless-ci-attested; pushing into the base repository runs its CI with its secrets on agent code")
         else:
             settings["FACTORY_PUBLICATION_SECRETLESS_CI"] = "attested"
+        if a.automerge:
+            if not (a.merger_app_id and a.merger_installation_id and a.merger_app_slug and re.fullmatch(r"[a-z0-9][a-z0-9-]{0,38}", a.merger_app_slug)):
+                p.error("--automerge requires --merger-app-id, --merger-installation-id and --merger-app-slug")
+            if a.merger_app_id == a.publisher_app_id:
+                p.error("The merger App must differ from the publisher App")
+            settings.update(FACTORY_AUTOMERGE="enabled", FACTORY_MERGER_APP_ID=str(a.merger_app_id), FACTORY_MERGER_INSTALLATION_ID=str(a.merger_installation_id), FACTORY_MERGER_APP_SLUG=a.merger_app_slug)
 if any("\n" in v or "\r" in v for v in settings.values()):
     p.error("Invalid configuration value")
 (root / ".env").write_text("".join(f"{k}={v}\n" for k, v in settings.items()))
@@ -117,6 +131,7 @@ if bounded:
     print(
         "Bounded autonomy selected. Provide autonomy-policy.json and the acceptance/ bundle directory in the state directory, run ./sfac autonomy activate, then grant a scope."
         + (" Provide secrets/publisher_private_key for the publisher App." if a.mode == "live" else "")
+        + (" Provide secrets/merger_private_key for the merger App and add `merger` to merge-policy.json." if a.automerge else "")
     )
 if a.mode == "live":
     print(

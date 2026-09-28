@@ -23,6 +23,7 @@ const migrations = [
     new URL('../migrations/0010_autonomy_scope_intents.sql', import.meta.url),
   ],
   ['0011_autonomy_locks', new URL('../migrations/0011_autonomy_locks.sql', import.meta.url)],
+  ['0012_autonomy_merges', new URL('../migrations/0012_autonomy_merges.sql', import.meta.url)],
 ] as const;
 export function migrationFiles() {
   return migrations.map(([version, path]) => {
@@ -114,7 +115,7 @@ export async function migrate(
     // Read-only: the internet-facing runtime must not forge policy, scopes, approvals or
     // admissions. Revoke first so every migration run restores least privilege.
     const autonomyTables =
-      'factory_autonomy_policies,factory_autonomy_control,factory_autonomy_scopes,factory_autonomy_decisions,factory_autonomy_reservations,factory_autonomy_approvals,factory_autonomy_runs';
+      'factory_autonomy_policies,factory_autonomy_control,factory_autonomy_scopes,factory_autonomy_decisions,factory_autonomy_reservations,factory_autonomy_approvals,factory_autonomy_runs,factory_autonomy_merges';
     await client.query(`REVOKE ALL ON ${autonomyTables} FROM factory_runtime`);
     await client.query(`GRANT SELECT ON ${autonomyTables} TO factory_runtime`);
     // Controller lock rows: no runtime access at all, so the runtime cannot hold them.

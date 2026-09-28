@@ -11,9 +11,9 @@ import {
   resolveControllerConfig,
 } from '../config.js';
 import { createLocalPool } from '../database.js';
-import { prepareTask } from '../github/activation.js';
+import { PAIRED_TASK_STATUSES, PROPOSED_TASK_STATUSES, prepareTask } from '../github/activation.js';
 import { GitHubFailure, InstallationClient } from '../github/client.js';
-import { pairPull } from '../github/merge-gate.js';
+import { type Pair, headRepositoryIds, pairPull } from '../github/merge-gate.js';
 import { HumanMergeGate } from '../github/reconcile.js';
 import { checkSchema } from '../migrate.js';
 import { Docker } from '../worker/docker.js';
@@ -40,6 +40,10 @@ import {
 } from './dependency.js';
 import type { ApprovalRecord } from './evidence.js';
 import { ApprovalStore, AutonomyLedger } from './ledger.js';
+import { MergeController } from './merge-controller.js';
+import { observeMergeGate } from './merge.js';
+import { GitHubMerger } from './merger.js';
+import { AutonomyMerges } from './merges.js';
 import { type AutonomyPolicy, loadPolicy, policyDigest } from './policy.js';
 import { GitHubPublisher } from './publisher.js';
 import {
@@ -67,6 +71,8 @@ import { AutonomyError, requireAutonomy, sha256Json } from './schema.js';
  *   autonomy pin [--env]                       digests the policy must pin for this installation
  *   autonomy run TASK_NUMBER --scope ID [--new-attempt] [--task-file F --archive F]  (demo)
  *   autonomy cancel TASK_NUMBER
+ *   autonomy merge TASK_NUMBER                  merge the Task's published pull request under the policy (live, FACTORY_AUTOMERGE=enabled)
+ *   autonomy merge-scan                        every published attempt whose merge is not settled
  *   autonomy reconcile --run RUN_ID (--spent-usd X | --released)   settle an unknown or cancelled attempt
  *   autonomy recover
  */
@@ -166,6 +172,7 @@ async function demoTaskSource(requireArchive = true): Promise<TaskSource> {
       fixtureCommand: String(definition.fixtureCommand ?? 'exit 1'),
     },
     sourceCommit: String(definition.sourceCommit ?? '1'.repeat(40)),
+    status: 'status:proposed',
   };
   return { load: async () => task, archive: async () => archive };
 }
@@ -180,7 +187,11 @@ function liveTaskSource(
       const head = await github.read<{ sha: string }>(
         `/repos/${config.repository}/commits/${encodeURIComponent(repository.default_branch)}`,
       );
-      const snapshot = await prepareTask(config, github, taskNumber, head.sha);
+      // Proposed Tasks start attempts; paired ones (backlink written at publication) merge or revise.
+      const snapshot = await prepareTask(config, github, taskNumber, head.sha, [
+        ...PROPOSED_TASK_STATUSES,
+        ...PAIRED_TASK_STATUSES,
+      ]);
       const body = snapshot.issue.body ?? '';
       return {
         id: snapshot.issue.node_id,
@@ -191,6 +202,9 @@ function liveTaskSource(
         intentKind: /^intent-kind:\s*bugfix\s*$/m.test(body) ? 'bugfix' : 'change',
         definition: snapshot.definition,
         sourceCommit: snapshot.sourceCommit,
+        status: snapshot.issue.labels
+          .map((label) => label.name)
+          .find((name) => name.startsWith('status:')) as string,
       };
     },
     archive: (sourceCommit) =>
@@ -353,6 +367,16 @@ async function main() {
         paused: control?.paused ?? null,
         pauseReason: control?.pause_reason ?? null,
         scopes,
+        merges: (await new AutonomyMerges(pool).list(policyRepositoryId, 50)).map((merge) => ({
+          runId: merge.runId,
+          pullNumber: merge.pullNumber,
+          state: merge.state,
+          reason: merge.reason,
+          head: merge.head,
+          mergeCommit: merge.mergeCommit,
+          actionSha256: merge.evidence.actionSha256 ?? null,
+          updatedAt: merge.updatedAt,
+        })),
         runs: (await runs.list(policyRepositoryId, 50)).map((run) => ({
           runId: run.runId,
           task: run.taskNumber,
@@ -466,7 +490,8 @@ async function main() {
     }
     if (command === 'approve') {
       const kind = requireFlag('kind');
-      requireAutonomy(['execute', 'publish', 'merge'].includes(kind), 'approval_kind_invalid');
+      // A merge hold is unlocked by a native GitHub review of the exact head, never from here.
+      requireAutonomy(['execute', 'publish'].includes(kind), 'approval_kind_invalid');
       const approver = Number(requireFlag('approver'));
       const approval: ApprovalRecord = {
         version: 1,
@@ -500,14 +525,22 @@ async function main() {
       print({ recovered: config.repository, sandboxes: swept });
       return;
     }
-    requireAutonomy(command === 'run' || command === 'cancel', 'autonomy_command_required');
-    const taskNumber = Number(process.argv[3]);
+    requireAutonomy(
+      ['run', 'cancel', 'merge', 'merge-scan'].includes(command),
+      'autonomy_command_required',
+    );
+    const taskNumber = command === 'merge-scan' ? 1 : Number(process.argv[3]);
     requireAutonomy(Number.isSafeInteger(taskNumber) && taskNumber > 0, 'task_number_required');
     const policy = await ledger.activePolicy(policyRepositoryId);
     requireAutonomy(policy !== null, 'autonomy_policy_not_active');
     requireAutonomy(
       policyDigest(policy) === policyDigest(loadPolicy(autonomy.policyFile)),
       'policy_file_differs_from_active_policy',
+    );
+    requireAutonomy(
+      config.mergePolicy === undefined ||
+        config.mergePolicy.baseBranch === policy.repository.baseBranch,
+      'merge_policy_base_branch_differs_from_autonomy_policy',
     );
     const bundle = await loadAcceptanceBundle(autonomy.bundleDirectory);
     const reviewer = reviewerFor(config, autonomy, image);
@@ -625,14 +658,25 @@ async function main() {
       afterPublish:
         config.mode === 'live' && github && config.mergePolicy
           ? async (run, publication) => {
+              // Pair the Task the way the human flow does by hand: backlink and `status:in_review`
+              // (idempotent), then the immutable pair. A revision finds the pair registered already.
+              await github.pairTask(run.taskNumber, publication.pullNodeId);
               const pair = await pairPull(
                 config,
                 github,
                 run.taskNumber,
                 publication.pullNumber,
                 publication.head,
+                { headRepositoryIds: headRepositoryIds(config) },
               );
               await records.linkPublication(`autonomy-${run.runId}`, config.repository, pair);
+              const registered = (
+                await pool.query(
+                  'SELECT 1 FROM factory_pr_pairs WHERE repository_id=$1 AND installation_id=$2 AND pull_number=$3',
+                  [policyRepositoryId, config.installationId, publication.pullNumber],
+                )
+              ).rows[0];
+              if (registered) return;
               const gate = new HumanMergeGate(pool, config, github);
               try {
                 await gate.track(run.taskNumber, publication.pullNumber, publication.head);
@@ -655,6 +699,121 @@ async function main() {
     const autonomyController = new AutonomyController(adapters);
     if (command === 'cancel') {
       print(await autonomyController.cancel(taskNumber));
+      return;
+    }
+    if (command === 'merge' || command === 'merge-scan') {
+      // Automatic merge: live only, with the merge policy's protections and a merger App distinct
+      // from the publisher. Everything it decides on is re-read from GitHub at merge time.
+      requireAutonomy(config.mode === 'live' && github !== null, 'automerge_requires_live_mode');
+      requireAutonomy(autonomy.merger !== null, 'automerge_not_enabled');
+      requireAutonomy(config.mergePolicy !== undefined, 'merge_policy_not_configured');
+      const mergerIdentity = autonomy.merger;
+      const merger = new GitHubMerger(
+        {
+          appId: mergerIdentity.appId,
+          appPrivateKey: mergerIdentity.appPrivateKey,
+          installationId: mergerIdentity.installationId,
+        },
+        { fullName: config.repository, id: policyRepositoryId },
+        mergerIdentity.appSlug,
+        controller.signal,
+      );
+      const mergeController = new MergeController({
+        pool,
+        ledger,
+        runs,
+        merges: new AutonomyMerges(pool),
+        approvals,
+        policy,
+        repository: adapters.repository,
+        taskSource,
+        actor,
+        now: Date.now,
+        // The pairing registered at publication is the one merges verify against; a fresh check otherwise.
+        loadPair: async (run, pullNumber, head) => {
+          const registered = (
+            await pool.query<{ pair: Pair }>(
+              'SELECT pair FROM factory_pr_pairs WHERE repository_id=$1 AND installation_id=$2 AND pull_number=$3',
+              [policyRepositoryId, config.installationId, pullNumber],
+            )
+          ).rows[0]?.pair;
+          return (
+            registered ??
+            pairPull(config, github, run.taskNumber, pullNumber, head, {
+              headRepositoryIds: headRepositoryIds(config),
+            })
+          );
+        },
+        observe: (pair, expectation) =>
+          observeMergeGate(config, github, pair, expectation, Date.now),
+        perform: (work) => merger.perform(work),
+        // Expired receipts: the same base archive and recorded patch rebuild the same tree.
+        reverify: async (run) => {
+          const task = await taskSource.load(run.taskNumber);
+          const archive = await taskSource.archive(run.sourceCommit as string, controller.signal);
+          const fresh = await autonomyController.verifyCandidate(
+            run,
+            task,
+            archive,
+            controller.signal,
+          );
+          return fresh.receipts as { acceptance: unknown; review: unknown; dependency?: unknown };
+        },
+        // Reconcile promptly: the gate accepts this exact merge commit by the merger App. The
+        // record says reconciled only when the gate's own state for the pull request says so.
+        afterMerge: async (_run, merge) => {
+          const gate = new HumanMergeGate(pool, config, github);
+          const gateState = async () =>
+            (
+              await pool.query<{ state: string; reason: string }>(
+                'SELECT state,reason FROM factory_pr_state WHERE repository_id=$1 AND pull_number=$2',
+                [policyRepositoryId, merge.pullNumber],
+              )
+            ).rows[0];
+          try {
+            await gate.queue.enqueue(randomUUID(), config.repository.toLowerCase(), {
+              pull: merge.pullNumber,
+              repositoryId: policyRepositoryId,
+              installationId: config.installationId,
+            });
+            for (let i = 0; i < 10 && (await gate.step()); i++) {
+              controller.signal.throwIfAborted();
+              if ((await gateState())?.state === 'reconciled') break;
+            }
+          } finally {
+            await gate.close();
+          }
+          const settled = await gateState();
+          requireAutonomy(
+            settled?.state === 'reconciled',
+            `gate_${settled?.state ?? 'unprocessed'}:${settled?.reason ?? 'queued'}`,
+          );
+        },
+      });
+      if (command === 'merge-scan') {
+        print({ scanned: await mergeController.scan(), tokenRevoked: merger.lastTokenRevoked });
+        return;
+      }
+      const result = await mergeController.merge(taskNumber);
+      print({
+        mergeId: result.merge.mergeId,
+        runId: result.merge.runId,
+        pullNumber: result.merge.pullNumber,
+        state: result.merge.state,
+        reason: result.merge.reason,
+        head: result.merge.head,
+        mergeCommit: result.merge.mergeCommit,
+        actionSha256: result.merge.evidence.actionSha256 ?? null,
+        decisions: result.decisions.map((decision) => ({
+          action: decision.action,
+          outcome: decision.outcome,
+          risk: decision.risk,
+          reasons: decision.reasons.map((reason) => reason.code),
+        })),
+        tokenRevoked: merger.lastTokenRevoked,
+        policySha256: sha256Json(policy),
+      });
+      if (!['merged', 'held'].includes(result.merge.state)) process.exitCode = 1;
       return;
     }
     const result = await autonomyController.process(

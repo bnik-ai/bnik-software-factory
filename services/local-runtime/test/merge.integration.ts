@@ -4,7 +4,7 @@ import { after, before, beforeEach, test } from 'node:test';
 import type { Pool } from 'pg';
 import { HumanMergeGate } from '../src/github/reconcile.js';
 import { initialize, reset } from './helpers.js';
-import { MergeFixture, head } from './merge-fixtures.js';
+import { MergeFixture, base, head } from './merge-fixtures.js';
 let admin: Pool;
 let pool: Pool;
 before(async () => {
@@ -13,7 +13,7 @@ before(async () => {
 beforeEach(async () => {
   await reset(admin);
   await admin.query(
-    'TRUNCATE factory_pr_pairs,factory_pr_observations,factory_merge_receipts,factory_pr_state,factory_dependency_state',
+    'TRUNCATE factory_pr_pairs,factory_pr_observations,factory_merge_receipts,factory_pr_state,factory_dependency_state,factory_autonomy_merges,factory_autonomy_runs,factory_autonomy_scopes,factory_autonomy_control,factory_autonomy_policies CASCADE',
   );
 });
 after(async () => {
@@ -215,6 +215,178 @@ test('lease expiry during observation insertion rolls back proof and cannot auth
   } finally {
     await admin.query('DROP TRIGGER IF EXISTS delay_merge_observation ON factory_pr_observations');
     await admin.query('DROP FUNCTION IF EXISTS delay_merge_observation()');
+    await gate.close();
+  }
+});
+
+test('a merge by the merger App is reconciled only when the autonomy ledger recorded that exact merge', async () => {
+  const { MERGER_APP_ID, MERGER_BOT, MERGE_COMMIT } = await import('./merge-host-fixture.js');
+  const g = new MergeFixture();
+  g.config.mergePolicy = {
+    ...(g.config.mergePolicy as NonNullable<typeof g.config.mergePolicy>),
+    merger: { appSlug: 'factory-merger', appId: MERGER_APP_ID },
+  };
+  g.protection.required_pull_request_reviews = {
+    ...(g.protection.required_pull_request_reviews as NonNullable<
+      typeof g.protection.required_pull_request_reviews
+    >),
+    require_code_owner_reviews: false,
+  };
+  g.protection.restrictions = {
+    users: [{ login: 'example-maintainer' }],
+    teams: [],
+    apps: [{ slug: 'factory-merger' }],
+  };
+  // Routine work: the only approval is the factory's own, given after the policy admitted it.
+  g.reviews = [
+    {
+      id: 1,
+      user: MERGER_BOT,
+      state: 'APPROVED',
+      commit_id: head,
+      submitted_at: '2026-01-01T00:00:00Z',
+    },
+  ];
+  const gate = new HumanMergeGate(pool, g.config, g);
+  try {
+    await gate.track(1, 2, head);
+    await gate.step();
+    // Open, with only the factory's approval: not a pull request a human may merge yet; the
+    // observation the merge is later reconciled against is recorded all the same.
+    assert.equal((await gate.status())[0].state, 'parked');
+    assert.equal((await gate.status())[0].reason, 'human_approval_missing_or_stale');
+    assert.equal(
+      (await pool.query('SELECT count(*)::int AS n FROM factory_pr_observations')).rows[0].n,
+      1,
+    );
+    g.merge();
+    g.pull.merged_by = MERGER_BOT;
+    // No autonomy merge record: a bot merge is parked for a human to investigate.
+    assert.equal((await again(gate)).state, 'parked');
+    assert.equal((await gate.status())[0].reason, 'merge_actor_not_configured_human');
+    assert.equal(g.task.state, 'open');
+    // The controller's record of this exact merge commit makes it an accepted actor.
+    const { AutonomyLedger } = await import('../src/autonomy/ledger.js');
+    const { AutonomyRuns } = await import('../src/autonomy/runs.js');
+    const { AutonomyMerges } = await import('../src/autonomy/merges.js');
+    const { NOW, policyFixture } = await import('./autonomy-fixtures.js');
+    const policy = policyFixture({
+      repository: {
+        fullName: 'example/factory-demo',
+        id: 42,
+        installationId: 7,
+        baseBranch: 'main',
+      },
+    });
+    const ledger = new AutonomyLedger(admin);
+    await ledger.activatePolicy(
+      policy,
+      ['initial_activation', 'mode_changed:human_gated->bounded'],
+      'owner',
+      NOW,
+    );
+    await ledger.grantScope(
+      {
+        scopeId: 'gate-test',
+        repositoryId: 42,
+        taskIds: ['I_FIXTURE'],
+        models: ['claude-sonnet-5'],
+        budgetMicrousd: 1_000_000,
+        maxTaskRuns: 1,
+        expiresAt: NOW + 86_400_000,
+      },
+      'owner',
+      NOW,
+    );
+    const runs = new AutonomyRuns(admin);
+    let run = await runs.create({
+      repositoryId: 42,
+      scopeId: 'gate-test',
+      taskId: 'I_FIXTURE',
+      taskNumber: 1,
+      taskIssueId: 10,
+      intentSha256: '1'.repeat(64),
+      sourceCommit: base,
+    });
+    for (const state of [
+      'executing',
+      'executed',
+      'collected',
+      'verified',
+      'publish_admitted',
+      'published',
+    ] as const)
+      run = await runs.transition(run.runId, [run.state], state, {});
+    const merges = new AutonomyMerges(admin);
+    const record = await merges.create({
+      repositoryId: 42,
+      runId: run.runId,
+      taskId: 'I_FIXTURE',
+      pullNumber: 2,
+      head,
+      tree: 'd'.repeat(40),
+      base,
+    });
+    await merges.transition(record.mergeId, ['observing'], 'admitted', {});
+    // A record of some other merge commit does not vouch for this one: still parked.
+    await merges.transition(record.mergeId, ['admitted'], 'merged', {
+      mergeCommit: 'e'.repeat(40),
+    });
+    assert.equal((await again(gate)).state, 'parked');
+    assert.equal((await gate.status())[0].reason, 'merge_actor_not_configured_human');
+    await admin.query('UPDATE factory_autonomy_merges SET merge_commit=$1 WHERE merge_id=$2', [
+      MERGE_COMMIT,
+      record.mergeId,
+    ]);
+    assert.equal((await again(gate)).state, 'reconciled');
+    assert.equal(g.task.state, 'closed');
+    const receipt = (await pool.query('SELECT proof FROM factory_merge_receipts')).rows[0].proof;
+    assert.equal(receipt.merger.login, MERGER_BOT.login);
+    assert.equal(receipt.mergeCommit, MERGE_COMMIT);
+  } finally {
+    await gate.close();
+  }
+});
+
+test("under the automatic profile a human merge still needs a listed reviewer; the merger App's approval does not carry it", async () => {
+  const { MERGER_APP_ID, MERGER_BOT } = await import('./merge-host-fixture.js');
+  const g = new MergeFixture();
+  g.config.mergePolicy = {
+    ...(g.config.mergePolicy as NonNullable<typeof g.config.mergePolicy>),
+    merger: { appSlug: 'factory-merger', appId: MERGER_APP_ID },
+  };
+  g.protection.required_pull_request_reviews = {
+    ...(g.protection.required_pull_request_reviews as NonNullable<
+      typeof g.protection.required_pull_request_reviews
+    >),
+    require_code_owner_reviews: false,
+  };
+  g.protection.restrictions = {
+    users: [{ login: 'example-maintainer' }],
+    teams: [],
+    apps: [{ slug: 'factory-merger' }],
+  };
+  // Only the factory's own approval is on the head (left behind by a refused automatic merge).
+  g.reviews = [
+    {
+      id: 1,
+      user: MERGER_BOT,
+      state: 'APPROVED',
+      commit_id: head,
+      submitted_at: '2026-01-01T00:00:00Z',
+    },
+  ];
+  const gate = new HumanMergeGate(pool, g.config, g);
+  try {
+    await gate.track(1, 2, head);
+    await gate.step();
+    assert.equal((await gate.status())[0].state, 'parked');
+    assert.equal((await gate.status())[0].reason, 'human_approval_missing_or_stale');
+    g.merge();
+    assert.equal((await again(gate)).state, 'parked');
+    assert.equal((await gate.status())[0].reason, 'human_approval_missing_or_stale');
+    assert.equal(g.task.state, 'open');
+  } finally {
     await gate.close();
   }
 });

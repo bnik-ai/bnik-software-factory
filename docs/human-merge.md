@@ -34,6 +34,17 @@ Configure the default branch with all of these controls:
   belongs in the restriction list. Disable force pushes and branch deletion.
 - Enable squash merging only. Disable auto-merge, merge commits, and rebase merge.
 
+The automatic-merge profile of [bounded autonomy](autonomy-operations.md#merging) changes
+exactly two of these: code-owner review is not required by GitHub (the autonomy policy
+decides who may approve critical work), and the merger App is the one App in the push
+restriction. Everything else above stays, and the runtime verifies it before every merge.
+The merger App's own approving review satisfies the reviewer requirement only for a merge the
+App itself made; a human merge under this profile still needs a listed reviewer's approval.
+Under this profile GitHub itself no longer enforces code-owner review for human merges: the
+merger dismisses its approval whenever its attempt does not merge, and reconciliation parks a
+human merge that rested on it, so that check moves from preventive (GitHub) to detective
+(the gate).
+
 Commit `.github/CODEOWNERS` to the base branch with a single global rule:
 
 ```text

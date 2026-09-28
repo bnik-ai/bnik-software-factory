@@ -279,3 +279,96 @@ test('bounded autonomy configuration is explicit in both modes and keeps publish
     /ANTHROPIC_API_KEY/,
   );
 });
+
+test('automatic merge is a live opt-in with a merger App distinct from the publisher and named in the merge policy', () => {
+  const { privateKey } = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+  });
+  const directory = mkdtempSync(join(tmpdir(), 'factory-merge-policy-'));
+  const policyFile = join(directory, 'merge-policy.json');
+  const mergePolicy = {
+    version: 1,
+    baseBranch: 'main',
+    reviewers: ['example-maintainer'],
+    mergers: ['example-maintainer'],
+    requiredChecks: [{ name: 'test', appId: 12345 }],
+    merger: { appSlug: 'factory-merger', appId: 777 },
+  };
+  writeFileSync(policyFile, JSON.stringify(mergePolicy), { mode: 0o600 });
+  try {
+    const live = {
+      ...env(),
+      FACTORY_MODE: 'live',
+      GITHUB_APP_ID: '1',
+      GITHUB_APP_PRIVATE_KEY: privateKey,
+      FACTORY_REPOSITORY_ID: '42',
+      FACTORY_WEBHOOK_URL: 'https://factory.example.com/webhook',
+      FACTORY_OPERATORS: 'example-maintainer',
+      FACTORY_EXECUTION: 'bounded',
+      ANTHROPIC_API_KEY: 'synthetic-model-key',
+      FACTORY_CONTROLLER_DB_PASSWORD: 'synthetic-controller-database-key-000000',
+      FACTORY_AUTONOMY_POLICY_FILE: '/state/autonomy-policy.json',
+      FACTORY_ACCEPTANCE_BUNDLE_DIR: '/state/acceptance',
+      FACTORY_REVIEWER: 'claude',
+      FACTORY_REVIEWER_MODEL: 'claude-sonnet-5',
+      FACTORY_PUBLICATION_MODE: 'fork',
+      FACTORY_FORK_REPOSITORY: 'factory-bot/factory-demo',
+      FACTORY_FORK_REPOSITORY_ID: '4242',
+      FACTORY_PUBLISHER_APP_ID: '9',
+      FACTORY_PUBLISHER_APP_PRIVATE_KEY: privateKey,
+      FACTORY_PUBLISHER_INSTALLATION_ID: '99',
+      FACTORY_MERGE_POLICY_FILE: policyFile,
+    };
+    assert.equal(resolveConfig(live).autonomy?.merger, null);
+    const merging = {
+      ...live,
+      FACTORY_AUTOMERGE: 'enabled',
+      FACTORY_MERGER_APP_ID: '777',
+      FACTORY_MERGER_APP_PRIVATE_KEY: privateKey,
+      FACTORY_MERGER_INSTALLATION_ID: '7777',
+      FACTORY_MERGER_APP_SLUG: 'factory-merger',
+    };
+    const resolved = resolveConfig(merging);
+    assert.deepEqual(
+      { ...resolved.autonomy?.merger, appPrivateKey: 'redacted' },
+      { appId: '777', appPrivateKey: 'redacted', installationId: 7777, appSlug: 'factory-merger' },
+    );
+    assert.throws(
+      () => resolveConfig({ ...merging, FACTORY_AUTOMERGE: 'yes' }),
+      /FACTORY_AUTOMERGE_must_be_enabled_or_unset/,
+    );
+    assert.throws(
+      () => resolveConfig({ ...live, FACTORY_MERGER_APP_ID: '777' }),
+      /merger_settings_require_FACTORY_AUTOMERGE_enabled/,
+    );
+    assert.throws(
+      () => resolveConfig({ ...merging, FACTORY_MERGER_APP_ID: '9' }),
+      /merger_app_must_differ_from_publisher_app/,
+    );
+    assert.throws(
+      () => resolveConfig({ ...merging, FACTORY_MERGER_APP_SLUG: 'other-merger' }),
+      /merge_policy_merger_must_match_FACTORY_MERGER_settings/,
+    );
+    assert.throws(
+      () => resolveConfig({ ...merging, FACTORY_MERGE_POLICY_FILE: undefined }),
+      /automerge_requires_merge_policy/,
+    );
+    assert.throws(
+      () => resolveConfig({ ...merging, FACTORY_EXECUTION: 'manual', FACTORY_AUTONOMY: undefined }),
+      /FACTORY_AUTOMERGE_requires_bounded_execution|FACTORY_AUTONOMY|publisher|merger/,
+    );
+    const demo = {
+      ...env(),
+      FACTORY_AUTONOMY: 'bounded',
+      FACTORY_CONTROLLER_DB_PASSWORD: 'synthetic-controller-database-key-000000',
+      FACTORY_AUTONOMY_POLICY_FILE: '/state/autonomy-policy.json',
+      FACTORY_ACCEPTANCE_BUNDLE_DIR: '/state/acceptance',
+      FACTORY_AUTOMERGE: 'enabled',
+    };
+    assert.throws(() => resolveConfig(demo), /demo_autonomy_cannot_merge/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

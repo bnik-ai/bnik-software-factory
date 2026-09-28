@@ -5,8 +5,9 @@ controller described in [autonomy operations](autonomy-operations.md).** Neither
 the default: an installation enables them explicitly (`FACTORY_EXECUTION=bounded` or,
 in demo mode, `FACTORY_AUTONOMY=bounded`), and no live pull request has been published
 under them yet. The supported workflow remains human-gated: explicit activation,
-operator publication, native human review and human merge. Automatic merge is
-planned work (see [roadmap](roadmap.md)).
+operator publication, native human review and human merge. Automatic merge exists as a
+further opt-in (`FACTORY_AUTOMERGE=enabled`, see [operations](autonomy-operations.md#merging))
+and is likewise not live-verified.
 
 The policy decides, for one proposed consequential action, whether the factory
 may proceed without a human. Routine work inside configured scope proceeds once
@@ -60,7 +61,7 @@ from a PR branch, Task text, labels, worker output or model output. See
 | `changeLimits` | Largest change that can be routine; larger changes need a human. |
 | `mergeEffect` | `deployment` holds every merge for a human. There is no `unknown`. |
 | `verification` | Trust roots: acceptance suite, harness and runner image digests, reviewer configuration digest, eval protocol digest, in-repository protected paths and receipt lifetime. |
-| `approvers` | Numeric GitHub user IDs allowed to approve holds. |
+| `approvers` | Numeric GitHub user IDs allowed to approve holds. For merge holds each approver must also have write access and be a `reviewers` entry of `merge-policy.json`; a native review by anyone else is ignored. |
 | `dependencies` | Optional trusted dependency verification: pluggable scanner adapter and digest-pinned image, scanner database maximum age, hold severity, SPDX license allowlist, and whether new dependencies, major upgrades or downgrades may be routine. `null` keeps every dependency change critical. |
 
 Limits cannot exceed the worker's own ceilings (60 turns, 30 minutes, USD 100 per
@@ -265,5 +266,6 @@ recorded decisions, single-use admissions and budget reservations in PostgreSQL.
 No bypass or exception mechanism; no automatic cross-provider substitution; no
 exactly-once guarantee for external effects (ambiguous outcomes are reconciled,
 not replayed); no protection against a compromised host or operator account.
-The controller and publisher (OSS-20) collect these receipts; the merger (OSS-21) must
-still use a guarded exact-head merge and reconcile the actual merge afterwards.
+The controller and publisher (OSS-20) collect these receipts; the merger (OSS-21)
+consumes them with a fresh merge-gate observation, admits the merge once, squash-merges
+the exact head as a separate App and reconciles the actual merge commit afterwards.

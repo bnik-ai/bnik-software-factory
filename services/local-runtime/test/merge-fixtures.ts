@@ -50,6 +50,8 @@ export class MergeFixture implements GateGitHub {
   permission = 'write';
   owners = '* @example-maintainer\n';
   parents = [{ sha: base }];
+  /** Tree of the pull request head, as GitHub's git/commits endpoint reports it. */
+  headTree = 'd'.repeat(40);
   protection: Protection = {
     required_status_checks: {
       strict: true,
@@ -122,9 +124,15 @@ export class MergeFixture implements GateGitHub {
             ? this.pull
             : path.endsWith('/issues/1')
               ? this.task
-              : path.includes('/commits/')
-                ? { parents: this.parents }
-                : undefined;
+              : path.includes('/git/commits/')
+                ? {
+                    sha: path.slice(path.lastIndexOf('/') + 1),
+                    tree: { sha: this.headTree },
+                    parents: this.parents,
+                  }
+                : path.includes('/commits/')
+                  ? { parents: this.parents }
+                  : undefined;
     if (!value) throw new Error('unexpected_fixture_read');
     return structuredClone(value) as T;
   }

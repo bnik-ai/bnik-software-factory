@@ -41,6 +41,13 @@ x-publisher: &publisher
   target: /state/secrets/publisher_private_key
   read_only: true
   bind: {create_host_path: false}
+# OSS-21: the merger App's key; only the automatic-merge supervisor (merge, merge-scan) sees it.
+x-merger: &merger
+  type: bind
+  source: ${FACTORY_STATE_DIR}/secrets/merger_private_key
+  target: /state/secrets/merger_private_key
+  read_only: true
+  bind: {create_host_path: false}
 x-policy: &policy
   type: bind
   source: ${FACTORY_STATE_DIR}/autonomy-policy.json
@@ -127,3 +134,7 @@ services:
   live-autonomy-supervisor:
     <<: *supervisor
     volumes: [*config, *controller, *webhook, *app, *model, *publisher, *policy, *acceptance, *artifacts, *socket]
+  # Automatic merge (merge, merge-scan): the same, plus the merger App key that exists only with --automerge.
+  live-automerge-supervisor:
+    <<: *supervisor
+    volumes: [*config, *controller, *webhook, *app, *model, *publisher, *merger, *policy, *acceptance, *artifacts, *socket]

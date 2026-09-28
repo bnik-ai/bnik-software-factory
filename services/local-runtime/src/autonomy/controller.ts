@@ -54,6 +54,8 @@ export interface LoadedTask {
   definition: TaskDefinition;
   /** Current default-branch head the change is built from. */
   sourceCommit: string;
+  /** The Task's single status label; `status:proposed` until publication pairs it. */
+  status: string;
 }
 export interface TaskSource {
   load(taskNumber: number): Promise<LoadedTask>;
@@ -126,16 +128,108 @@ export interface ProcessResult {
   run: AutonomyRun;
   decisions: Decision[];
 }
-const UUID_LIKE = (seed: string) => {
+/** A stable request id for one intended action, so duplicate events deduplicate in the ledger. */
+export const deterministicRequestId = (seed: string) => {
   const hex = createHash('sha256').update(seed).digest('hex').slice(0, 32);
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 };
+export interface RepositoryIdentityForPolicy {
+  id: number;
+  installationId: number;
+  baseBranch: string;
+}
+export function buildRequest(
+  policy: AutonomyPolicy,
+  repository: RepositoryIdentityForPolicy,
+  base: Omit<ActionRequest, 'version' | 'requestId' | 'policySha256' | 'repository'>,
+  seed: string,
+): ActionRequest {
+  return parseRequest(policy, {
+    version: 1,
+    requestId: deterministicRequestId(seed),
+    policySha256: sha256Json(policy),
+    repository: {
+      id: repository.id,
+      installationId: repository.installationId,
+      baseBranch: repository.baseBranch,
+    },
+    ...base,
+  });
+}
+/**
+ * Decide and, when allowed, consume the admission once. A crashed controller that already
+ * consumed this request continues with the recorded admission. Only approvals by configured
+ * approvers can unlock an action; an unauthorized one is passed on for the decision to refuse.
+ */
+export async function admitAction(
+  ledger: AutonomyLedger,
+  approvals: ApprovalStore,
+  policy: AutonomyPolicy,
+  repositoryId: number,
+  request: ActionRequest,
+  evidence: Record<string, unknown>,
+  now: number,
+): Promise<{ decision: Decision; decisionId: string; reservationId: string | null }> {
+  const prior = await ledger.consumedAdmission(request.requestId);
+  if (prior) return prior;
+  const recorded = await approvals.forAction(repositoryId, actionDigest(request));
+  const { decision, decisionId } = await decideAction(
+    ledger,
+    policy,
+    request,
+    evidence,
+    chooseApproval(policy, request, recorded),
+    now,
+  );
+  if (decision.outcome !== 'allow') return { decision, decisionId, reservationId: null };
+  const consumed = await ledger.consume(decisionId, now);
+  return { decision, decisionId, reservationId: consumed.reservationId };
+}
+/** A configured approver's record when one exists; otherwise the first, for the decision to refuse. */
+export function chooseApproval(
+  policy: AutonomyPolicy,
+  request: ActionRequest,
+  recorded: ApprovalRecord[],
+): ApprovalRecord | undefined {
+  return (
+    recorded.find(
+      (approval) =>
+        approval.action === request.action &&
+        policy.approvers.githubUserIds.includes(approval.approver.githubUserId),
+    ) ?? recorded[0]
+  );
+}
+/**
+ * Decide and record without consuming. The merge controller consumes immediately before the
+ * merge call, so an admission that dies first (TTL, policy change, withdrawn review) spends
+ * nothing and the same human approval can admit the merge again.
+ */
+export async function decideAction(
+  ledger: AutonomyLedger,
+  policy: AutonomyPolicy,
+  request: ActionRequest,
+  evidence: Record<string, unknown>,
+  approval: ApprovalRecord | undefined,
+  now: number,
+): Promise<{ decision: Decision; decisionId: string }> {
+  const withApproval = approval ? { ...evidence, approval } : evidence;
+  return ledger.admit(policy, request, withApproval, now);
+}
+/**
+ * The Task's intent: title, body, definition and kind. Publication writes the `pr-ref:`
+ * backlink into the body (merge-gate pairing); that line is the factory's, not the owner's,
+ * and is left out so the intent an owner granted survives pairing.
+ */
 export function intentDigest(
   task: Pick<LoadedTask, 'title' | 'body' | 'definition' | 'intentKind'>,
 ): string {
   return sha256Json({
     title: task.title,
-    body: task.body,
+    body: task.body
+      .split(/\r?\n/)
+      .filter((line) => !/^\s*pr-ref:/.test(line))
+      .join('\n')
+      .replace(/\s+$/, ''),
     definition: task.definition,
     intentKind: task.intentKind,
   });
@@ -174,45 +268,21 @@ export class AutonomyController {
     base: Omit<ActionRequest, 'version' | 'requestId' | 'policySha256' | 'repository'>,
     seed: string,
   ): ActionRequest {
-    return parseRequest(this.policy, {
-      version: 1,
-      requestId: UUID_LIKE(seed),
-      policySha256: sha256Json(this.policy),
-      repository: {
-        id: this.adapters.repository.id,
-        installationId: this.adapters.repository.installationId,
-        baseBranch: this.adapters.repository.baseBranch,
-      },
-      ...base,
-    });
+    return buildRequest(this.policy, this.adapters.repository, base, seed);
   }
   private async decideAndAdmit(
     request: ActionRequest,
     evidence: Record<string, unknown>,
   ): Promise<{ decision: Decision; decisionId: string; reservationId: string | null }> {
-    // A crashed controller that already consumed this admission continues with it.
-    const prior = await this.adapters.ledger.consumedAdmission(request.requestId);
-    if (prior) return prior;
-    const approvals = await this.adapters.approvals.forAction(
-      this.adapters.repository.id,
-      actionDigest(request),
-    );
-    const authorized = approvals.find(
-      (approval) =>
-        approval.action === request.action &&
-        this.policy.approvers.githubUserIds.includes(approval.approver.githubUserId),
-    );
-    const chosen = authorized ?? approvals[0];
-    const withApproval = chosen ? { ...evidence, approval: chosen as ApprovalRecord } : evidence;
-    const { decision, decisionId } = await this.adapters.ledger.admit(
+    return admitAction(
+      this.adapters.ledger,
+      this.adapters.approvals,
       this.policy,
+      this.adapters.repository.id,
       request,
-      withApproval,
+      evidence,
       this.now(),
     );
-    if (decision.outcome !== 'allow') return { decision, decisionId, reservationId: null };
-    const consumed = await this.adapters.ledger.consume(decisionId, this.now());
-    return { decision, decisionId, reservationId: consumed.reservationId };
   }
   private codingJob(
     run: AutonomyRun,
@@ -296,6 +366,12 @@ export class AutonomyController {
     let run = await this.adapters.runs.open(this.adapters.repository.id, task.id);
     if (run === null) {
       const latest = await this.adapters.runs.latest(this.adapters.repository.id, task.id);
+      // A Task publication paired (backlink, `status:in_review`) is this factory's only while its
+      // published attempt exists; anything else in review is someone else's work.
+      requireAutonomy(
+        task.status === 'status:proposed' || latest?.state === 'published',
+        'task_not_proposed',
+      );
       if (latest !== null && !options.newAttempt)
         return { run: await this.pairPublication(latest), decisions };
       run = await this.adapters.runs.create({
@@ -530,63 +606,10 @@ export class AutonomyController {
           break;
         }
         case 'collected': {
-          const manifest = run.evidence.manifest as CollectedChange['manifest'];
-          const patch = String(run.evidence.patch ?? '');
-          const subject = {
-            repositoryId: this.adapters.repository.id,
-            taskId: task.id,
-            base: task.sourceCommit,
-            tree: run.candidateTree as string,
-            changesSha256: run.changesSha256 as string,
-          };
-          const acceptance = await this.adapters.acceptance({
-            archive,
-            patch,
-            baseTree: run.baseTree as string,
-            candidateTree: run.candidateTree as string,
-            subject: { ...subject, id: task.id, intentSha256, intentKind: task.intentKind },
-            intentKind: task.intentKind,
-            signal,
-          });
-          const review = await this.adapters.reviewer.review(
-            {
-              subject,
-              intent: { title: task.title, body: task.body, kind: task.intentKind },
-              intentSha256,
-              changes: manifest,
-              acceptance: acceptance.receipt,
-              dependency: null,
-            },
-            signal,
-          );
-          let dependency: DependencyVerificationRun | null = null;
-          const manifestPaths = this.manifestPaths(manifest);
-          if (
-            manifestPaths.length > 0 &&
-            this.adapters.dependency &&
-            this.policy.dependencies !== null
-          )
-            dependency = await this.adapters.dependency({
-              archive,
-              patch,
-              candidateTree: run.candidateTree as string,
-              manifestPaths,
-              subject,
-              signal,
-            });
+          const verified = await this.verifyCandidate(run, task, archive, signal);
           run = await this.adapters.runs.transition(run.runId, ['collected'], 'verified', {
-            receipts: {
-              acceptance: acceptance.receipt,
-              review: review.receipt,
-              ...(dependency ? { dependency: dependency.receipt } : {}),
-            },
-            evidence: {
-              ...run.evidence,
-              acceptanceReason: acceptance.reason,
-              reviewReason: review.reason,
-              reviewUsage: review.usage,
-              dependencyReason: dependency?.reason ?? null,
-            },
+            receipts: verified.receipts,
+            evidence: { ...run.evidence, ...verified.evidence },
           });
           break;
         }
@@ -756,6 +779,75 @@ export class AutonomyController {
     const next = await this.processLocked(run.taskNumber, scopeId, signal);
     decisions.push(...next.decisions);
     return next.run;
+  }
+  /**
+   * Fresh protected acceptance, review and (when manifests changed) dependency receipts for
+   * the run's candidate, from the base archive and the recorded worker patch. Used once
+   * before publication and again by the merger when receipts have expired (OSS-21): the
+   * same inputs rebuild the same tree, so the receipts bind to the same subject.
+   */
+  async verifyCandidate(
+    run: AutonomyRun,
+    task: LoadedTask,
+    archive: Buffer,
+    signal: AbortSignal,
+  ): Promise<{ receipts: Record<string, unknown>; evidence: Record<string, unknown> }> {
+    const manifest = run.evidence.manifest as CollectedChange['manifest'];
+    const patch = String(run.evidence.patch ?? '');
+    const intentSha256 = intentDigest(task);
+    requireAutonomy(run.intentSha256 === intentSha256, 'task_changed_since_attempt');
+    const subject = {
+      repositoryId: this.adapters.repository.id,
+      taskId: task.id,
+      // The attempt's own base: re-verifying a published head must not follow a moved default branch.
+      base: run.sourceCommit as string,
+      tree: run.candidateTree as string,
+      changesSha256: run.changesSha256 as string,
+    };
+    const acceptance = await this.adapters.acceptance({
+      archive,
+      patch,
+      baseTree: run.baseTree as string,
+      candidateTree: run.candidateTree as string,
+      subject: { ...subject, id: task.id, intentSha256, intentKind: task.intentKind },
+      intentKind: task.intentKind,
+      signal,
+    });
+    const review = await this.adapters.reviewer.review(
+      {
+        subject,
+        intent: { title: task.title, body: task.body, kind: task.intentKind },
+        intentSha256,
+        changes: manifest,
+        acceptance: acceptance.receipt,
+        dependency: null,
+      },
+      signal,
+    );
+    let dependency: DependencyVerificationRun | null = null;
+    const manifestPaths = this.manifestPaths(manifest);
+    if (manifestPaths.length > 0 && this.adapters.dependency && this.policy.dependencies !== null)
+      dependency = await this.adapters.dependency({
+        archive,
+        patch,
+        candidateTree: run.candidateTree as string,
+        manifestPaths,
+        subject,
+        signal,
+      });
+    return {
+      receipts: {
+        acceptance: acceptance.receipt,
+        review: review.receipt,
+        ...(dependency ? { dependency: dependency.receipt } : {}),
+      },
+      evidence: {
+        acceptanceReason: acceptance.reason,
+        reviewReason: review.reason,
+        reviewUsage: review.usage,
+        dependencyReason: dependency?.reason ?? null,
+      },
+    };
   }
   /**
    * Pairing and tracking run after the terminal `published` transition and are recorded

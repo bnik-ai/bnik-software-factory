@@ -433,6 +433,29 @@ export class AutonomyLedger {
     });
   }
 
+  /** The recorded decision with what consume() re-checks: the policy it was decided under and when. */
+  async admission(decisionId: string): Promise<{
+    decision: Decision;
+    policySha256: string;
+    decidedAt: number;
+    consumedAt: number | null;
+  } | null> {
+    if (!/^[0-9a-f-]{36}$/.test(decisionId)) return null;
+    const row = (
+      await this.pool.query(
+        'SELECT decision,policy_sha256,decided_at,consumed_at FROM factory_autonomy_decisions WHERE decision_id=$1',
+        [decisionId],
+      )
+    ).rows[0];
+    return row
+      ? {
+          decision: row.decision as Decision,
+          policySha256: row.policy_sha256 as string,
+          decidedAt: new Date(row.decided_at).getTime(),
+          consumedAt: row.consumed_at ? new Date(row.consumed_at).getTime() : null,
+        }
+      : null;
+  }
   /** A controller that crashed after consuming an admission finds it here instead of re-admitting. */
   async consumedAdmission(
     requestId: string,

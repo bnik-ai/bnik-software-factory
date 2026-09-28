@@ -20,6 +20,11 @@ for key in [
 ]:
     if key in settings:
         env[key] = settings[key]
+# Automatic merge (OSS-21): the merger identity is configuration of the merge commands alone.
+if command in ('merge', 'merge-scan'):
+    for key in ['FACTORY_AUTOMERGE', 'FACTORY_MERGER_APP_ID', 'FACTORY_MERGER_INSTALLATION_ID', 'FACTORY_MERGER_APP_SLUG']:
+        if key in settings:
+            env[key] = settings[key]
 if os.environ.get('FACTORY_WORKER_IMAGE'):
     env['FACTORY_WORKER_IMAGE'] = os.environ['FACTORY_WORKER_IMAGE']
 env.update(
@@ -42,6 +47,8 @@ if settings.get('FACTORY_MODE') == 'live':
     if settings.get('FACTORY_EXECUTION') == 'bounded':
         env['ANTHROPIC_API_KEY_FILE'] = str(root / 'secrets/model_key')
         env['FACTORY_PUBLISHER_APP_PRIVATE_KEY_FILE'] = str(root / 'secrets/publisher_private_key')
+        if settings.get('FACTORY_AUTOMERGE') == 'enabled' and command in ('merge', 'merge-scan'):
+            env['FACTORY_MERGER_APP_PRIVATE_KEY_FILE'] = str(root / 'secrets/merger_private_key')
 service = source_root.parent / 'services/local-runtime'
 if not (service / 'node_modules/tsx').exists():
     raise SystemExit('Install services/local-runtime dependencies with npm ci first.')

@@ -135,6 +135,8 @@ function transport(
     token?: object;
     revokeFails?: boolean;
     graphql?: object;
+    /** The issue a GET of `/issues/1` returns (Task pairing tests). */
+    issue?: object;
   } = {},
 ) {
   const calls: {
@@ -191,6 +193,8 @@ function transport(
     if (path === '/installation/token')
       return new Response(null, { status: change.revokeFails ? 500 : 204 });
     if (path === '/repos/example/factory-demo') return Response.json(repository);
+    if (path === '/repos/example/factory-demo/issues/1' && (init.method ?? 'GET') === 'GET')
+      return Response.json(change.issue ?? task());
     if (path === '/graphql') return Response.json(change.graphql ?? {});
     return Response.json({ fixture: 'read' });
   }) as typeof fetch;
@@ -329,6 +333,92 @@ test('review App is restricted to issues write and administration read; contents
     const t = transport({ installation: { permissions: { ...REVIEW_PERMISSIONS, ...extra } } });
     await assert.rejects(
       new InstallationClient(config, new AbortController().signal, t.request).check(),
+    );
+  }
+});
+test('the Task reader accepts only the statuses it is given: proposed for activation, paired ones for the autonomy controller', () => {
+  const config = liveConfig();
+  const issue = task();
+  const paired = { ...issue, labels: [{ name: 'kind:task' }, { name: 'status:in_review' }] };
+  assert.throws(() => taskSnapshot(config, paired, commit), /task_labels_invalid/);
+  assert.equal(
+    taskSnapshot(config, paired, commit, ['status:proposed', 'status:in_review']).issue.id,
+    issue.id,
+  );
+  assert.throws(
+    () =>
+      taskSnapshot(
+        config,
+        { ...issue, labels: [...paired.labels, { name: 'status:proposed' }] },
+        commit,
+        ['status:proposed', 'status:in_review'],
+      ),
+    /task_labels_invalid/,
+  );
+  assert.throws(
+    () => taskSnapshot(config, paired, commit, ['status:proposed', 'status:ready']),
+    /task_labels_invalid/,
+  );
+});
+test('publication pairs the Task: backlink and status:in_review through issues write only, idempotent, never onto another pull request', async () => {
+  const config = { ...liveConfig(), mergePolicy: policy };
+  const proposed = transport();
+  const client = new InstallationClient(config, new AbortController().signal, proposed.request);
+  await assert.rejects(client.pairTask(0, 'PR_X'), /task_write_not_scoped/);
+  await assert.rejects(client.pairTask(1, 'not valid!'), /task_write_not_scoped/);
+  assert.equal(proposed.calls.length, 0);
+  await client.pairTask(1, 'PR_X');
+  const writes = proposed.calls.filter((c) => c.path.startsWith('/repos/'));
+  assert.deepEqual(
+    writes.map((c) => [c.method, c.path.replace('/repos/example/factory-demo', '')]),
+    [
+      ['GET', '/issues/1'],
+      ['PATCH', '/issues/1'],
+      ['POST', '/issues/1/labels'],
+      ['DELETE', '/issues/1/labels/status%3Aproposed'],
+    ],
+  );
+  assert.match(String((writes[1]?.body as { body: string }).body), /\n\npr-ref: PR_X\n$/);
+  assert.deepEqual(writes[2]?.body, { labels: ['status:in_review'] });
+  assert.deepEqual(proposed.calls[0]?.body, {
+    repository_ids: [42],
+    permissions: { issues: 'write', metadata: 'read' },
+  });
+  assert.equal(proposed.calls.at(-1)?.method, 'DELETE');
+  assert.equal(proposed.calls.at(-1)?.path, '/installation/token');
+  // Already paired: nothing is written again.
+  const already = transport({
+    issue: {
+      ...task(),
+      body: `${task().body}\n\npr-ref: PR_X\n`,
+      labels: [{ name: 'kind:task' }, { name: 'status:in_review' }],
+    },
+  });
+  await new InstallationClient(config, new AbortController().signal, already.request).pairTask(
+    1,
+    'PR_X',
+  );
+  assert.deepEqual(
+    already.calls.filter((c) => c.path.startsWith('/repos/')).map((c) => c.method),
+    ['GET'],
+  );
+  // Paired with another pull request, or in a status pairing does not own: refused before any write.
+  for (const [issue, reason] of [
+    [{ ...task(), body: `${task().body}\npr-ref: PR_OTHER\n` }, /task_paired_elsewhere/],
+    [
+      { ...task(), labels: [{ name: 'kind:task' }, { name: 'status:ready' }] },
+      /task_status_not_pairable/,
+    ],
+    [{ ...task(), state: 'closed' }, /task_not_pairable/],
+  ] as const) {
+    const t = transport({ issue });
+    await assert.rejects(
+      new InstallationClient(config, new AbortController().signal, t.request).pairTask(1, 'PR_X'),
+      reason,
+    );
+    assert.deepEqual(
+      t.calls.filter((c) => c.path.startsWith('/repos/')).map((c) => c.method),
+      ['GET'],
     );
   }
 });

@@ -1,5 +1,19 @@
 # Release notes
 
+- Add opt-in automatic merge for bounded autonomy (`FACTORY_AUTOMERGE=enabled`, live
+  only): a trusted merge-gate observation (head tree, protection, required checks,
+  reviews), approvals sourced from native GitHub reviews of the exact head by configured
+  approvers, a merge record admitted once through the ledger, a separate merger App that
+  squash-merges the exact head after an immediate re-check, verification of the merge
+  commit's parent and tree, reconciliation through the merge gate, re-verification of
+  expired receipts, and `./sfac autonomy merge` / `merge-scan`. Routine work merges with
+  no human step; critical work waits for a human review of the exact head. A merge record
+  ends only when the pull request is no longer what was tested; pending checks, change
+  requests and GitHub refusals keep it open for the next scan, and an admission is honoured
+  only under the policy it was decided with, within its TTL, with its approval standing.
+  Publication now pairs the Task itself (backlink and `status:in_review`), and the intent
+  digest ignores that backlink.
+
 - Add the opt-in bounded-autonomy controller (`FACTORY_EXECUTION=bounded`, demo
   `FACTORY_AUTONOMY=bounded`): trusted collector, protected acceptance runner with a
   tamper-checked bundle and structured result counting, fresh-context reviewer (fixture

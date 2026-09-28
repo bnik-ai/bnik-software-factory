@@ -59,9 +59,11 @@ pinned default branch; revision prompts must describe the complete intended resu
 Azure/Service Bus/Terraform deployment paths, Goal/Spec/Design planning, Ops/SRE,
 legacy multi-agent orchestration and autonomous deployment are experimental source
 references. The fixture validator/router demo does not establish their live support.
-Multi-tenant hosting, automatic merge, arbitrary outbound worker networking,
-submodules, LFS hydration, symlink-dependent sources and automatic dependency
-installation inside the worker are unsupported. See [roadmap](docs/roadmap.md).
+Multi-tenant hosting, arbitrary outbound worker networking, submodules, LFS
+hydration, symlink-dependent sources and automatic dependency installation inside the
+worker are unsupported. Automatic merge exists only as a further opt-in of bounded
+autonomy (`FACTORY_AUTOMERGE=enabled`) and is not live-verified. See
+[roadmap](docs/roadmap.md).
 
 This candidate has known dependency advisories requiring review/remediation before
 release. Passing tests is not a clean security audit. Containers share a host kernel;

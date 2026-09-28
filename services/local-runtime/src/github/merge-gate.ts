@@ -126,7 +126,30 @@ export function assertPairTask(pair: Pair, task: Issue, allowPartial = false): s
   );
   return old;
 }
-function assertPull(config: RuntimeConfig, pair: Pair, pull: Pull) {
+export interface GateOptions {
+  /** Repositories a pull request head may live in: the base itself, plus the configured publication fork. */
+  headRepositoryIds?: number[];
+  /**
+   * OSS-21: a merge the autonomy ledger admitted and the merger App performed. Reconciliation
+   * accepts that bot as the merge actor for exactly this merge commit; humans stay the only
+   * other accepted mergers.
+   */
+  acceptMerger?: { login: string; mergeCommit: string };
+}
+/** Where a pull request head may live: the base repository and, in fork publication mode, the fork. */
+export function headRepositoryIds(config: RuntimeConfig): number[] {
+  const ids = [config.repositoryId ?? 0];
+  const fork = config.autonomy?.publisher?.forkRepositoryId;
+  if (config.autonomy?.publisher?.mode === 'fork' && fork) ids.push(fork);
+  return ids;
+}
+export function assertPull(
+  config: RuntimeConfig,
+  pair: Pair,
+  pull: Pull,
+  options: GateOptions = {},
+) {
+  const headRepositoryIds = options.headRepositoryIds ?? [pair.repositoryId];
   requireGate(
     pair.repositoryId === config.repositoryId &&
       pair.installationId === config.installationId &&
@@ -134,7 +157,8 @@ function assertPull(config: RuntimeConfig, pair: Pair, pull: Pull) {
       pull.node_id === pair.pullNodeId &&
       pull.number === pair.pullNumber &&
       pull.base.repo.id === pair.repositoryId &&
-      pull.head.repo?.id === pair.repositoryId &&
+      pull.head.repo !== null &&
+      headRepositoryIds.includes(pull.head.repo.id) &&
       pull.base.ref === config.mergePolicy?.baseBranch &&
       sha.test(pull.head.sha) &&
       ref(pull.body, 'task-ref') === pair.taskNodeId &&
@@ -149,6 +173,7 @@ export async function pairPull(
   taskNumber: number,
   pullNumber: number,
   head: string,
+  options: GateOptions = {},
 ): Promise<Pair> {
   requireGate(
     config.mode === 'live' &&
@@ -176,7 +201,7 @@ export async function pairPull(
     pullNodeId: pull.node_id,
     initialHead: head,
   };
-  assertPull(config, pair, pull);
+  assertPull(config, pair, pull, options);
   assertPairTask(pair, task);
   requireGate(
     pull.state === 'open' && !pull.merged && pull.head.sha === head,
@@ -184,16 +209,27 @@ export async function pairPull(
   );
   return pair;
 }
-async function human(github: GateGitHub, prefix: string, login: string, id?: number) {
+/** Whether `login` is a human with write access; GitHub counts only such reviews. */
+export async function writeCollaborator(
+  github: GateGitHub,
+  prefix: string,
+  login: string,
+  id?: number,
+): Promise<boolean> {
   const permission = await github.read<{
     permission: string;
     user: { id: number; login: string; type: string };
   }>(`${prefix}/collaborators/${encodeURIComponent(login)}/permission`);
-  requireGate(
+  return (
     ['write', 'admin'].includes(permission.permission) &&
-      permission.user?.type === 'User' &&
-      permission.user.login.toLowerCase() === login &&
-      (id === undefined || permission.user.id === id),
+    permission.user?.type === 'User' &&
+    permission.user.login.toLowerCase() === login &&
+    (id === undefined || permission.user.id === id)
+  );
+}
+async function human(github: GateGitHub, prefix: string, login: string, id?: number) {
+  requireGate(
+    await writeCollaborator(github, prefix, login, id),
     'configured_human_permission_missing',
   );
 }
@@ -202,6 +238,7 @@ export async function inspectGate(
   github: GateGitHub,
   pair: Pair,
   previous?: Foundation,
+  options: GateOptions = {},
 ) {
   requireGate(config.mode === 'live' && config.mergePolicy, 'merge_policy_not_configured');
   const policy: MergePolicy = config.mergePolicy;
@@ -220,7 +257,7 @@ export async function inspectGate(
     'repository_merge_settings_unsafe',
   );
   const pull = await github.read<Pull>(`${prefix}/pulls/${pair.pullNumber}`);
-  assertPull(config, pair, pull);
+  assertPull(config, pair, pull, options);
   requireGate(pull.merged || pull.state === 'open', 'pull_closed_without_merge');
   const task = await github.read<Issue>(`${prefix}/issues/${pair.taskNumber}`);
   assertPairTask(pair, task, pull.merged);
@@ -257,13 +294,23 @@ export async function inspectGate(
         Date.parse(previous.observedAt) <= mergedAt,
       'pre_merge_observation_stale',
     );
+    const mergedBy = pull.merged_by;
+    const mergerApp =
+      options.acceptMerger !== undefined &&
+      policy.merger !== undefined &&
+      mergedBy?.type === 'Bot' &&
+      mergedBy.login.toLowerCase() === options.acceptMerger.login.toLowerCase() &&
+      mergedBy.login.toLowerCase() === `${policy.merger.appSlug}[bot]` &&
+      pull.merge_commit_sha === options.acceptMerger.mergeCommit;
     requireGate(
-      pull.merged_by?.type === 'User' &&
-        policy.mergers.includes(pull.merged_by.login.toLowerCase()) &&
-        sha.test(pull.merge_commit_sha ?? ''),
+      mergedBy &&
+        (mergerApp ||
+          (mergedBy.type === 'User' &&
+            policy.mergers.includes(mergedBy.login.toLowerCase()) &&
+            sha.test(pull.merge_commit_sha ?? ''))),
       'merge_actor_not_configured_human',
     );
-    await human(github, prefix, pull.merged_by.login.toLowerCase(), pull.merged_by.id);
+    if (!mergerApp) await human(github, prefix, mergedBy.login.toLowerCase(), mergedBy.id);
     const commit = await github.read<{ parents: { sha: string }[] }>(
       `${prefix}/commits/${pull.merge_commit_sha}`,
     );
@@ -283,20 +330,29 @@ export async function reviewEvidence(config: RuntimeConfig, github: GateGitHub, 
     pull.head.sha,
     before,
   );
+  // The merger App's own approval counts only for a merge the App itself made.
+  const merger = config.mergePolicy.merger;
+  const mergedByMerger =
+    merger !== undefined &&
+    pull.merged &&
+    pull.merged_by?.type === 'Bot' &&
+    pull.merged_by.login.toLowerCase() === `${merger.appSlug}[bot]`;
   const reviews = verifyReviews(
     config.mergePolicy,
     await github.list<Review>('reviews', String(pull.number)),
     pull.head.sha,
     pull.user.id,
     before,
+    mergedByMerger,
   );
   for (const review of reviews)
-    await human(
-      github,
-      `/repos/${config.repository}`,
-      review.user.login.toLowerCase(),
-      review.user.id,
-    );
+    if (review.user.type === 'User')
+      await human(
+        github,
+        `/repos/${config.repository}`,
+        review.user.login.toLowerCase(),
+        review.user.id,
+      );
   // Re-read after paginated review/check reads. A moving head cannot reuse this result.
   const fresh = await github.read<Pull>(`/repos/${config.repository}/pulls/${pull.number}`);
   requireGate(

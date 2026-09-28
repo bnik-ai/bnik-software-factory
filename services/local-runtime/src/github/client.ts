@@ -261,6 +261,48 @@ export class InstallationClient implements GitHubReads {
       return Buffer.from(file.content, 'base64').toString('utf8');
     });
   }
+  /**
+   * Pairs a proposed Task with its published pull request the way the human flow does by hand:
+   * exactly one `pr-ref: <pull node id>` backlink in the body and `status:in_review` in place
+   * of `status:proposed`. Idempotent; a Task paired with another pull request is refused.
+   */
+  async pairTask(number: number, pullNodeId: string): Promise<void> {
+    if (
+      !this.config.mergePolicy ||
+      !Number.isSafeInteger(number) ||
+      number < 1 ||
+      !/^[A-Za-z0-9_=-]{1,100}$/.test(pullNodeId)
+    )
+      throw new GitHubFailure('task_write_not_scoped');
+    await this.withToken({ issues: 'write', metadata: 'read' }, async (token) => {
+      const path = `/repos/${this.config.repository}/issues/${number}`;
+      const issue = (await this.call(path, token)) as Issue;
+      if (issue.number !== number || issue.pull_request || issue.state !== 'open')
+        throw new GitHubFailure('task_not_pairable');
+      const body = issue.body ?? '';
+      const refs = body
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.startsWith('pr-ref:'))
+        .map((line) => line.slice('pr-ref:'.length).trim());
+      if (refs.length > 1 || refs.some((value) => value !== pullNodeId))
+        throw new GitHubFailure('task_paired_elsewhere');
+      const statuses = issue.labels
+        .map((label) => label.name)
+        .filter((label) => label.startsWith('status:'));
+      // Already paired by this factory: nothing to write. In review without our backlink, or in
+      // any other status, is someone else's Task: refused before any write.
+      if (statuses.length === 1 && statuses[0] === 'status:in_review' && refs.length === 1) return;
+      if (statuses.length !== 1 || statuses[0] !== 'status:proposed')
+        throw new GitHubFailure('task_status_not_pairable');
+      if (refs.length === 0)
+        await this.call(path, token, 'PATCH', {
+          body: `${body.replace(/\s+$/, '')}\n\npr-ref: ${pullNodeId}\n`,
+        });
+      await this.call(`${path}/labels`, token, 'POST', { labels: ['status:in_review'] });
+      await this.call(`${path}/labels/${encodeURIComponent('status:proposed')}`, token, 'DELETE');
+    });
+  }
   async finishTask(
     number: number,
     oldStatuses: string[],

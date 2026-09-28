@@ -14,6 +14,7 @@ import {
   assertPairTask,
   dependencyStates,
   gateReason,
+  headRepositoryIds,
   inspectGate,
   pairPull,
   reviewEvidence,
@@ -30,7 +31,9 @@ export class HumanMergeGate extends LeasedConsumer {
     requireGate(config.mode === 'live' && config.mergePolicy, 'merge_policy_not_configured');
   }
   async track(task: number, pull: number, head: string) {
-    const pair = await pairPull(this.config, this.github, task, pull, head);
+    const pair = await pairPull(this.config, this.github, task, pull, head, {
+      headRepositoryIds: headRepositoryIds(this.config),
+    });
     await transaction(this.pool, async (client) => {
       const inserted = await client.query(
         'INSERT INTO factory_pr_pairs(repository_id,installation_id,pull_number,task_number,pair) VALUES($1,$2,$3,$4,$5::jsonb) ON CONFLICT DO NOTHING RETURNING pull_number',
@@ -128,11 +131,32 @@ export class HumanMergeGate extends LeasedConsumer {
           'SELECT foundation FROM factory_pr_observations WHERE repository_id=$1 AND pull_number=$2 ORDER BY id DESC LIMIT 1',
           [body.repositoryId, body.pull],
         );
+        // A merge the autonomy ledger admitted and the merger App performed (OSS-21) is an
+        // accepted actor for exactly that merge commit; every other merge needs a configured human.
+        const autonomyMerge = this.config.mergePolicy?.merger
+          ? (
+              await this.pool.query<{ merge_commit: string }>(
+                "SELECT merge_commit FROM factory_autonomy_merges WHERE repository_id=$1 AND pull_number=$2 AND state='merged' AND merge_commit IS NOT NULL ORDER BY updated_at DESC LIMIT 1",
+                [body.repositoryId, body.pull],
+              )
+            ).rows[0]
+          : undefined;
         const inspected = await inspectGate(
           this.config,
           this.github,
           pair,
           previous.rows[0]?.foundation,
+          {
+            headRepositoryIds: headRepositoryIds(this.config),
+            ...(autonomyMerge && this.config.mergePolicy?.merger
+              ? {
+                  acceptMerger: {
+                    login: `${this.config.mergePolicy.merger.appSlug}[bot]`,
+                    mergeCommit: autonomyMerge.merge_commit,
+                  },
+                }
+              : {}),
+          },
         );
         const { pull, foundation } = inspected;
         head = pull.head.sha;

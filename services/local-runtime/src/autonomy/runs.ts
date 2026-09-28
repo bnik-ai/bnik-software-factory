@@ -144,6 +144,14 @@ export class AutonomyRuns {
     ]);
     return result.rows[0] ? row(result.rows[0]) : null;
   }
+  /** Every published attempt of the repository (a scan must not miss old ones). */
+  async published(repositoryId: number): Promise<AutonomyRun[]> {
+    const result = await this.pool.query(
+      "SELECT * FROM factory_autonomy_runs WHERE repository_id=$1 AND state='published' ORDER BY updated_at DESC",
+      [repositoryId],
+    );
+    return result.rows.map(row);
+  }
   async list(repositoryId: number, limit = 100): Promise<AutonomyRun[]> {
     const result = await this.pool.query(
       'SELECT * FROM factory_autonomy_runs WHERE repository_id=$1 ORDER BY updated_at DESC LIMIT $2',

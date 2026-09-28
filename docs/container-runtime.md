@@ -40,8 +40,9 @@ Workers retain their existing restricted boundaries.
 | Worker `run` | Runtime database password, webhook secret | Configuration, artifacts, Docker socket |
 | Worker `run-activation` | Runtime database password, webhook secret, App key, model key | Configuration, artifacts, optional trusted merge policy, Docker socket |
 | Autonomy `activate`, `status`, `grant`, `revoke`, `pause`, `resume`, `approve`, `reconcile` | Controller database password, webhook secret | Configuration, autonomy policy |
-| Autonomy `intent`, `pin`, `run`, `cancel`, `recover` (demo) | Controller database password, webhook secret | Configuration, autonomy policy, acceptance bundle, artifacts, Docker socket |
+| Autonomy `intent`, `pin`, `run`, `cancel`, `merge`, `merge-scan`, `recover` (demo; merge refuses) | Controller database password, webhook secret | Configuration, autonomy policy, acceptance bundle, artifacts, Docker socket |
 | Autonomy `intent`, `pin`, `run`, `cancel`, `recover` (live) | Controller database password, webhook secret, App key, model key, publisher App key | Configuration, autonomy policy, acceptance bundle, artifacts, optional trusted merge policy, Docker socket |
+| Autonomy `merge`, `merge-scan` (live, `--automerge`) | The above plus the merger App key | The above |
 
 `init` is the bootstrap exception: it writes the fresh state directory and refuses
 existing configuration or secrets. Database backup/restore runs inside the database

@@ -12,3 +12,5 @@ services:
     volumes: [*policy]
   live-autonomy-supervisor:
     volumes: [*policy]
+  live-automerge-supervisor:
+    volumes: [*policy]

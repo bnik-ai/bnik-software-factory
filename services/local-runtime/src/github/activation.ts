@@ -21,10 +21,14 @@ export interface TaskSnapshot {
 }
 export const activationCommand = (sourceCommit: string, taskHash: string) =>
   `/factory activate ${sourceCommit} ${taskHash}`;
+/** A Task activation reads a proposed Task; a paired Task (backlink written) carries one of these. */
+export const PROPOSED_TASK_STATUSES: readonly string[] = ['status:proposed'];
+export const PAIRED_TASK_STATUSES: readonly string[] = ['status:ready', 'status:in_review'];
 export function taskSnapshot(
   config: RuntimeConfig,
   issue: Issue,
   sourceCommit: string,
+  statuses: readonly string[] = PROPOSED_TASK_STATUSES,
 ): TaskSnapshot {
   if (
     !Number.isSafeInteger(issue.id) ||
@@ -44,10 +48,11 @@ export function taskSnapshot(
   )
     throw new GitHubFailure('task_not_eligible');
   const labels = issue.labels.map((label) => label.name).sort();
+  const status = labels.filter((label) => label.startsWith('status:'));
   if (
     !labels.includes('kind:task') ||
-    !labels.includes('status:proposed') ||
-    labels.some((label) => label.startsWith('status:') && label !== 'status:proposed')
+    status.length !== 1 ||
+    !statuses.includes(status[0] as string)
   )
     throw new GitHubFailure('task_labels_invalid');
   const blocks = [...issue.body.matchAll(/^```factory-task\r?\n([\s\S]*?)^```\s*$/gm)];
@@ -114,6 +119,7 @@ export async function prepareTask(
   github: GitHubReads,
   number: number,
   commit: string,
+  statuses: readonly string[] = PROPOSED_TASK_STATUSES,
 ): Promise<TaskSnapshot> {
   if (!Number.isSafeInteger(number) || number < 1 || !/^[0-9a-f]{40}$/.test(commit))
     throw new GitHubFailure('task_identity_invalid');
@@ -126,7 +132,7 @@ export async function prepareTask(
   if (head.sha !== commit) throw new GitHubFailure('source_is_not_current_default_head');
   const issue = await github.read<Issue>(`${repoPath}/issues/${number}`);
   if (issue.number !== number) throw new GitHubFailure('task_identity_mismatch');
-  return taskSnapshot(config, issue, commit);
+  return taskSnapshot(config, issue, commit, statuses);
 }
 export interface ActivationProof extends TaskSnapshot {
   comment: Comment;

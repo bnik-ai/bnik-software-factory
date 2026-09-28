@@ -26,6 +26,9 @@ flowchart LR
   C -->|allow| P[Publisher: Git Data API, one token per publication]
   P --> G[GitHub: branch on fork or base, PR with task-ref]
   C -->|hold| H[Human approval bound to the action digest]
+  G -->|observe: protection, checks, reviews, head tree| M[Merger: separate App, exact-sha squash]
+  M -->|merge record admitted once| L
+  M -->|verify parent and tree, reconcile Task| G
 ```
 
 | Component | Runs as | Credentials | Network |
@@ -36,6 +39,7 @@ flowchart LR
 | Resolution sandbox | disposable container | none | outbound network (Docker bridge); the project's manifest, lockfile or `.npmrc` naming any non-registry source is refused before npm runs (transitive limit below) |
 | Scanner (Trivy adapter) | disposable container from the pinned image | none | none; reads an operator-maintained database cache volume |
 | Publisher | inside the controller process | publisher App installation token, minted with `contents: write, pull_requests: write, metadata: read`, restricted to the write and base repositories, revoked after use. One token covers both repositories with the same permission set (a GitHub token limitation), so in fork mode the installation on the base repository also holds `contents: write` even though only pull requests are written there | GitHub |
+| Merger (`src/autonomy/merger.ts`, `merge-controller.ts`) | inside the controller process, live only, `FACTORY_AUTOMERGE=enabled` | merger App installation token, minted per merge with `contents: write, pull_requests: write, metadata: read` on the base repository only, revoked after use; a different App from the publisher | GitHub |
 | Internet-facing runtime | `factory_runtime` role | unchanged | unchanged; `SELECT` only on autonomy tables |
 
 The controller holds Docker daemon authority, as the existing supervisor does. The
@@ -56,7 +60,9 @@ Run `./sfac init` with autonomy selected:
   requests run the base repository's `pull_request` workflows without secrets, but
   `pull_request_target` and `workflow_run` workflows run with the base's secrets: a base
   repository with such workflows acting on pull-request content must not enable bounded
-  publication in either mode.
+  publication in either mode. Add `--automerge --merger-app-id ID --merger-installation-id ID
+  --merger-app-slug SLUG` to let routine pull requests merge without a human; see
+  [Merging](#merging).
 
 `init` creates `secrets/controller_database_password` for the controller role, which
 `./sfac build && ./sfac up` provisions through the migration. Then provide, in the state
@@ -67,6 +73,8 @@ directory (`.factory/` by default):
 | `autonomy-policy.json` | The [policy](autonomy-policy.md); start from [`runtime/autonomy-policy.example.json`](../runtime/autonomy-policy.example.json). Pin `acceptanceSuiteSha256`, `acceptanceHarnessSha256`, `acceptanceRunnerImage`, `reviewerConfigSha256` and, when enabled, the scanner adapter and image. |
 | `acceptance/` | The protected acceptance bundle: `harness.json` plus test files. See below. |
 | `secrets/publisher_private_key` | Live only: the publisher App's private key. |
+| `secrets/merger_private_key` | Live only, `--automerge`: the merger App's private key. A second App, installed on the base repository only. Mounted only into the `merge` and `merge-scan` commands' container (`live-automerge-supervisor`); every other autonomy command runs without it. |
+| `merge-policy.json` | Live only: the [human merge profile](human-merge.md); with `--automerge` it also names the merger (`"merger": {"appSlug", "appId"}`), see [`runtime/merge-policy.automerge.example.json`](../runtime/merge-policy.automerge.example.json). |
 | `secrets/model_key` | Live only: the model key, held by the proxy for the worker and the reviewer. |
 
 Activate the policy, then grant a scope:
@@ -101,7 +109,7 @@ configured, dependency verification. It then admits `publish`. Outcomes:
 
 | Run state | Meaning | Next |
 | --- | --- | --- |
-| `published` | PR opened or updated on the exact tested tree; paired and tracked when the merge policy is configured | OSS-21 merges routine work; humans review critical work |
+| `published` | PR opened or updated on the exact tested tree; paired and tracked when the merge policy is configured | `./sfac autonomy merge TASK_NUMBER` (or `merge-scan`) decides the merge; see [Merging](#merging) |
 | `held` | `execute_approval_required` or `publish_approval_required`: a human must approve the recorded `actionSha256` | `./sfac autonomy approve --action SHA --kind publish --approver GITHUB_USER_ID`, then `run` again; receipts older than `receiptTtlMs` are verified again before the decision |
 | `repair` | Acceptance failed or the reviewer found important defects; a new attempt was started with the findings appended to the prompt, within the scope's run limit | nothing; the next attempt continues automatically |
 | `blocked` | Policy or ledger refused (paused, revoked, budget, malformed evidence) | fix the cause; `run --new-attempt` starts another attempt |
@@ -121,6 +129,47 @@ open attempt. A crashed controller resumes from the recorded step: an execution 
 admitted is not paid for twice, and a publication already made is found again, not
 duplicated. The ledger settles the budget reservation from the worker's estimated cost;
 an uncertain outcome keeps the full reservation until an operator reconciles it.
+
+## Merging
+
+With `FACTORY_AUTOMERGE=enabled` (live, bounded), `./sfac autonomy merge TASK_NUMBER`
+takes the Task's published attempt through the `merge` decision; `./sfac autonomy
+merge-scan` does it for every published attempt whose merge is unsettled. Each merge is a
+record beside the run (`factory_autonomy_merges`), stepped by compare-and-set:
+
+| Merge state | Meaning | Next |
+| --- | --- | --- |
+| `observing` | Trusted reads of the pull request: head and its tree, base, branch protection and CODEOWNERS, required check runs by name and App id, reviews (a request for changes counts from a human with write access or from an installed App, as on GitHub). A condition that can still change keeps the record here with its reason recorded: pending, missing or failed required checks, a request for changes, unverified protection, a stale observation, expired receipts without re-verification, a GitHub refusal (`github_merge_not_allowed`). After three consecutive identical GitHub refusals `merge-scan` leaves the record alone; `merge TASK` retries and resets the count. Receipts older than `receiptTtlMs` are replaced by fresh verification of the same base archive and patch, but only once the observation would otherwise let the merge proceed | the next `merge` or `merge-scan` observes again |
+| `held` | `approval_required`: a critical change, `mergeEffect: deployment`, or human-gated mode. The approval is a native `APPROVED` review on the exact head by a configured approver (`approvers.githubUserIds`) who is also a `reviewers` entry of `merge-policy.json`; there is no console approval for merges. A dismissed review unlocks nothing; approving the head again does. `merge-scan` leaves an unapproved hold alone (no decision, no re-verification); `merge` decides it again. `approval_already_used`: the approval for this exact action was consumed at a merge call that did not merge (GitHub refused it, or its outcome was uncertain and it turned out not to have merged) and the admission then expired; `merge-scan` leaves such a record alone and a new attempt is the way on. To keep that rare, an approval by a listed reviewer without write access (one GitHub would not count) is not an approval here either | a review, then `merge` or the next scan |
+| `admitted` | The ledger decided `allow` and recorded it. Immediately before merging, the admission must still stand (same active policy, within its TTL, the approving review still present for approval-based admissions; otherwise it is decided again, spending nothing) and the observation is repeated and must still match: same head, base and tree, protection verified, checks passed, no change request. The admission is consumed at the merge call itself, with the token minted and the head confirmed. A condition that can still change (`pre_merge_recheck_failed:…`, a token or read failure) keeps the admission for the next scan | merges |
+| `merged` | The merger App squash-merged exactly the head; the merge commit's single parent is the observed base and its tree is the tested tree; the Task is reconciled through the merge gate from the observation recorded immediately before the merge. Until the gate confirms the reconciliation (`evidence.reconciled`), every `merge` or scan repeats it | none |
+| `blocked` | Ended: the head, base or tree changed, the pull request was closed or merged by someone else, or the Task changed since publication. `run --new-attempt` publishes a revision when that is the answer | inspect |
+| `unknown` | The merge call's outcome is uncertain (connection lost after it went out), or the merge commit does not prove the tested tree on the observed base. `merge-scan` never touches it | `./sfac autonomy merge TASK` settles it from GitHub's facts: a merge that happened is verified and recorded, an untouched open pull request resumes, a closed one ends; a proof mismatch stays `unknown` for a human |
+
+Publication pairs the Task with its pull request the way the [human flow](end-to-end-pilot.md)
+does by hand: the factory's App writes exactly one `pr-ref: PULL_NODE_ID` backlink into the
+Task body and replaces `status:proposed` with `status:in_review`, then registers the
+immutable pair the merge gate verifies. The backlink line is the factory's and is not part
+of the Task's intent digest; any other edit to the Task's title, body or definition after the
+attempt started parks it (`task_changed_since_publication`). A revision (`run --new-attempt`)
+finds the Task paired and the pair registered; a proposed Task that is `status:in_review`
+without a published attempt of this factory is refused (`task_not_proposed`).
+
+Routine work merges with no human step: the merger App submits the one approving review
+GitHub's protection requires (citing the decision) and merges; whether it approves follows
+the ledger's decision, never who else reviewed on GitHub. That approval never outlives its
+attempt: when the merge call is refused, the admission dies or the record ends, the merger
+dismisses its own review, so a human merger cannot merge on the factory's approval alone. The
+two policy files must name the same base branch (`merge_policy_base_branch_differs_from_autonomy_policy`). Critical work waits for a human
+review of the exact head; the merger never approves in its place. Every configured approver
+must have write access to the repository (GitHub counts only such reviews) and be listed as
+a reviewer in `merge-policy.json` (reconciliation accepts only listed reviewers and the
+merger App). The repository's protection for the automatic profile differs from the human
+profile in two settings, both enforced by the observation: code-owner review is not
+required by GitHub (the policy decides who may approve), and the merger App is the only App
+in the push restriction. Nothing bypasses protection; the App is a restricted pusher.
+Reconciliation accepts a merge by the merger App only for the exact merge commit the
+ledger recorded; any other bot merge parks the pull request for a human.
 
 ## Protected acceptance bundle
 
@@ -198,5 +247,7 @@ attributes); the publisher reports `publish_base_tree_mismatch` and nothing is w
 Ignore rules and attribute filters in the repository do not matter: snapshots track every
 archived file byte for byte.
 
-Not yet provided: automatic merging (OSS-21), a live proof of the whole path (OSS-22),
-GitHub-review–sourced approvals (the console approval exists), and scheduling.
+Not yet provided: a live proof of the whole path (OSS-22), GitHub-review–sourced
+approvals for execute and publish holds (those take the console approval; a merge hold takes
+only a native review), a revision path for a `blocked` merge other than a new attempt, and
+scheduling.
