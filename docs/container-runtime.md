@@ -39,6 +39,9 @@ Workers retain their existing restricted boundaries.
 | Worker `recover` | Runtime database password | Configuration, Docker socket |
 | Worker `run` | Runtime database password, webhook secret | Configuration, artifacts, Docker socket |
 | Worker `run-activation` | Runtime database password, webhook secret, App key, model key | Configuration, artifacts, optional trusted merge policy, Docker socket |
+| Autonomy `activate`, `status`, `grant`, `revoke`, `pause`, `resume`, `approve`, `reconcile` | Controller database password, webhook secret | Configuration, autonomy policy |
+| Autonomy `intent`, `pin`, `run`, `cancel`, `recover` (demo) | Controller database password, webhook secret | Configuration, autonomy policy, acceptance bundle, artifacts, Docker socket |
+| Autonomy `intent`, `pin`, `run`, `cancel`, `recover` (live) | Controller database password, webhook secret, App key, model key, publisher App key | Configuration, autonomy policy, acceptance bundle, artifacts, optional trusted merge policy, Docker socket |
 
 `init` is the bootstrap exception: it writes the fresh state directory and refuses
 existing configuration or secrets. Database backup/restore runs inside the database
@@ -79,6 +82,7 @@ Source snapshot transfers into the worker still use stdin, with no host bind mou
 | `python3 runtime/worker/demo-source.py DIR` | `./sfac demo-source DIR` |
 | `python3 examples/invoice/prepare-result.py ...` | `./sfac prepare-result ...` |
 | `runtime/.env`, `runtime/secrets/`, `runtime/merge-policy.json` | `.factory/.env`, `.factory/secrets/`, `.factory/merge-policy.json` |
+| `python3 runtime/autonomy.py …` with `autonomy-policy.json` and `acceptance/` | `./sfac autonomy …` with `.factory/autonomy-policy.json` and `.factory/acceptance/` (see [autonomy operations](autonomy-operations.md)) |
 | `/tmp/example-input`, `/tmp/example-result` | Unique names under `/artifacts/` |
 
 The native guides remain useful for explicit low-level operation. With `sfac`, do

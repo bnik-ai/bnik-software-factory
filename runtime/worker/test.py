@@ -53,13 +53,13 @@ try:
             raise RuntimeError('Disposable database did not become ready')
         port = run(['docker', 'port', name, '5432']).strip().rsplit(':', 1)[1]
         env = {key: os.environ[key] for key in ['PATH', 'HOME', 'DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_CONFIG', 'DOCKER_TLS_VERIFY', 'DOCKER_CERT_PATH'] if key in os.environ}
-        env.update(POSTGRES_HOST='127.0.0.1', POSTGRES_PORT=port, POSTGRES_TLS='disable', POSTGRES_USER='factory_migrator', POSTGRES_DATABASE='software_factory', POSTGRES_PASSWORD_FILE=str(private / 'admin'), FACTORY_DB_PASSWORD_FILE=str(private / 'runtime'), FACTORY_TEST_WORKER_IMAGE=image, WORKER_EVIDENCE_PATH=str(private / 'evidence.json'), FACTORY_TEST_DATABASE_CONTAINER=name)
-        command = ['node', '--import', 'tsx', '--test', '--test-concurrency=1', 'test/worker.container.ts']
+        env.update(POSTGRES_HOST='127.0.0.1', POSTGRES_PORT=port, POSTGRES_TLS='disable', POSTGRES_USER='factory_migrator', POSTGRES_DATABASE='software_factory', POSTGRES_PASSWORD_FILE=str(private / 'admin'), FACTORY_DB_PASSWORD_FILE=str(private / 'runtime'), FACTORY_TEST_WORKER_IMAGE=image, WORKER_EVIDENCE_PATH=str(private / 'evidence.json'), AUTONOMY_EVIDENCE_PATH=str(private / 'autonomy-evidence.json'), FACTORY_TEST_DATABASE_CONTAINER=name)
+        command = ['node', '--import', 'tsx', '--test', '--test-concurrency=1', 'test/worker.container.ts', 'test/autonomy.container.ts']
         r = subprocess.run(command, cwd=ROOT / 'services/local-runtime', env=env, capture_output=True, text=True)
         print(r.stdout, flush=True)
         if r.returncode:
             print(r.stderr[-5000:]); raise RuntimeError('Worker container contracts failed')
-        report = dict(passed=True, image_id=run(['docker', 'image', 'inspect', image, '--format', '{{.Id}}']).strip(), architecture=run(['docker', 'run', '--rm', '--network', 'none', image, 'node', '-p', 'process.platform+"/"+process.arch']).strip(), output_sha256=hashlib.sha256((r.stdout + r.stderr).encode()).hexdigest(), checks=json.loads((private / 'evidence.json').read_text()), limitations='Real shell/containers/database with synthetic source. No paid model, live GitHub token, PR publication or end-to-end alpha claim.')
+        report = dict(passed=True, image_id=run(['docker', 'image', 'inspect', image, '--format', '{{.Id}}']).strip(), architecture=run(['docker', 'run', '--rm', '--network', 'none', image, 'node', '-p', 'process.platform+"/"+process.arch']).strip(), output_sha256=hashlib.sha256((r.stdout + r.stderr).encode()).hexdigest(), checks=json.loads((private / 'evidence.json').read_text()), autonomy_checks=json.loads((private / 'autonomy-evidence.json').read_text()) if (private / 'autonomy-evidence.json').exists() else [], limitations='Real shell/containers/database with synthetic source. No paid model, live GitHub token, PR publication or end-to-end alpha claim.')
 finally:
     subprocess.run(['docker', 'rm', '-f', '-v', name], capture_output=True)
     if not a.skip_build:

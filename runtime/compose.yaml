@@ -27,7 +27,8 @@ services:
       POSTGRES_USER: factory_migrator
       POSTGRES_PASSWORD_FILE: /run/secrets/admin_password
       FACTORY_DB_PASSWORD_FILE: /run/secrets/database_password
-    secrets: [admin_password, database_password]
+      FACTORY_CONTROLLER_DB_PASSWORD_FILE: /run/secrets/controller_database_password
+    secrets: [admin_password, database_password, controller_database_password]
     depends_on:
       db: {condition: service_healthy}
     command: [node, --import, tsx, src/migrate.ts]
@@ -71,5 +72,6 @@ secrets:
   admin_password: {file: "${FACTORY_STATE_DIR:-.}/secrets/admin_password"}
   database_password: {file: "${FACTORY_STATE_DIR:-.}/secrets/database_password"}
   webhook_secret: {file: "${FACTORY_STATE_DIR:-.}/secrets/webhook_secret"}
+  controller_database_password: {file: "${FACTORY_STATE_DIR:-.}/secrets/controller_database_password"}
 volumes:
   database:

@@ -1,0 +1,14 @@
+{
+  "id": "I_DEMO_TASK",
+  "issueId": 1,
+  "number": 1,
+  "title": "Fix sum.js so it adds",
+  "body": "sum.js subtracts instead of adding. Make it add and keep the checks green.",
+  "intentKind": "bugfix",
+  "prompt": "Fix sum.js and run the declared checks.",
+  "tests": ["node --test sum.test.js"],
+  "maxTurns": 2,
+  "timeoutMs": 30000,
+  "fixtureCommand": "printf 'module.exports = (a, b) => a + b;\\n' > sum.js",
+  "sourceCommit": "1111111111111111111111111111111111111111"
+}

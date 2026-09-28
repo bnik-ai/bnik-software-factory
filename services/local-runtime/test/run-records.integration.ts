@@ -159,7 +159,7 @@ test('queued cancellation survives new supervisor and starts no executor; stoppe
   });
   await s.submit(job);
   assert.equal(await s.cancel(job.id), 1);
-  await assert.rejects(supervisor().run(job.id, archive), /not_claimable/);
+  await assert.rejects(supervisor().run(job.id, archive), /coding_job_dead/);
   const row = (await new RunRecords(pool).status(job.id))[0];
   assert.equal(row.cancel_requested, true);
   assert.equal(row.work_state, 'dead');

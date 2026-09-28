@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { type Socket, connect, createServer } from 'node:net';
+import { join } from 'node:path';
 import { runCodingAgent } from '../../../agents/src/runtime/codingAgent.js';
 import {
   type CodingOutcome,
@@ -124,9 +125,11 @@ async function main() {
       MAX_OUTPUT_BYTES / 2,
     );
   await git('init', '--quiet');
+  // Snapshot exactly what the archive holds: GitHub's tree has no ignore rules or attribute filters.
+  await writeFile(join(cwd, '.git/info/attributes'), '* -text -eol -filter -ident\n');
   await git('config', 'user.name', 'software-factory-worker');
   await git('config', 'user.email', 'worker@example.invalid');
-  await git('add', '-A');
+  await git('add', '-A', '--force');
   await git('commit', '--quiet', '--allow-empty', '-m', 'Input snapshot');
   const base = (await git('rev-parse', 'HEAD')).trim();
   let bridge: ReturnType<typeof createServer> | undefined;

@@ -125,8 +125,14 @@ export class CodingSupervisor {
         if (!existing.result) throw new Error('coding_artifact_compacted');
         return { workId: existing.id, outcome: existing.result, cached: true };
       }
+      // dead/quarantined: the work item is finished for good (a worker may have run); a live
+      // lease conflict stays claimable later.
       if (!['pending', 'running'].includes(existing.state))
-        throw new Error('coding_job_not_claimable');
+        throw new Error(
+          ['dead', 'quarantined'].includes(existing.state)
+            ? 'coding_job_dead'
+            : 'coding_job_not_claimable',
+        );
       const job = parseJob(existing.body);
       if (
         job.mode !== this.options.mode ||
@@ -134,7 +140,18 @@ export class CodingSupervisor {
       )
         throw new Error('unconfigured_coding_job');
       const work = await this.queue.claim(id);
-      if (!work) throw new Error('coding_job_not_claimable');
+      if (!work) {
+        const after = (
+          await pool.query<{ state: string }>('SELECT state FROM factory_work WHERE id=$1', [
+            existing.id,
+          ])
+        ).rows[0]?.state;
+        throw new Error(
+          after === 'dead' || after === 'quarantined'
+            ? 'coding_job_dead'
+            : 'coding_job_not_claimable',
+        );
+      }
       token = work.lease_token;
       guard = new LeaseGuard(this.queue, token);
       runId = randomUUID();

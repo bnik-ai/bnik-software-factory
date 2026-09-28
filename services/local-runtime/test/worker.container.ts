@@ -321,7 +321,7 @@ test('database cancellation is observed during execution and settles the attempt
     (await pool.query("SELECT state FROM factory_work WHERE queue_name='CodingJob'")).rows[0].state,
     'dead',
   );
-  await assert.rejects(controller.run(job.id, archive), /not_claimable/);
+  await assert.rejects(controller.run(job.id, archive), /coding_job_dead/);
   await clean(runId);
 });
 test('simultaneous supervisors cannot run or recover the same job while a live owner holds it', async () => {
@@ -489,7 +489,7 @@ test('supervisor SIGKILL leaves a fenced attempt and explicit recovery removes i
       (await pool.query('SELECT state FROM factory_worker_runs')).rows[0].state,
       'failed',
     );
-    await assert.rejects(supervisor().run('controller-crash-fixture', source()), /not_claimable/);
+    await assert.rejects(supervisor().run('controller-crash-fixture', source()), /coding_job_dead/);
     assert.equal(
       (await pool.query("SELECT state FROM factory_work WHERE queue_name='CodingJob'")).rows[0]
         .state,

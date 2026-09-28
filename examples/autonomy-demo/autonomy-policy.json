@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "revision": 1,
+  "mode": "bounded",
+  "repository": {
+    "fullName": "example/factory-demo",
+    "id": 100000001,
+    "installationId": 1,
+    "baseBranch": "main"
+  },
+  "allowedPaths": ["."],
+  "criticalPaths": [],
+  "execution": {
+    "models": ["claude-sonnet-5"],
+    "maxTurns": 10,
+    "maxRunMs": 300000,
+    "maxRunMicrousd": 1000000,
+    "maxScopeMicrousd": 5000000,
+    "maxTaskRuns": 3
+  },
+  "changeLimits": { "maxChangedFiles": 50, "maxChangedBytes": 200000 },
+  "mergeEffect": "none",
+  "verification": {
+    "acceptanceSuiteSha256": "__SUITE__",
+    "acceptanceHarnessSha256": "__HARNESS__",
+    "acceptanceRunnerImage": "__RUNNER__",
+    "reviewerConfigSha256": "__REVIEWER__",
+    "evalProtocolSha256": "9e3c4e9e00fb53e33ed9b7f8bdd7c4c5fcf819e37229280d18e34145e576cf0c",
+    "protectedPaths": [".factory"],
+    "receiptTtlMs": 3600000
+  },
+  "approvers": { "githubUserIds": [1] },
+  "dependencies": null
+}

@@ -15,6 +15,47 @@ const fake = (async (url: string | URL | Request, init: RequestInit = {}) => {
   };
   if (String(url).includes('count_tokens')) return Response.json({ input_tokens: 100 });
   messages++;
+  if (config.model.startsWith('claude-fixture-review')) {
+    const critical = config.model === 'claude-fixture-review-critical';
+    const malformed = config.model === 'claude-fixture-review-malformed';
+    const verdict = critical
+      ? {
+          risk: 'critical',
+          categories: ['security_auth'],
+          findings: [
+            {
+              id: 'F1',
+              severity: 'high',
+              summary: 'Authorization check removed.',
+              location: 'sum.js:1',
+            },
+          ],
+          limitations: [],
+        }
+      : {
+          risk: 'routine',
+          categories: [],
+          findings: [
+            { id: 'F1', severity: 'low', summary: 'Consider a comment.', location: 'sum.js:1' },
+          ],
+          limitations: [],
+        };
+    return Response.json({
+      id: `msg_fixture_review_${messages}`,
+      type: 'message',
+      role: 'assistant',
+      model: body.model,
+      content: [
+        {
+          type: 'text',
+          text: malformed ? 'LGTM, ship it' : `\`\`\`json\n${JSON.stringify(verdict)}\n\`\`\``,
+        },
+      ],
+      stop_reason: 'end_turn',
+      stop_sequence: null,
+      usage: { input_tokens: 400, output_tokens: 60 },
+    });
+  }
   const loop = config.model === 'claude-fixture-loop';
   const tool = loop || messages === 1;
   const content = tool

@@ -10,15 +10,21 @@ const expected = {
   supervisor: ['database_password'],
   'demo-supervisor': ['database_password', 'webhook_secret'],
   'live-supervisor': ['app_private_key', 'database_password', 'model_key', 'webhook_secret'],
+  'autonomy-operator': ['controller_database_password', 'webhook_secret'],
+  'demo-autonomy-supervisor': ['controller_database_password', 'webhook_secret'],
+  'live-autonomy-supervisor': ['app_private_key', 'controller_database_password', 'model_key', 'publisher_private_key', 'webhook_secret'],
 }[role];
 assert.ok(expected, 'known role');
 const actual = fs.existsSync('/state/secrets') ? fs.readdirSync('/state/secrets').sort() : [];
 assert.deepEqual(actual, expected, `${role}: only declared secrets are mounted`);
 for (const name of actual) assert.ok(fs.readFileSync(`/state/secrets/${name}`).length);
 assert.equal(fs.existsSync('/state/.env'), expected.length > 0);
-assert.equal(fs.existsSync('/state/merge-policy.json'), ['github-operator', 'live-supervisor'].includes(role));
+assert.equal(fs.existsSync('/state/merge-policy.json'), ['github-operator', 'live-supervisor', 'live-autonomy-supervisor'].includes(role));
 assert.equal(fs.existsSync('/var/run/docker.sock'), role.includes('supervisor'));
-assert.equal(fs.existsSync('/artifacts/input/job.json'), !['probe', 'database-operator', 'demo-operator', 'supervisor'].includes(role));
+assert.equal(fs.existsSync('/artifacts/input/job.json'), !['probe', 'database-operator', 'demo-operator', 'supervisor', 'autonomy-operator'].includes(role));
+// Autonomy roles see the policy; only their supervisors see the protected bundle; none sees the runtime password.
+assert.equal(fs.existsSync('/state/autonomy-policy.json'), role.startsWith('autonomy') || role.includes('autonomy-supervisor'));
+assert.equal(fs.existsSync('/state/acceptance/harness.json'), role.includes('autonomy-supervisor'));
 assert.throws(() => fs.writeFileSync('/app/boundary-probe', 'denied'));
 // Both supported cgroup layouts expose the effective Docker limit.
 function cgroup(v2, v1) { return fs.readFileSync(fs.existsSync(v2) ? v2 : v1, 'utf8').trim(); }

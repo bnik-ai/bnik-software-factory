@@ -5,7 +5,7 @@ import { AutonomyLedger } from '../src/autonomy/ledger.js';
 import { type AutonomyPolicy, policyDigest } from '../src/autonomy/policy.js';
 import { migrate } from '../src/migrate.js';
 import { NOW, approvalFor, evidenceFor, policyFixture, requestFor } from './autonomy-fixtures.js';
-import { config, initialize } from './helpers.js';
+import { config, controllerPool, initialize } from './helpers.js';
 
 let admin: Pool;
 let runtimePool: Pool;
@@ -374,4 +374,95 @@ test('the read-only runtime role cannot take the ledger lock or stall pause', as
     ledger.setPaused(999_999, true, 'x', 'owner', NOW),
     /autonomy_not_configured/,
   );
+});
+
+test('the controller role writes autonomy state and drives the supervisor tables; it cannot delete or alter schema', async () => {
+  await activate();
+  const controller = controllerPool();
+  try {
+    const identity = (await controller.query('SELECT session_user AS principal')).rows[0].principal;
+    assert.equal(identity, 'factory_controller');
+    const controllerLedger = new AutonomyLedger(controller);
+    await controllerLedger.grantScope(
+      {
+        scopeId: 'goal-controller',
+        repositoryId: policy.repository.id,
+        taskIds: ['TASK_1'],
+        models: ['claude-sonnet-5'],
+        budgetMicrousd: 5_000_000,
+        maxTaskRuns: 1,
+        expiresAt: NOW + DAY,
+      },
+      'controller',
+      NOW,
+    );
+    const request = requestFor(policy, 'execute');
+    const admitted = await controllerLedger.admit(
+      policy,
+      { ...request, scopeId: 'goal-controller' },
+      {},
+      NOW,
+    );
+    assert.equal(admitted.decision.outcome, 'allow');
+    const consumed = await controllerLedger.consume(admitted.decisionId, NOW);
+    assert.ok(consumed.reservationId);
+    await controller.query(
+      "INSERT INTO factory_autonomy_runs(run_id,repository_id,scope_id,task_id,task_number,task_issue_id,attempt,state,execute_decision_id,reservation_id) VALUES(gen_random_uuid(),$1,'goal-controller','TASK_1',1,9001,1,'admitted',$2,$3)",
+      [policy.repository.id, admitted.decisionId, consumed.reservationId],
+    );
+    await controller.query(
+      "INSERT INTO factory_work(queue_name,delivery_key,record_key,body,body_hash,state,max_attempts) VALUES('CodingJob','controller-job','example/factory-demo','{}'::jsonb,repeat('0',64),'pending',1)",
+    );
+    for (const statement of [
+      'DELETE FROM factory_autonomy_runs',
+      'DELETE FROM factory_autonomy_decisions',
+      'DROP TABLE factory_autonomy_runs',
+      'CREATE TABLE controller_probe(id int)',
+      "INSERT INTO factory_schema_migrations(version,sha256) VALUES('9999','x')",
+    ])
+      await assert.rejects(
+        controller.query(statement),
+        /permission denied|must be owner/,
+        statement,
+      );
+    // The runtime role sees the new tables but cannot touch them.
+    assert.equal(
+      (await runtimePool.query('SELECT count(*) AS n FROM factory_autonomy_runs')).rows[0].n,
+      '1',
+    );
+    for (const statement of [
+      "UPDATE factory_autonomy_runs SET state='published'",
+      "INSERT INTO factory_autonomy_approvals(approval_id,repository_id,action_sha256,action,approver_user_id,source,evidence,approved_at,recorded_by) VALUES(gen_random_uuid(),1,repeat('0',64),'merge',1,'operator_console','{}',now(),'x')",
+    ])
+      await assert.rejects(runtimePool.query(statement), /permission denied/, statement);
+    // One open attempt per Task.
+    await assert.rejects(
+      controller.query(
+        "INSERT INTO factory_autonomy_runs(run_id,repository_id,scope_id,task_id,task_number,task_issue_id,attempt,state) VALUES(gen_random_uuid(),$1,'goal-controller','TASK_1',1,9001,2,'executing')",
+        [policy.repository.id],
+      ),
+      /duplicate key/,
+    );
+  } finally {
+    await controller.end();
+  }
+});
+
+test('a scope binds Tasks to the intent the owner reviewed; an edited issue is refused at admission', async () => {
+  await activate();
+  const { INTENT_SHA256 } = await import('./autonomy-fixtures.js');
+  await assert.rejects(
+    grant({ taskIntents: { TASK_9: INTENT_SHA256 } }),
+    /scope_intent_task_unknown/,
+  );
+  await assert.rejects(grant({ taskIntents: { TASK_1: 'not-a-digest' } }), /scope_intent_invalid/);
+  await grant({ taskIntents: { TASK_1: INTENT_SHA256 } });
+  // The Task as reviewed is admitted; TASK_2 is unbound and admitted as before.
+  await ledger.consume((await admitExecute('TASK_1')).decisionId, NOW);
+  await ledger.consume((await admitExecute('TASK_2')).decisionId, NOW);
+  // The same Task with another intent (an edited issue) is not the granted Task.
+  const edited = requestFor(policy, 'execute');
+  edited.task.intentSha256 = 'f'.repeat(64);
+  const { decisionId } = await ledger.admit(policy, edited, {}, NOW);
+  await assert.rejects(ledger.consume(decisionId, NOW), /scope_intent_mismatch/);
 });

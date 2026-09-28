@@ -14,8 +14,10 @@ merge inside owner-configured scope and limits, while critical, out-of-scope or
 uninspectable changes wait for a human approval of the exact revision. Protected
 acceptance tests, a separate fresh-context reviewer and a frozen
 [agent-quality protocol](../evals/README.md) must pass first. The
-[policy contract and decision library](autonomy-policy.md) exist; no runtime path
-uses them yet, and the alpha remains human-gated until that work is verified.
+[policy contract](autonomy-policy.md) and the opt-in
+[controller, trusted runners and publisher](autonomy-operations.md) exist and pass
+synthetic contracts; automatic merge and the live proof are still open, and the alpha
+remains human-gated until that work is verified.
 
 Potential later work includes safer publication automation, clearer revision inputs,
 additional qualified runtime/model adapters, expanded platform coverage and smoother

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { transaction } from '../database.js';
 import { type Decision, decide, parseRequest } from './decision.js';
+import type { ApprovalRecord } from './evidence.js';
 import {
   type AutonomyPolicy,
   comparePolicies,
@@ -13,6 +14,7 @@ import {
   AutonomyError,
   requireAutonomy,
   requireInteger,
+  requireSha256,
   requireText,
   requireUniqueList,
   sha256Json,
@@ -26,6 +28,8 @@ export interface ScopeGrant {
   scopeId: string;
   repositoryId: number;
   taskIds: string[];
+  /** Task id -> intent digest the owner reviewed; a bound Task executes only with that exact intent. */
+  taskIntents?: Record<string, string>;
   models: string[];
   budgetMicrousd: number;
   maxTaskRuns: number;
@@ -40,6 +44,7 @@ interface RequestSummary {
   action: string;
   scopeId: string;
   taskId: string;
+  intentSha256: string;
   base: string;
   head: string | null;
   tree: string | null;
@@ -165,6 +170,22 @@ export class AutonomyLedger {
     });
   }
 
+  /** Why an open attempt must not take its next step right now, or null. */
+  async halted(repositoryId: number, scopeId: string, now: number): Promise<string | null> {
+    const active = await activeDocument(this.pool, repositoryId);
+    if (!active) return 'autonomy_not_configured';
+    if (active.paused) return 'autonomy_paused';
+    const scope = (
+      await this.pool.query<{ revoked_at: Date | null; expires_at: Date }>(
+        'SELECT revoked_at,expires_at FROM factory_autonomy_scopes WHERE scope_id=$1 AND repository_id=$2',
+        [scopeId, repositoryId],
+      )
+    ).rows[0];
+    if (!scope) return 'scope_missing';
+    if (scope.revoked_at !== null) return 'scope_revoked';
+    if (new Date(scope.expires_at).getTime() <= now) return 'scope_expired';
+    return null;
+  }
   async grantScope(grant: ScopeGrant, actor: string, now: number) {
     requireActor(actor);
     requireAutonomy(
@@ -173,6 +194,11 @@ export class AutonomyLedger {
     );
     requireUniqueList<string>(grant.taskIds, 1, 100, 'scope_tasks_invalid');
     for (const taskId of grant.taskIds) requireText(taskId, 128, 'scope_tasks_invalid');
+    const intents = grant.taskIntents ?? {};
+    for (const [taskId, digest] of Object.entries(intents)) {
+      requireAutonomy(grant.taskIds.includes(taskId), 'scope_intent_task_unknown');
+      requireSha256(digest, 'scope_intent_invalid');
+    }
     requireUniqueList<string>(grant.models, 1, 20, 'scope_models_invalid');
     requireInteger(grant.expiresAt, now + 1, now + SCOPE_MAX_TTL_MS, 'scope_expiry_invalid');
     return transaction(this.pool, async (client) => {
@@ -197,7 +223,7 @@ export class AutonomyLedger {
         'scope_runs_exceed_policy',
       );
       await client.query(
-        'INSERT INTO factory_autonomy_scopes(scope_id,repository_id,policy_sha256,task_ids,models,budget_microusd,max_task_runs,expires_at,granted_by,granted_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
+        'INSERT INTO factory_autonomy_scopes(scope_id,repository_id,policy_sha256,task_ids,models,budget_microusd,max_task_runs,expires_at,granted_by,granted_at,task_intents) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',
         [
           grant.scopeId,
           grant.repositoryId,
@@ -209,6 +235,7 @@ export class AutonomyLedger {
           timestamp(grant.expiresAt),
           actor,
           timestamp(now),
+          JSON.stringify(intents),
         ],
       );
       return { scopeId: grant.scopeId, policySha256: active.policySha256 };
@@ -248,6 +275,7 @@ export class AutonomyLedger {
         action: request.action,
         scopeId: request.scopeId,
         taskId: request.task.id,
+        intentSha256: request.task.intentSha256,
         base: request.base,
         head: request.head,
         tree: request.tree,
@@ -331,6 +359,10 @@ export class AutonomyLedger {
         'scope_granted_under_other_policy',
       );
       requireAutonomy((scope.task_ids as string[]).includes(summary.taskId), 'task_outside_scope');
+      // The owner granted a Task as written; an edited issue is not that Task.
+      const boundIntent = (scope.task_intents as Record<string, string> | null)?.[summary.taskId];
+      if (boundIntent !== undefined)
+        requireAutonomy(boundIntent === summary.intentSha256, 'scope_intent_mismatch');
       const alreadyConsumed = await client.query(
         'SELECT 1 FROM factory_autonomy_decisions WHERE request_id=$1 AND consumed_at IS NOT NULL',
         [summary.requestId],
@@ -401,6 +433,26 @@ export class AutonomyLedger {
     });
   }
 
+  /** A controller that crashed after consuming an admission finds it here instead of re-admitting. */
+  async consumedAdmission(
+    requestId: string,
+  ): Promise<{ decisionId: string; decision: Decision; reservationId: string | null } | null> {
+    const row = (
+      await this.pool.query(
+        `SELECT d.decision_id,d.decision,r.reservation_id FROM factory_autonomy_decisions d
+         LEFT JOIN factory_autonomy_reservations r ON r.decision_id=d.decision_id
+         WHERE d.request_id=$1 AND d.consumed_at IS NOT NULL`,
+        [requestId],
+      )
+    ).rows[0];
+    return row
+      ? {
+          decisionId: row.decision_id,
+          decision: row.decision as Decision,
+          reservationId: row.reservation_id ?? null,
+        }
+      : null;
+  }
   /**
    * `released` only when execution provably never started; `unknown` keeps the
    * full reservation until reconciled. A cost figure is an estimate, not a bill.
@@ -424,5 +476,59 @@ export class AutonomyLedger {
       ],
     );
     if (result.rowCount !== 1) throw new AutonomyError('reservation_missing_or_already_settled');
+  }
+}
+
+export interface ApprovalEvidence {
+  /** For github_review: review id and head; for operator_console: the console actor. */
+  [key: string]: string | number;
+}
+/** Human approvals observed by trusted code; the policy binds them to an action digest. */
+export class ApprovalStore {
+  constructor(private readonly pool: Pool) {}
+  async record(
+    repositoryId: number,
+    approval: ApprovalRecord,
+    evidence: ApprovalEvidence,
+    recordedBy: string,
+  ): Promise<void> {
+    requireText(recordedBy, 128, 'actor_invalid');
+    requireAutonomy(
+      approval.version === 1 &&
+        approval.kind === 'approval' &&
+        /^[0-9a-f]{64}$/.test(approval.actionSha256),
+      'approval_record_invalid',
+    );
+    await this.pool.query(
+      `INSERT INTO factory_autonomy_approvals(approval_id,repository_id,action_sha256,action,approver_user_id,source,evidence,approved_at,recorded_by)
+       VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9) ON CONFLICT (action_sha256, approver_user_id) DO NOTHING`,
+      [
+        randomUUID(),
+        repositoryId,
+        approval.actionSha256,
+        approval.action,
+        approval.approver.githubUserId,
+        approval.source,
+        JSON.stringify(evidence),
+        timestamp(approval.approvedAt),
+        recordedBy,
+      ],
+    );
+  }
+  /** Most recent first; the decision engine accepts the first that is current and authorized. */
+  async forAction(repositoryId: number, actionSha256: string): Promise<ApprovalRecord[]> {
+    const result = await this.pool.query(
+      'SELECT action_sha256,action,approver_user_id,source,approved_at FROM factory_autonomy_approvals WHERE repository_id=$1 AND action_sha256=$2 ORDER BY approved_at DESC',
+      [repositoryId, actionSha256],
+    );
+    return result.rows.map((row) => ({
+      version: 1,
+      kind: 'approval',
+      actionSha256: row.action_sha256,
+      action: row.action,
+      approver: { githubUserId: Number(row.approver_user_id), type: 'User' },
+      source: row.source,
+      approvedAt: new Date(row.approved_at).getTime(),
+    }));
   }
 }

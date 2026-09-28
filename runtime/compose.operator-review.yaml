@@ -10,3 +10,5 @@ services:
     volumes: [*policy]
   live-supervisor:
     volumes: [*policy]
+  live-autonomy-supervisor:
+    volumes: [*policy]

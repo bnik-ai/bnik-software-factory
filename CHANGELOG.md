@@ -1,5 +1,17 @@
 # Release notes
 
+- Add the opt-in bounded-autonomy controller (`FACTORY_EXECUTION=bounded`, demo
+  `FACTORY_AUTONOMY=bounded`): trusted collector, protected acceptance runner with a
+  tamper-checked bundle and structured result counting, fresh-context reviewer (fixture
+  or Claude through the fixed-origin proxy), npm dependency verification with a
+  pluggable scanner adapter (fixture, Trivy), a Git Data API publisher that proves the
+  published tree equals the tested tree and adopts a branch written before a crash,
+  compare-and-set run state with crash resume and one controller per Task, bounded
+  revision, approval holds with re-verification of expired receipts, scopes that bind
+  each Task to the intent digest the owner reviewed, a `factory_controller` database
+  role and `./sfac autonomy …` commands (`intent`, `pin`, `activate`, `grant`, `run`,
+  `approve`, `reconcile`, …). Not the default; no live pull request published yet.
+
 - Add the trusted autonomy policy foundation (not yet wired into any runtime path):
   a strict host policy file, deterministic risk rules over the complete change,
   acceptance/review/merge-gate/approval receipts, a pure decision engine and a

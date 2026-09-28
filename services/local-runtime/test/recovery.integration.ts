@@ -256,7 +256,7 @@ test('failed model call and repeated job submission never trigger an automatic p
   const id = await supervisor.submit(job);
   await supervisor.run(job.id, archive);
   assert.equal(await supervisor.submit(job), id);
-  await assert.rejects(supervisor.run(job.id, archive), /not_claimable/);
+  await assert.rejects(supervisor.run(job.id, archive), /coding_job_dead/);
   await assert.rejects(recovery.act(request(id)), /fresh_activation_required/);
   assert.equal(invoked, 1);
   assert.equal(

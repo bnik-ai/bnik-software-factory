@@ -29,6 +29,30 @@ x-model: &model
   target: /state/secrets/model_key
   read_only: true
   bind: {create_host_path: false}
+x-controller: &controller
+  type: bind
+  source: ${FACTORY_STATE_DIR}/secrets/controller_database_password
+  target: /state/secrets/controller_database_password
+  read_only: true
+  bind: {create_host_path: false}
+x-publisher: &publisher
+  type: bind
+  source: ${FACTORY_STATE_DIR}/secrets/publisher_private_key
+  target: /state/secrets/publisher_private_key
+  read_only: true
+  bind: {create_host_path: false}
+x-policy: &policy
+  type: bind
+  source: ${FACTORY_STATE_DIR}/autonomy-policy.json
+  target: /state/autonomy-policy.json
+  read_only: true
+  bind: {create_host_path: false}
+x-acceptance: &acceptance
+  type: bind
+  source: ${FACTORY_STATE_DIR}/acceptance
+  target: /state/acceptance
+  read_only: true
+  bind: {create_host_path: false}
 x-artifacts: &artifacts
   type: bind
   source: ${FACTORY_STATE_DIR}/artifacts
@@ -90,3 +114,16 @@ services:
   live-supervisor:
     <<: *supervisor
     volumes: [*config, *database, *webhook, *app, *model, *artifacts, *socket]
+  # Controller identity only: policy activation, scopes, approvals, status.
+  autonomy-operator:
+    <<: *operator
+    volumes: [*config, *controller, *webhook, *policy]
+  # Demo autonomy: fixture adapters, no GitHub or model credentials.
+  demo-autonomy-supervisor:
+    <<: *supervisor
+    volumes: [*config, *controller, *webhook, *policy, *acceptance, *artifacts, *socket]
+  # Live autonomy: source reads through the App key, model key for the worker proxy and
+  # reviewer, publisher App key for the Git Data API. The worker never sees any of them.
+  live-autonomy-supervisor:
+    <<: *supervisor
+    volumes: [*config, *controller, *webhook, *app, *model, *publisher, *policy, *acceptance, *artifacts, *socket]

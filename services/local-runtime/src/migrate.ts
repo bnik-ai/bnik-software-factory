@@ -17,6 +17,12 @@ const migrations = [
   ['0006_recovery', new URL('../migrations/0006_recovery.sql', import.meta.url)],
   ['0007_run_evidence', new URL('../migrations/0007_run_evidence.sql', import.meta.url)],
   ['0008_autonomy_policy', new URL('../migrations/0008_autonomy_policy.sql', import.meta.url)],
+  ['0009_autonomy_runs', new URL('../migrations/0009_autonomy_runs.sql', import.meta.url)],
+  [
+    '0010_autonomy_scope_intents',
+    new URL('../migrations/0010_autonomy_scope_intents.sql', import.meta.url),
+  ],
+  ['0011_autonomy_locks', new URL('../migrations/0011_autonomy_locks.sql', import.meta.url)],
 ] as const;
 export function migrationFiles() {
   return migrations.map(([version, path]) => {
@@ -41,8 +47,20 @@ export async function checkSchema(pool: Pick<Pool, 'query'>): Promise<void> {
   )
     throw new Error('database_schema_mismatch_run_migrations');
 }
-export async function migrate(pool: Pool, runtimePassword: string): Promise<void> {
+/**
+ * `controllerPassword` provisions the trusted controller role that writes autonomy
+ * state; without it, only the read-only runtime role exists and no autonomy is possible.
+ */
+export async function migrate(
+  pool: Pool,
+  runtimePassword: string,
+  controllerPassword?: string,
+): Promise<void> {
   if (runtimePassword.length < 32) throw new Error('runtime_database_password_too_short');
+  if (controllerPassword !== undefined && controllerPassword.length < 32)
+    throw new Error('controller_database_password_too_short');
+  if (controllerPassword !== undefined && controllerPassword === runtimePassword)
+    throw new Error('controller_password_must_differ_from_runtime');
   await transaction(pool, async (client) => {
     await client.query('SELECT pg_advisory_xact_lock(6060001)');
     const legacy = await client.query<{
@@ -75,12 +93,15 @@ export async function migrate(pool: Pool, runtimePassword: string): Promise<void
         ]);
       }
     }
-    const role = await client.query("SELECT 1 FROM pg_roles WHERE rolname='factory_runtime'");
-    const passwordLiteral = `'${runtimePassword.replaceAll("'", "''")}'`;
     // DDL has no bind-parameter slot for PASSWORD; quote exactly and never log it.
-    await client.query(
-      `${role.rowCount ? 'ALTER' : 'CREATE'} ROLE factory_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD ${passwordLiteral}`,
-    );
+    const ensureRole = async (name: string, password: string) => {
+      const role = await client.query('SELECT 1 FROM pg_roles WHERE rolname=$1', [name]);
+      const passwordLiteral = `'${password.replaceAll("'", "''")}'`;
+      await client.query(
+        `${role.rowCount ? 'ALTER' : 'CREATE'} ROLE ${name} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD ${passwordLiteral}`,
+      );
+    };
+    await ensureRole('factory_runtime', runtimePassword);
     await client.query('REVOKE CREATE ON SCHEMA public FROM PUBLIC');
     await client.query('GRANT USAGE ON SCHEMA public TO factory_runtime');
     await client.query('GRANT SELECT ON factory_schema_migrations TO factory_runtime');
@@ -93,16 +114,44 @@ export async function migrate(pool: Pool, runtimePassword: string): Promise<void
     // Read-only: the internet-facing runtime must not forge policy, scopes, approvals or
     // admissions. Revoke first so every migration run restores least privilege.
     const autonomyTables =
-      'factory_autonomy_policies,factory_autonomy_control,factory_autonomy_scopes,factory_autonomy_decisions,factory_autonomy_reservations';
+      'factory_autonomy_policies,factory_autonomy_control,factory_autonomy_scopes,factory_autonomy_decisions,factory_autonomy_reservations,factory_autonomy_approvals,factory_autonomy_runs';
     await client.query(`REVOKE ALL ON ${autonomyTables} FROM factory_runtime`);
     await client.query(`GRANT SELECT ON ${autonomyTables} TO factory_runtime`);
+    // Controller lock rows: no runtime access at all, so the runtime cannot hold them.
+    await client.query('REVOKE ALL ON factory_autonomy_locks FROM factory_runtime');
     await client.query('GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO factory_runtime');
+    if (controllerPassword !== undefined) {
+      // The controller drives the supervisor (runtime grants) and owns autonomy state.
+      await ensureRole('factory_controller', controllerPassword);
+      await client.query('GRANT USAGE ON SCHEMA public TO factory_controller');
+      await client.query('GRANT SELECT ON factory_schema_migrations TO factory_controller');
+      await client.query(
+        'GRANT SELECT,INSERT,UPDATE ON webhook_deliveries,factory_work,factory_worker_runs,factory_pr_state,factory_dependency_state TO factory_controller',
+      );
+      await client.query(
+        'GRANT SELECT,INSERT ON audit_ledger,factory_demo_effects,factory_task_activations,factory_pr_pairs,factory_pr_observations,factory_merge_receipts,factory_recovery_actions TO factory_controller',
+      );
+      await client.query(`REVOKE ALL ON ${autonomyTables} FROM factory_controller`);
+      await client.query(`GRANT SELECT,INSERT,UPDATE ON ${autonomyTables} TO factory_controller`);
+      await client.query(
+        'GRANT SELECT,INSERT,UPDATE ON factory_autonomy_locks TO factory_controller',
+      );
+      await client.query(
+        'GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO factory_controller',
+      );
+    }
   });
 }
 async function main() {
   const pool = createLocalPool(databaseConfig(process.env));
   try {
-    await migrate(pool, secret(process.env, 'FACTORY_DB_PASSWORD'));
+    await migrate(
+      pool,
+      secret(process.env, 'FACTORY_DB_PASSWORD'),
+      process.env.FACTORY_CONTROLLER_DB_PASSWORD || process.env.FACTORY_CONTROLLER_DB_PASSWORD_FILE
+        ? secret(process.env, 'FACTORY_CONTROLLER_DB_PASSWORD')
+        : undefined,
+    );
     console.log('database_migrations_ready');
   } finally {
     await pool.end();

@@ -13,7 +13,19 @@ p.add_argument("--repository")
 p.add_argument("--repository-id", type=int)
 p.add_argument("--webhook-url")
 p.add_argument("--operators", help="Comma-separated human GitHub logins; current write/admin permission is also required")
-p.add_argument("--execution", choices=["disabled", "manual"])
+p.add_argument("--execution", choices=["disabled", "manual", "bounded"])
+p.add_argument("--autonomy", action="store_true", help="Demo mode: enable the bounded autonomy controller with fixture adapters")
+p.add_argument("--reviewer", choices=["fixture", "claude"])
+p.add_argument("--reviewer-model")
+p.add_argument("--scanner", choices=["off", "fixture", "trivy"], default="off")
+p.add_argument("--scanner-image")
+p.add_argument("--scanner-cache-volume")
+p.add_argument("--publication", choices=["fork", "base"])
+p.add_argument("--fork-repository")
+p.add_argument("--fork-repository-id", type=int)
+p.add_argument("--publisher-app-id", type=int)
+p.add_argument("--publisher-installation-id", type=int)
+p.add_argument("--secretless-ci-attested", action="store_true", help="Base publication: you attest the repository's pull-request CI holds no secrets")
 p.add_argument("--installation-id", type=int)
 p.add_argument("--app-slug")
 p.add_argument("--app-id", type=int)
@@ -51,7 +63,7 @@ if a.mode == "live":
         p.error("Invalid human operator list")
 os.umask(0o077)
 (root / "secrets").mkdir(mode=0o700)
-for name in ["admin_password", "database_password", "webhook_secret"]:
+for name in ["admin_password", "database_password", "webhook_secret", "controller_database_password"]:
     (root / "secrets" / name).write_text(secrets.token_hex(32) + "\n")
 settings = {
     "LOCAL_UID": str(os.getuid()),
@@ -64,10 +76,48 @@ settings = {
 }
 if a.mode == "live":
     settings.update(GITHUB_APP_ID=str(a.app_id), FACTORY_REPOSITORY_ID=str(a.repository_id), FACTORY_WEBHOOK_URL=a.webhook_url, FACTORY_OPERATORS=','.join(operators), FACTORY_EXECUTION=a.execution)
+bounded = (a.mode == "live" and a.execution == "bounded") or (a.mode == "demo" and a.autonomy)
+if a.autonomy and a.mode == "live":
+    p.error("Live mode selects autonomy with --execution bounded")
+if bounded:
+    reviewer = a.reviewer or ("fixture" if a.mode == "demo" else None)
+    if reviewer is None:
+        p.error("Bounded execution requires --reviewer fixture|claude")
+    if a.mode == "demo" and (reviewer != "fixture" or a.publication or a.scanner == "trivy"):
+        p.error("Demo autonomy uses fixture adapters only and no publisher")
+    if reviewer == "claude" and not (a.reviewer_model and re.fullmatch(r"claude-[A-Za-z0-9.-]{1,93}", a.reviewer_model)):
+        p.error("--reviewer claude requires --reviewer-model claude-...")
+    settings["FACTORY_REVIEWER"] = reviewer
+    if a.reviewer_model:
+        settings["FACTORY_REVIEWER_MODEL"] = a.reviewer_model
+    settings["FACTORY_SCANNER"] = a.scanner
+    if a.scanner == "trivy":
+        if not (a.scanner_image and a.scanner_cache_volume):
+            p.error("--scanner trivy requires --scanner-image and --scanner-cache-volume")
+        settings.update(FACTORY_SCANNER_IMAGE=a.scanner_image, FACTORY_SCANNER_CACHE_VOLUME=a.scanner_cache_volume)
+    if a.mode == "demo":
+        settings["FACTORY_AUTONOMY"] = "bounded"
+    else:
+        if not (a.publication and a.publisher_app_id and a.publisher_installation_id):
+            p.error("Bounded live execution requires --publication fork|base, --publisher-app-id and --publisher-installation-id")
+        settings.update(FACTORY_PUBLICATION_MODE=a.publication, FACTORY_PUBLISHER_APP_ID=str(a.publisher_app_id), FACTORY_PUBLISHER_INSTALLATION_ID=str(a.publisher_installation_id))
+        if a.publication == "fork":
+            if not (a.fork_repository and a.fork_repository_id and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*", a.fork_repository)):
+                p.error("--publication fork requires --fork-repository and --fork-repository-id")
+            settings.update(FACTORY_FORK_REPOSITORY=a.fork_repository, FACTORY_FORK_REPOSITORY_ID=str(a.fork_repository_id))
+        elif not a.secretless_ci_attested:
+            p.error("--publication base requires --secretless-ci-attested; pushing into the base repository runs its CI with its secrets on agent code")
+        else:
+            settings["FACTORY_PUBLICATION_SECRETLESS_CI"] = "attested"
 if any("\n" in v or "\r" in v for v in settings.values()):
     p.error("Invalid configuration value")
 (root / ".env").write_text("".join(f"{k}={v}\n" for k, v in settings.items()))
 print("Local configuration created. Secret values were not printed.")
+if bounded:
+    print(
+        "Bounded autonomy selected. Provide autonomy-policy.json and the acceptance/ bundle directory in the state directory, run ./sfac autonomy activate, then grant a scope."
+        + (" Provide secrets/publisher_private_key for the publisher App." if a.mode == "live" else "")
+    )
 if a.mode == "live":
     print(
         "Provide secrets/app_private_key and configure the generated webhook secret in your App. compose.live.yaml is intake-only; manual execution additionally requires secrets/model_key and a verified activation."

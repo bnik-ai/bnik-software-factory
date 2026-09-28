@@ -9,6 +9,7 @@ RUN npm ci --prefix services/agents --omit=dev --ignore-scripts --no-audit --no-
     && npm ci --prefix services/local-runtime --omit=dev --ignore-scripts --no-audit --no-fund
 COPY services/agents/src/runtime/codingAgent.ts services/agents/src/runtime/codingAgent.ts
 COPY services/local-runtime/src/worker services/local-runtime/src/worker
+COPY services/local-runtime/src/autonomy/sandbox services/local-runtime/src/autonomy/sandbox
 COPY services/local-runtime/test/worker-proxy-fixture.ts services/local-runtime/test/worker-proxy-fixture.ts
 COPY runtime/worker/extract.py runtime/worker/extract.py
 COPY THIRD_PARTY.md PROVENANCE.md /app/

@@ -45,10 +45,14 @@ images are built locally; there is no approved prebuilt image distribution.
   native human review and human squash merge followed by Task reconciliation.
 - Explicit recovery, database backup/restore and content retention controls.
 
-The workflow is operator-driven. The local runtime does not publish worker output
-or automatically invoke the experimental AI ReviewAgent. AI output never satisfies
-required human approval. Source snapshots come from the pinned default branch;
-revision prompts must describe the complete intended result.
+The supported workflow is operator-driven. In the default human-gated configuration
+the local runtime does not publish worker output or automatically invoke the
+experimental AI ReviewAgent, and AI output never satisfies a required human approval.
+The opt-in bounded-autonomy controller (`FACTORY_EXECUTION=bounded`, see
+[operating bounded autonomy](docs/autonomy-operations.md)) publishes pull requests for
+routine changes under an activated policy; it passes synthetic contracts but is not yet
+live-verified and is outside the supported workflow. Source snapshots come from the
+pinned default branch; revision prompts must describe the complete intended result.
 
 ## Experimental and unsupported
 

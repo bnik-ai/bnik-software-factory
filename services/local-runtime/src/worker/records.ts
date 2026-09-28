@@ -105,7 +105,23 @@ export class RunRecords {
       number: number;
       repositoryId: string;
     } | null = null;
-    if (job.mode === 'live') {
+    const autonomy = /^autonomy-([0-9a-f-]{36})$/.exec(job.id)?.[1];
+    if (autonomy) {
+      // Bounded-mode jobs are authorized by a consumed ledger admission recorded on the run row.
+      const row = (
+        await this.pool.query(
+          "SELECT run_id,task_issue_id,task_number,repository_id FROM factory_autonomy_runs WHERE run_id=$1 AND worker_job_id=$2 AND source_commit=$3 AND state IN ('executing','admitted')",
+          [autonomy, job.id, job.sourceCommit],
+        )
+      ).rows[0];
+      if (!row) throw new Error('run_activation_link_required');
+      task = {
+        activationId: row.run_id,
+        issueId: String(row.task_issue_id),
+        number: Number(row.task_number),
+        repositoryId: String(row.repository_id),
+      };
+    } else if (job.mode === 'live') {
       const id = /^activation-([0-9a-f-]{36})$/.exec(job.id)?.[1];
       if (!id) throw new Error('run_activation_link_required');
       const row = (

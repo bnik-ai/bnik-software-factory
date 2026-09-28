@@ -80,9 +80,20 @@ export async function initialize(): Promise<{ admin: Pool; pool: Pool }> {
     user: process.env.POSTGRES_USER ?? '',
     password: secret(process.env, 'POSTGRES_PASSWORD'),
   });
-  await migrate(admin, secret(process.env, 'FACTORY_DB_PASSWORD'));
+  await migrate(admin, secret(process.env, 'FACTORY_DB_PASSWORD'), controllerPassword());
   const pool = createLocalPool(config().database);
   return { admin, pool };
+}
+/** Synthetic controller credential for tests; distinct from the runtime password by construction. */
+export function controllerPassword(): string {
+  return `${secret(process.env, 'FACTORY_DB_PASSWORD').slice(0, 24)}-controller-synthetic`;
+}
+export function controllerPool(): Pool {
+  return createLocalPool({
+    ...config().database,
+    user: 'factory_controller',
+    password: controllerPassword(),
+  });
 }
 export async function reset(admin: Pool) {
   await admin.query(

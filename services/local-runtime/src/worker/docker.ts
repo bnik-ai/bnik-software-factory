@@ -28,7 +28,12 @@ export function dockerEnvironment(env: NodeJS.ProcessEnv = process.env): NodeJS.
 export class Docker {
   async command(
     args: string[],
-    options: { input?: string; limit?: number; timeoutMs?: number; signal?: AbortSignal } = {},
+    options: {
+      input?: string | Buffer;
+      limit?: number;
+      timeoutMs?: number;
+      signal?: AbortSignal;
+    } = {},
   ): Promise<DockerReply> {
     return new Promise((resolve, reject) => {
       const child = spawn('docker', args, {

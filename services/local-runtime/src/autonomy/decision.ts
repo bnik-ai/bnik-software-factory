@@ -50,6 +50,8 @@ export interface ActionRequest {
   changes: ChangeManifest | null;
   /** Execute only. */
   execution: { model: string; maxTurns: number; maxRunMs: number; budgetMicrousd: number } | null;
+  /** Execute only: the Task attempt, so every attempt is a distinct approvable action. */
+  attempt?: number;
 }
 export interface Decision {
   version: 1;
@@ -82,24 +84,22 @@ const REVIEW_PUBLICATION_HOLD_CATEGORIES: readonly string[] = [
 ];
 
 export function parseRequest(policy: AutonomyPolicy, value: unknown): ActionRequest {
-  requireRecord(
-    value,
-    [
-      'version',
-      'requestId',
-      'action',
-      'scopeId',
-      'policySha256',
-      'repository',
-      'task',
-      'base',
-      'head',
-      'tree',
-      'changes',
-      'execution',
-    ],
-    'request_invalid',
-  );
+  const keys = [
+    'version',
+    'requestId',
+    'action',
+    'scopeId',
+    'policySha256',
+    'repository',
+    'task',
+    'base',
+    'head',
+    'tree',
+    'changes',
+    'execution',
+  ];
+  if (value !== null && typeof value === 'object' && 'attempt' in value) keys.push('attempt');
+  requireRecord(value, keys, 'request_invalid');
   const request = value as unknown as ActionRequest;
   requireAutonomy(request.version === 1, 'request_invalid');
   requireAutonomy(
@@ -110,6 +110,10 @@ export function parseRequest(policy: AutonomyPolicy, value: unknown): ActionRequ
     ['execute', 'publish', 'merge'].includes(request.action),
     'request_action_invalid',
   );
+  if (request.attempt !== undefined) {
+    requireAutonomy(request.action === 'execute', 'request_attempt_only_for_execute');
+    requireInteger(request.attempt, 1, 100_000, 'request_attempt_invalid');
+  }
   requireText(request.scopeId, 128, 'request_scope_invalid');
   requireSha256(request.policySha256, 'request_invalid');
   requireAutonomy(request.policySha256 === policyDigest(policy), 'policy_changed_since_request');

@@ -12,6 +12,7 @@ if [ "$command" = help ]; then
   echo 'Usage: ./sfac init --mode demo|live [options]'
   echo '       ./sfac build|up|stop|down|clean-images|ps|logs|ready|demo|status|demo-status'
   echo '       ./sfac demo-source NAME | worker COMMAND ... | recovery COMMAND ...'
+  echo '       ./sfac autonomy intent|pin|activate|status|grant|revoke|pause|resume|approve|reconcile|run|cancel|recover ...'
   echo '       ./sfac backup FILE | restore-check FILE | verify-database | prepare-result ...'
   echo 'Paths passed to operator commands are relative to .factory/artifacts (or /artifacts).'
   exit 0
@@ -78,6 +79,17 @@ case "$command" in
       github-check|prepare-task|record-pr|track-pr|review-scan|review-status)
         compose run --rm --no-deps -T github-operator worker "$@";;
       *) echo 'Unknown worker command' >&2; exit 2;;
+    esac;;
+  autonomy)
+    case "${1:-}" in
+      run|cancel|recover|pin|intent)
+        FACTORY_DOCKER_GID=$(docker run --rm --network none --read-only --memory 64m --memory-swap 64m --pids-limit 16 --cpus 1 --log-driver none --cap-drop ALL --mount "type=bind,src=${FACTORY_DOCKER_SOCKET:-/var/run/docker.sock},dst=/var/run/docker.sock,readonly" --entrypoint python3 "$FACTORY_OPERATOR_IMAGE" -c 'import os; print(os.stat("/var/run/docker.sock").st_gid)')
+        export FACTORY_DOCKER_GID
+        if grep -qx 'FACTORY_MODE=live' "$state/.env"; then service=live-autonomy-supervisor; else service=demo-autonomy-supervisor; fi
+        compose run --rm --no-deps -T "$service" autonomy "$@";;
+      activate|status|grant|revoke|pause|resume|approve|reconcile)
+        compose run --rm --no-deps -T autonomy-operator autonomy "$@";;
+      *) echo 'Unknown autonomy command' >&2; exit 2;;
     esac;;
   backup)
     [ "$#" = 1 ] || { echo 'Specify one new backup filename' >&2; exit 2; }

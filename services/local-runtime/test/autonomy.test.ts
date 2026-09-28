@@ -1846,3 +1846,551 @@ test('further dependency manifests, executable manifests and verification metada
   ] as const)
     assert.ok(classifiedCodes(added(path, 'x\n')).includes(expected), `${path} -> ${expected}`);
 });
+
+test('reviewer: fixture verdicts, strict verdict parsing, diff rendering and config digest', async () => {
+  const { FixtureReviewer, parseVerdict, renderDiff, reviewerConfigDigest, FIXTURE_REVIEWER } =
+    await import('../src/autonomy/reviewer.js');
+  const policy = policyFixture();
+  const request = requestFor(policy, 'merge');
+  const subject = {
+    repositoryId: policy.repository.id,
+    taskId: 'TASK_1',
+    base: request.base,
+    tree: TREE,
+    changesSha256: '0'.repeat(64),
+  };
+  const review = (changes: ReturnType<typeof manifest>) =>
+    new FixtureReviewer(() => NOW).review({
+      subject,
+      intent: { title: 'Fix sum', body: 'Make sum add.', kind: 'change' },
+      intentSha256: request.task.intentSha256,
+      changes,
+      acceptance: null,
+      dependency: null,
+    });
+  const routine = await review(manifest(ROUTINE_CHANGE));
+  assert.equal(routine.receipt.status, 'complete');
+  assert.equal(routine.receipt.risk, 'routine');
+  assert.deepEqual(routine.receipt.findings, []);
+  assert.equal(routine.receipt.reviewerConfigSha256, reviewerConfigDigest(FIXTURE_REVIEWER));
+  const flagged = await review(
+    manifest(
+      added(
+        'src/x.js',
+        '// FIXTURE_REVIEW_FINDING:high\n// FIXTURE_REVIEW_CRITICAL:security_auth\n',
+      ),
+    ),
+  );
+  assert.equal(flagged.receipt.risk, 'critical');
+  assert.deepEqual(flagged.receipt.categories, ['security_auth']);
+  assert.equal(flagged.receipt.findings[0]?.severity, 'high');
+  // The receipt shape the fixture produces is exactly what the policy validates.
+  assert.equal(
+    decide(policy, request, { ...evidenceFor(policy, request), review: routine.receipt }, NOW)
+      .outcome,
+    'blocked',
+    'subject digest differs from the request, so binding is enforced',
+  );
+  for (const invalid of [
+    { risk: 'routine', categories: ['security_auth'], findings: [], limitations: [] },
+    { risk: 'critical', categories: [], findings: [], limitations: [] },
+    {
+      risk: 'routine',
+      categories: [],
+      findings: [{ id: 'F1', severity: 'severe', summary: 'x', location: 'y' }],
+      limitations: [],
+    },
+    { risk: 'routine', categories: [], findings: [], limitations: [], extra: true },
+    'LGTM',
+  ])
+    assert.throws(() => parseVerdict(invalid), /verdict_invalid/);
+  const parsed = parseVerdict({
+    risk: 'routine',
+    categories: [],
+    findings: [{ id: 'F1', severity: 'low', summary: 'nit', location: 'a:1' }],
+    limitations: [],
+  });
+  assert.equal(parsed.findings.length, 1);
+  const rendered = renderDiff(manifest(ROUTINE_CHANGE), 1_000_000);
+  assert.equal(rendered.truncated, false);
+  assert.match(rendered.text, /=== MODIFIED src\/sum\.js -> src\/sum\.js/);
+  assert.match(rendered.text, /a \+ b/);
+  const truncated = renderDiff(manifest(added('src/big.js', 'x'.repeat(5000))), 100);
+  assert.equal(truncated.truncated, true);
+  const limited = await review(manifest(added('src/big.js', `${'x'.repeat(1_100_000)}\n`)));
+  assert.deepEqual(limited.receipt.limitations, ['diff_truncated']);
+});
+
+test('npm lockfile analysis: deltas, sources, majors, install scripts and manifest fields', async () => {
+  const { diffLockfiles, manifestFieldsChanged, isMajorChange, parseLockfile } = await import(
+    '../src/autonomy/sandbox/npm-lockfile.js'
+  );
+  const lock = (packages: Record<string, Record<string, unknown>>) =>
+    JSON.stringify({
+      name: 'demo',
+      lockfileVersion: 3,
+      requires: true,
+      packages: { '': { name: 'demo' }, ...packages },
+    });
+  const before = lock({
+    'node_modules/ms': {
+      version: '2.1.2',
+      resolved: 'https://registry.npmjs.org/ms/-/ms-2.1.2.tgz',
+      license: 'MIT',
+    },
+    'node_modules/left-pad': {
+      version: '1.3.0',
+      resolved: 'https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz',
+      license: 'WTFPL',
+    },
+    'node_modules/native': {
+      version: '1.0.0',
+      resolved: 'https://registry.npmjs.org/native/-/native-1.0.0.tgz',
+      hasInstallScript: true,
+    },
+  });
+  const after = lock({
+    'node_modules/ms': {
+      version: '2.1.3',
+      resolved: 'https://registry.npmjs.org/ms/-/ms-2.1.3.tgz',
+      license: 'MIT',
+    },
+    'node_modules/dayjs': {
+      version: '1.11.0',
+      resolved: 'git+ssh://git@github.com/iamkun/dayjs.git#abc',
+      license: 'MIT',
+    },
+    'node_modules/native': {
+      version: '1.0.0',
+      resolved: 'https://registry.npmjs.org/native/-/native-1.0.0.tgz',
+      hasInstallScript: true,
+    },
+    'node_modules/postinstaller': {
+      version: '0.4.0',
+      resolved: 'https://registry.npmjs.org/postinstaller/-/postinstaller-0.4.0.tgz',
+      hasInstallScript: true,
+      license: 'ISC',
+    },
+    'packages/app': { name: 'app', version: '0.0.0' },
+    'node_modules/app': { resolved: 'packages/app', link: true },
+  });
+  const delta = diffLockfiles(before, after);
+  assert.deepEqual(
+    delta.upgraded.map((entry) => [
+      entry.name,
+      entry.previousVersion,
+      entry.version,
+      entry.major,
+      entry.direction,
+      entry.source,
+    ]),
+    [['ms', '2.1.2', '2.1.3', false, 'upgrade', 'registry']],
+  );
+  assert.deepEqual(
+    delta.added.map((entry) => [entry.name, entry.source, entry.license, entry.direction]).sort(),
+    [
+      ['app', 'workspace', null, null],
+      ['dayjs', 'git', 'MIT', null],
+      ['postinstaller', 'registry', 'ISC', null],
+    ],
+  );
+  assert.deepEqual(
+    delta.removed.map((entry) => entry.name),
+    ['left-pad'],
+  );
+  assert.equal(
+    delta.installScriptsChanged,
+    true,
+    'a new package with install scripts changes the set',
+  );
+  assert.equal(diffLockfiles(before, before).installScriptsChanged, false);
+  const downgrade = diffLockfiles(after, before).upgraded.find((entry) => entry.name === 'ms');
+  assert.equal(downgrade?.direction, 'downgrade');
+  assert.equal(isMajorChange('0.1.0', '0.2.0'), true);
+  assert.equal(isMajorChange('1.3.0', '1.4.0'), false);
+  assert.equal(isMajorChange('1.3.0', '2.0.0'), true);
+  assert.equal(
+    isMajorChange('latest', '1.0.0'),
+    true,
+    'unparseable versions are treated as breaking',
+  );
+  assert.equal(parseLockfile(after).workspaces.length, 1);
+  assert.throws(
+    () => parseLockfile(JSON.stringify({ lockfileVersion: 1, dependencies: {} })),
+    /lockfile_version_unsupported/,
+  );
+  const manifestBefore = JSON.stringify({
+    name: 'demo',
+    scripts: { test: 'node --test' },
+    dependencies: { ms: '2.1.2' },
+  });
+  assert.deepEqual(
+    manifestFieldsChanged(
+      manifestBefore,
+      JSON.stringify({
+        name: 'demo',
+        scripts: { test: 'node --test' },
+        dependencies: { ms: '2.1.3' },
+      }),
+    ),
+    [],
+  );
+  assert.deepEqual(
+    manifestFieldsChanged(
+      manifestBefore,
+      JSON.stringify({
+        name: 'demo',
+        scripts: { test: 'node --test', postinstall: 'x' },
+        dependencies: { ms: '2.1.3' },
+        overrides: { a: '1' },
+      }),
+    ),
+    ['overrides', 'scripts'],
+  );
+  assert.deepEqual(manifestFieldsChanged(null, JSON.stringify({ name: 'new', dependencies: {} })), [
+    'name',
+  ]);
+});
+
+test('fixture scanner reports marker packages and the receipt it feeds is policy-valid', async () => {
+  const { FixtureScanner } = await import('../src/autonomy/dependency.js');
+  const scanner = new FixtureScanner(() => NOW);
+  const lock = JSON.stringify({
+    lockfileVersion: 3,
+    packages: {
+      '': {},
+      'node_modules/fixture-vuln-critical-x': { version: '1.0.0' },
+      'node_modules/ms': { version: '2.1.3' },
+    },
+  });
+  const result = await scanner.scan(
+    [{ path: 'package-lock.json', content: lock }],
+    new AbortController().signal,
+  );
+  assert.equal(result.status, 'complete');
+  assert.equal(result.findings.length, 1);
+  assert.equal(result.findings[0]?.severity, 'critical');
+  assert.equal(
+    (
+      await scanner.scan(
+        [{ path: 'package-lock.json', content: '{' }],
+        new AbortController().signal,
+      )
+    ).status,
+    'error',
+  );
+  assert.equal(await scanner.image(), FixtureScanner.IMAGE);
+});
+
+test('publisher: fixture git hashing matches real git, and publication proves tree equivalence before any PR', async (t) => {
+  const { execFileSync, spawnSync } = await import('node:child_process');
+  const {
+    mkdtempSync: makeTemp,
+    rmSync: remove,
+    writeFileSync: write,
+    mkdirSync: makeDir,
+  } = await import('node:fs');
+  const { tmpdir: temp } = await import('node:os');
+  const { join: joinPath } = await import('node:path');
+  const { FixtureGitHost, blobSha } = await import('./git-host-fixture.js');
+  const { publishCandidate, publicationBranch } = await import('../src/autonomy/publisher.js');
+  const files: Record<string, { content: Buffer; mode?: '100644' | '100755' | '120000' }> = {
+    'README.md': { content: Buffer.from('# demo\n') },
+    'src/sum.js': { content: Buffer.from('module.exports = (a, b) => a - b;\n') },
+    'src/util/run.sh': { content: Buffer.from('#!/bin/sh\necho run\n'), mode: '100755' },
+    'docs/guide.md': { content: Buffer.from('guide\n') },
+  };
+  const host = new FixtureGitHost(
+    { fullName: 'example/factory-demo', id: 101 },
+    { fullName: 'example/factory-demo', id: 101 },
+    files,
+  );
+  // Cross-check the fixture's hashing against the real git on this host.
+  const directory = makeTemp(joinPath(temp(), 'git-hash-'));
+  try {
+    for (const [path, file] of Object.entries(files)) {
+      makeDir(joinPath(directory, path, '..'), { recursive: true });
+      write(joinPath(directory, path), file.content, {
+        mode: file.mode === '100755' ? 0o755 : 0o644,
+      });
+    }
+    // The containerized CI image has no git; there the fixture is checked against itself
+    // and test/autonomy.container.ts carries the real-git equality proof.
+    const gitAvailable = spawnSync('git', ['--version'], { stdio: 'ignore' }).status === 0;
+    if (!gitAvailable) t.diagnostic('git unavailable: real-git cross-check skipped');
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-c', 'core.hooksPath=/dev/null', ...args], {
+        cwd: directory,
+        encoding: 'utf8',
+      }).trim();
+    if (gitAvailable) {
+      git('init', '-q');
+      git('add', '-A');
+      assert.equal(git('write-tree'), host.baseTree, 'fixture tree SHA equals git write-tree');
+      assert.equal(
+        git('hash-object', 'README.md'),
+        blobSha(files['README.md']?.content ?? Buffer.alloc(0)),
+      );
+    }
+    write(joinPath(directory, 'src/sum.js'), 'module.exports = (a, b) => a + b;\n');
+    write(joinPath(directory, 'docs/new.txt'), 'added\n');
+    remove(joinPath(directory, 'README.md'));
+    const candidateFiles = Object.fromEntries(
+      Object.entries(files).filter(([path]) => path !== 'README.md'),
+    );
+    candidateFiles['src/sum.js'] = { content: Buffer.from('module.exports = (a, b) => a + b;\n') };
+    candidateFiles['docs/new.txt'] = { content: Buffer.from('added\n') };
+    const expectedTree = new FixtureGitHost(
+      { fullName: 'example/factory-demo', id: 101 },
+      { fullName: 'example/factory-demo', id: 101 },
+      candidateFiles,
+    ).baseTree;
+    if (gitAvailable) {
+      git('add', '-A');
+      assert.equal(git('write-tree'), expectedTree, 'fixture candidate tree equals git write-tree');
+    }
+    const manifestForPublish = manifest(
+      modified(
+        'src/sum.js',
+        'module.exports = (a, b) => a - b;\n',
+        'module.exports = (a, b) => a + b;\n',
+      ),
+      added('docs/new.txt', 'added\n'),
+      deleted('README.md', '# demo\n'),
+    );
+    const input = {
+      base: host.baseCommit,
+      candidateTree: expectedTree,
+      manifest: manifestForPublish,
+      blobs: {},
+      branch: publicationBranch(7, '12345678-1234-4123-8123-123456789abc'),
+      baseBranch: 'main',
+      title: 'Fix sum',
+      body: 'task-ref: I_TASK_7\nfactory-run: r1\n',
+      message: 'Fix sum\n\nSF-Actor: factory',
+      previousHead: null,
+    };
+    const first = await publishCandidate(host, input);
+    assert.equal(first.outcome, 'created');
+    assert.equal(first.tree, expectedTree);
+    assert.equal(first.pullNumber, 1);
+    assert.equal(host.refs.get(first.branch), first.head);
+    assert.equal((await host.getCommit(first.head)).parents[0], host.baseCommit);
+    // Idempotent repeat: nothing new is created.
+    const callsBefore = host.calls.length;
+    const repeat = await publishCandidate(host, input);
+    assert.equal(repeat.outcome, 'unchanged');
+    assert.equal(repeat.head, first.head);
+    assert.ok(
+      !host.calls
+        .slice(callsBefore)
+        .some((call) => ['createRef', 'updateRef', 'createPull'].includes(call)),
+    );
+    // A mismatch between manifest content and the tested tree stops before any ref or PR.
+    const forged = {
+      ...input,
+      branch: publicationBranch(8, '12345678-1234-4123-8123-123456789abc'),
+      manifest: manifest(added('docs/new.txt', 'different\n')),
+    };
+    const pullsBefore = host.pulls.length;
+    await assert.rejects(publishCandidate(host, forged), /published_tree_mismatch/);
+    assert.equal(host.pulls.length, pullsBefore);
+    assert.equal(host.refs.has(forged.branch), false);
+    // Revision: a new commit continues the branch and the same PR is updated.
+    write(joinPath(directory, 'docs/new.txt'), 'revised\n');
+    candidateFiles['docs/new.txt'] = { content: Buffer.from('revised\n') };
+    const revisedTree = new FixtureGitHost(
+      { fullName: 'example/factory-demo', id: 101 },
+      { fullName: 'example/factory-demo', id: 101 },
+      candidateFiles,
+    ).baseTree;
+    if (gitAvailable) {
+      git('add', '-A');
+      assert.equal(git('write-tree'), revisedTree, 'fixture revised tree equals git write-tree');
+    }
+    const revision = await publishCandidate(host, {
+      ...input,
+      candidateTree: revisedTree,
+      manifest: manifest(
+        modified(
+          'src/sum.js',
+          'module.exports = (a, b) => a - b;\n',
+          'module.exports = (a, b) => a + b;\n',
+        ),
+        added('docs/new.txt', 'revised\n'),
+        deleted('README.md', '# demo\n'),
+      ),
+      body: 'task-ref: I_TASK_7\nfactory-run: r2\n',
+      previousHead: first.head,
+    });
+    assert.equal(revision.outcome, 'updated');
+    assert.equal(revision.pullNumber, first.pullNumber);
+    assert.equal((await host.getCommit(revision.head)).parents[0], first.head);
+    assert.equal(host.pulls[0]?.body, 'task-ref: I_TASK_7\nfactory-run: r2\n');
+    // A branch that moved elsewhere is never overwritten.
+    host.refs.set(input.branch, host.baseCommit);
+    await assert.rejects(
+      publishCandidate(host, { ...input, previousHead: first.head }),
+      /publish_branch_diverged/,
+    );
+    // Guards: task-ref required, submodules refused, revision without an existing branch refused.
+    await assert.rejects(
+      publishCandidate(host, { ...input, branch: 'factory/x', body: 'no ref' }),
+      /publish_body_requires_task_ref/,
+    );
+    await assert.rejects(
+      publishCandidate(host, {
+        ...input,
+        branch: 'factory/y',
+        manifest: manifest({ ...added('vendor/lib', ''), newMode: '160000', newContent: null }),
+      }),
+      /publish_submodule_unsupported/,
+    );
+    await assert.rejects(
+      publishCandidate(host, { ...input, branch: 'factory/z', previousHead: first.head }),
+      /publish_branch_missing_for_revision/,
+    );
+    // Fork mode labels the head with the fork owner.
+    const fork = new FixtureGitHost(
+      { fullName: 'factory-bot/factory-demo', id: 202 },
+      { fullName: 'example/factory-demo', id: 101 },
+      files,
+    );
+    const published = await publishCandidate(fork, input);
+    assert.equal(fork.pulls[0]?.head, 'factory-bot:factory/task-7-12345678');
+    assert.equal(published.writeRepositoryId, 202);
+    assert.equal(published.baseRepositoryId, 101);
+  } finally {
+    remove(directory, { recursive: true, force: true });
+  }
+});
+
+test('execute requests carry their attempt, so each attempt is a distinct approvable action', async () => {
+  const { actionDigest, parseRequest } = await import('../src/autonomy/decision.js');
+  const { policyFixture, requestFor } = await import('./autonomy-fixtures.js');
+  const policy = policyFixture();
+  const first = requestFor(policy, 'execute', null, { attempt: 1 });
+  const second = requestFor(policy, 'execute', null, { attempt: 2 });
+  assert.notEqual(actionDigest(first), actionDigest(second));
+  assert.equal(parseRequest(policy, first).attempt, 1);
+  assert.throws(
+    () => parseRequest(policy, requestFor(policy, 'publish', undefined, { attempt: 1 })),
+    /request_attempt_only_for_execute/,
+  );
+  assert.throws(
+    () => parseRequest(policy, requestFor(policy, 'execute', null, { attempt: 0 })),
+    /request_attempt_invalid/,
+  );
+  // Requests without the field keep their digest: recorded approvals stay valid.
+  const legacy = requestFor(policy, 'execute', null);
+  assert.equal(actionDigest(parseRequest(policy, legacy)), actionDigest(legacy));
+});
+
+test('the scanner tar stream is a valid ustar archive, long paths included', async () => {
+  const { ustar } = await import('../src/autonomy/dependency.js');
+  const { execFileSync } = await import('node:child_process');
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const long = `${'nested/'.repeat(20)}package-lock.json`;
+  const archive = ustar([
+    { path: 'package-lock.json', content: Buffer.from('{"a":1}') },
+    { path: long, content: Buffer.from('x'.repeat(1000)) },
+  ]);
+  assert.equal(archive.length % 512, 0);
+  const directory = mkdtempSync(join(tmpdir(), 'ustar-'));
+  try {
+    const file = join(directory, 'scan.tar');
+    writeFileSync(file, archive);
+    const listed = execFileSync('tar', ['-tf', file], { encoding: 'utf8' }).trim().split('\n');
+    assert.deepEqual(listed.sort(), ['package-lock.json', long].sort());
+    assert.equal(execFileSync('tar', ['-xOf', file, long], { encoding: 'utf8' }).length, 1000);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+  assert.throws(
+    () => ustar([{ path: `${'a'.repeat(120)}/${'b'.repeat(120)}`, content: Buffer.alloc(0) }]),
+    /tar_path_too_long/,
+  );
+});
+
+test('base-repository publication never touches another open pull request against the base', async () => {
+  const { FixtureGitHost } = await import('./git-host-fixture.js');
+  const { publishCandidate, publicationBranch } = await import('../src/autonomy/publisher.js');
+  const { manifest, modified } = await import('./autonomy-fixtures.js');
+  const repository = { fullName: 'example/factory-demo', id: 101 };
+  const files = { 'sum.js': { content: Buffer.from('module.exports = (a, b) => a - b;\n') } };
+  const host = new FixtureGitHost(repository, repository, files);
+  // A human's open PR from another branch, opened the way GitHub records same-repo heads.
+  host.refs.set('someone/feature', host.baseCommit);
+  await host.createPull({
+    title: 'Unrelated',
+    body: 'unrelated',
+    head: 'someone/feature',
+    base: 'main',
+  });
+  const candidateTree = new FixtureGitHost(repository, repository, {
+    'sum.js': { content: Buffer.from('module.exports = (a, b) => a + b;\n') },
+  }).baseTree;
+  const input = {
+    base: host.baseCommit,
+    candidateTree,
+    manifest: manifest(
+      modified(
+        'sum.js',
+        'module.exports = (a, b) => a - b;\n',
+        'module.exports = (a, b) => a + b;\n',
+      ),
+    ),
+    blobs: {},
+    branch: publicationBranch(9, '12345678-1234-4123-8123-123456789abc'),
+    baseBranch: 'main',
+    title: 'Fix sum',
+    body: 'task-ref: I_TASK_9\n',
+    message: 'Fix sum',
+    previousHead: null,
+  };
+  const publication = await publishCandidate(host, input);
+  assert.equal(publication.outcome, 'created');
+  assert.equal(host.pulls.length, 2);
+  assert.equal(host.pulls[0]?.body, 'unrelated', 'the unrelated pull request is untouched');
+  assert.ok(!host.calls.includes('updatePull'));
+  const repeat = await publishCandidate(host, input);
+  assert.equal(repeat.outcome, 'unchanged');
+  assert.equal(repeat.pullNumber, publication.pullNumber);
+});
+
+test("a sandbox base tree that is not GitHub's tree of the base commit is refused before anything is written", async () => {
+  const { FixtureGitHost } = await import('./git-host-fixture.js');
+  const { publishCandidate, publicationBranch } = await import('../src/autonomy/publisher.js');
+  const { manifest, modified } = await import('./autonomy-fixtures.js');
+  const repository = { fullName: 'example/factory-demo', id: 101 };
+  const host = new FixtureGitHost(repository, repository, {
+    'sum.js': { content: Buffer.from('module.exports = (a, b) => a - b;\n') },
+    'ignored.log': { content: Buffer.from('tracked but ignored\n') },
+  });
+  const input = {
+    base: host.baseCommit,
+    baseTree: new FixtureGitHost(repository, repository, {
+      'sum.js': { content: Buffer.from('module.exports = (a, b) => a - b;\n') },
+    }).baseTree,
+    candidateTree: 'c'.repeat(40),
+    manifest: manifest(
+      modified(
+        'sum.js',
+        'module.exports = (a, b) => a - b;\n',
+        'module.exports = (a, b) => a + b;\n',
+      ),
+    ),
+    blobs: {},
+    branch: publicationBranch(3, '12345678-1234-4123-8123-123456789abc'),
+    baseBranch: 'main',
+    title: 'Fix sum',
+    body: 'task-ref: I_TASK_3\n',
+    message: 'Fix sum',
+    previousHead: null,
+  };
+  await assert.rejects(publishCandidate(host, input), /publish_base_tree_mismatch/);
+  assert.equal(host.refs.size, 1, 'no branch was written');
+  assert.equal(host.pulls.length, 0);
+});

@@ -1,10 +1,12 @@
 # Trusted autonomy policy
 
-**Status: contract and decision library only.** No runtime path consumes it yet.
-The supported workflow remains human-gated: explicit activation, operator
-publication, native human review and human merge. Automatic execution,
-publication and merge are planned work (see [roadmap](roadmap.md)); nothing in
-this document enables them.
+**Status: contract and decision library, consumed by the bounded-autonomy
+controller described in [autonomy operations](autonomy-operations.md).** Neither is
+the default: an installation enables them explicitly (`FACTORY_EXECUTION=bounded` or,
+in demo mode, `FACTORY_AUTONOMY=bounded`), and no live pull request has been published
+under them yet. The supported workflow remains human-gated: explicit activation,
+operator publication, native human review and human merge. Automatic merge is
+planned work (see [roadmap](roadmap.md)).
 
 The policy decides, for one proposed consequential action, whether the factory
 may proceed without a human. Routine work inside configured scope proceeds once
@@ -142,11 +144,13 @@ may be published for review, but their merge holds.
 
 **Residual exposure:** published code, including ordinary tests, executes in the
 repository's CI. If that CI can read secrets, agent-written code can reach them;
-no content rule can prove otherwise. The planned publisher must publish where CI
-has no secrets (for example, pull requests from a fork, which GitHub runs without
-repository secrets) or the repository must provide secretless CI for factory
-branches. Until then automatic publication is not safe for repositories whose
-pull-request CI holds secrets.
+no content rule can prove otherwise. The publisher publishes where CI has no secrets
+(pull requests from a fork, whose `pull_request` workflows GitHub runs without
+repository secrets) or the operator attests secretless CI for factory branches in
+the base repository. `pull_request_target` and `workflow_run` workflows run with the
+base repository's secrets on fork pull requests too; a repository with such workflows
+acting on pull-request content must not enable automatic publication. Automatic
+publication is not safe for repositories whose pull-request CI holds secrets.
 
 ## Evidence receipts
 
@@ -161,7 +165,7 @@ receipts for checks the policy has not enabled.
 | Acceptance | repository, Task, base, tested tree, change digest; suite, harness and runner-image digests | Fresh; `passed` with a non-empty suite, no failures or skips; tests did not modify candidate source; bug fixes have a reproducer that fails on base and passes on the candidate. |
 | Review | same subject, intent digest, reviewer configuration digest | Fresh-context, `complete`, no limitations, risk consistent with categories, no high or medium findings. Low findings are nits and never interrupt. |
 | Merge gate | repository, base branch, PR head, head tree, base | Observed within 5 minutes; PR open; head tree equals the tested tree; base unchanged; protection verified; required checks passed; no human change request. |
-| Approval | action digest (policy, Task, base, head, tree, changes, limits) | From a configured human GitHub user for that exact action. A new head, base, tree or policy needs a new approval. |
+| Approval | action digest (policy, Task, base, attempt for execute, head, tree, changes, limits) | From a configured human GitHub user for that exact action. A new head, base, tree or policy needs a new approval. |
 | Dependency | same subject; scanner adapter and image from the policy; the manifest paths it covered | Fresh; scanner database within its maximum age at scan time; `complete`; lockfiles reproduced from the manifests; no manifest field outside dependency specifications changed; the set of packages whose install scripts run is unchanged; every added or upgraded package comes from a registry; no new dependency, major upgrade or downgrade unless the policy allows it; every added or upgraded license in the allowlist; no finding at or above `holdSeverity` and none of unknown severity. Passing makes `dependency_manifest` routine for exactly the listed paths; each failed check holds for a human instead; `unsupported` holds; `error`, `timeout`, a stale database, an inconsistent package story or omitted findings at the threshold block. |
 
 A human change request blocks any PR, routine or not. Failed required checks
@@ -219,13 +223,13 @@ third-party code (`vendor/`, `third_party/`, committed `node_modules/`). Content
 rules also apply to all of these.
 
 The scanner is a pluggable adapter chosen by name and digest-pinned image in the
-policy; the trusted runner normalizes its output into the receipt. The default
-adapter is decided when the runner is built (OSS-20). Verified against their
-documentation on September 27, 2026: Trivy scans a filesystem or repository with
-`--scanners vuln,license`, emits `--format json`, and runs offline with
-`--skip-db-update`, `--skip-java-db-update`, `--cache-dir` and `--offline-scan`
-after its databases (distributed as OCI images) are fetched; some lockfiles need the
-installed tree for license detection, which the clean re-resolution provides.
+policy; the trusted runner normalizes its output into the receipt. The shipped
+adapters are `fixture` (demo only) and Trivy. Verified against its documentation and
+by hand on September 27, 2026: the Trivy adapter scans the committed lockfiles with
+`fs --scanners vuln --format json` offline (`--skip-db-update`, `--skip-java-db-update`,
+`--cache-dir`, `--offline-scan`) from a database cache volume the operator refreshes;
+licenses in the receipt come from the lockfiles' `license` fields, since the clean
+re-resolution is lockfile-only and installs nothing.
 OSV-Scanner runs offline with `--offline` and `--download-offline-databases`, but
 its `--licenses` data comes from the deps.dev API. Commercial scanners (Checkmarx,
 Snyk, Socket) can be configured as adapters by operators who hold accounts; none
@@ -236,7 +240,8 @@ is required, and contributor CI never runs a scanner with credentials.
 `AutonomyLedger` stores policy activations, pause state, standing scopes,
 recorded decisions, single-use admissions and budget reservations in PostgreSQL.
 
-- **Scope:** an owner grant listing Tasks, models, a micro-USD budget, a per-Task
+- **Scope:** an owner grant listing Tasks (each bound, in live mode, to the intent digest
+  the owner reviewed at grant time), models, a micro-USD budget, a per-Task
   run limit and an expiry of at most 30 days, all within the active policy.
 - **Admission:** an `allow` decision is consumed at most once per controller
   request, and each human approval admits at most one action: single use is keyed
@@ -260,5 +265,5 @@ recorded decisions, single-use admissions and budget reservations in PostgreSQL.
 No bypass or exception mechanism; no automatic cross-provider substitution; no
 exactly-once guarantee for external effects (ambiguous outcomes are reconciled,
 not replayed); no protection against a compromised host or operator account.
-The planned controller, publisher and merger must still collect these receipts,
-use a guarded exact-head merge, and reconcile the actual merge afterwards.
+The controller and publisher (OSS-20) collect these receipts; the merger (OSS-21) must
+still use a guarded exact-head merge and reconcile the actual merge afterwards.

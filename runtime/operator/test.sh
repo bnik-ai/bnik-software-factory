@@ -24,7 +24,8 @@ done
 PATH="$SFAC_STATE_DIR/no-host-languages:$PATH"
 export PATH
 cd "$root"
-./sfac init --mode demo --port "${FACTORY_TEST_PORT:-18789}"
+# Demo with bounded autonomy enabled: fixture adapters, no publisher, no credentials.
+./sfac init --mode demo --autonomy --port "${FACTORY_TEST_PORT:-18789}"
 ./sfac build
 ./sfac up
 if ./sfac clean-images; then echo 'Active installation images were removed' >&2; exit 1; fi
@@ -62,15 +63,59 @@ assert.deepEqual(r.outcome.testSideEffects, {modifiedPaths:[],generatedPaths:[]}
 assert.equal(fs.statSync("/artifacts/demo.dump").mode & 0o777, 0o600);
 console.log("Container operator integration passed; no host Python/Node used.");'
 
+# Bounded autonomy in demo mode: fixture reviewer, no publisher, real sandboxes. The
+# pipeline must stop at a recorded decision, never at an external effect.
+cp -R "$root/examples/autonomy-demo/acceptance" "$SFAC_STATE_DIR/acceptance"
+cp "$root/examples/autonomy-demo/task.json" "$SFAC_STATE_DIR/artifacts/input/task.json"
+# The policy mount must exist before pin runs; the template's placeholders are replaced below.
+cp "$root/examples/autonomy-demo/autonomy-policy.json" "$SFAC_STATE_DIR/autonomy-policy.json"
+chmod 600 "$SFAC_STATE_DIR/autonomy-policy.json"
+./sfac autonomy pin --env > "$SFAC_STATE_DIR/pins.env"
+suite=$(sed -n 's/^ACCEPTANCE_SUITE_SHA256=//p' "$SFAC_STATE_DIR/pins.env")
+harness=$(sed -n 's/^ACCEPTANCE_HARNESS_SHA256=//p' "$SFAC_STATE_DIR/pins.env")
+runner=$(sed -n 's/^ACCEPTANCE_RUNNER_IMAGE=//p' "$SFAC_STATE_DIR/pins.env")
+reviewer=$(sed -n 's/^REVIEWER_CONFIG_SHA256=//p' "$SFAC_STATE_DIR/pins.env")
+[ -n "$suite" ] && [ -n "$harness" ] && [ -n "$runner" ] && [ -n "$reviewer" ]
+sed -e "s/__SUITE__/$suite/" -e "s/__HARNESS__/$harness/" -e "s/__RUNNER__/$runner/" -e "s/__REVIEWER__/$reviewer/" "$root/examples/autonomy-demo/autonomy-policy.json" > "$SFAC_STATE_DIR/autonomy-policy.json"
+chmod 600 "$SFAC_STATE_DIR/autonomy-policy.json"
+if ./sfac autonomy activate; then echo 'Activation without acknowledgement was accepted' >&2; exit 1; fi
+./sfac autonomy activate --acknowledge 'initial_activation,mode_changed:human_gated->bounded' | grep '"activated"'
+# A grant binds the Task to the intent the owner reviewed; a stale digest blocks execution.
+intent=$(./sfac autonomy intent 1 --task-file input/task.json | sed -n 's/.*"intentSha256":"\([0-9a-f]*\)".*/\1/p')
+[ "${#intent}" = 64 ]
+./sfac autonomy grant --scope demo-stale --tasks "I_DEMO_TASK=$(printf '%064d' 0)" --budget-usd 1 --max-runs 2 --expires-hours 1 | grep '"scopeId":"demo-stale"'
+./sfac autonomy run 1 --scope demo-stale --task-file input/task.json --archive input/source.tar.gz > "$SFAC_STATE_DIR/artifacts/autonomy-stale.json" || true
+grep '"state":"blocked"' "$SFAC_STATE_DIR/artifacts/autonomy-stale.json"
+grep 'scope_intent_mismatch' "$SFAC_STATE_DIR/artifacts/autonomy-stale.json"
+./sfac autonomy grant --scope demo --tasks "I_DEMO_TASK=$intent" --budget-usd 1 --max-runs 2 --expires-hours 1 | grep '"scopeId":"demo"'
+./sfac autonomy run 1 --scope demo --new-attempt --task-file input/task.json --archive input/source.tar.gz > "$SFAC_STATE_DIR/artifacts/autonomy-run.json" || true
+cat "$SFAC_STATE_DIR/artifacts/autonomy-run.json"
+grep '"state":"held"' "$SFAC_STATE_DIR/artifacts/autonomy-run.json"
+grep '"reason":"publication_disabled"' "$SFAC_STATE_DIR/artifacts/autonomy-run.json"
+grep '"action":"execute","outcome":"allow"' "$SFAC_STATE_DIR/artifacts/autonomy-run.json"
+grep '"action":"publish","outcome":"allow"' "$SFAC_STATE_DIR/artifacts/autonomy-run.json"
+# The run record's bytes, checked with the image's Node: the decision stopped at a hold.
+docker run --rm --network none --read-only --user "$(id -u):$(id -g)" --cap-drop ALL --mount "type=bind,src=$SFAC_STATE_DIR/artifacts,dst=/artifacts,readonly" --entrypoint node "$project-operator:development" -e '
+const fs = require("node:fs"), assert = require("node:assert/strict");
+const a = JSON.parse(fs.readFileSync("/artifacts/autonomy-run.json"));
+assert.equal(a.state, "held");
+assert.match(a.tree, /^[0-9a-f]{40}$/);
+assert.equal(a.publication, null);
+console.log("Autonomy demo run held at the recorded decision; no external effect.");'
+./sfac autonomy status | grep '"state":"held"'
+./sfac autonomy recover | grep '"recovered"'
+[ -z "$(docker ps -aq --filter label=io.software-factory.autonomy-run)" ]
+
 # Synthetic credentials test the live mount boundary without any provider request.
 printf 'synthetic-app-canary\n' > "$SFAC_STATE_DIR/secrets/app_private_key"
 printf 'synthetic-model-canary\n' > "$SFAC_STATE_DIR/secrets/model_key"
+printf 'synthetic-publisher-canary\n' > "$SFAC_STATE_DIR/secrets/publisher_private_key"
 printf '{}\n' > "$SFAC_STATE_DIR/merge-policy.json"
 export FACTORY_STATE_DIR="$SFAC_STATE_DIR"
 export FACTORY_OPERATOR_IMAGE="$project-operator:development"
 export FACTORY_LOCAL_IMAGE="$project-local:development"
 export FACTORY_WORKER_IMAGE="$project-worker:development"
-for role in operator probe database-operator demo-operator github-operator supervisor demo-supervisor live-supervisor; do
+for role in operator probe database-operator demo-operator github-operator supervisor demo-supervisor live-supervisor autonomy-operator demo-autonomy-supervisor live-autonomy-supervisor; do
   docker compose --project-directory "$root/runtime" --env-file "$SFAC_STATE_DIR/.env" -p "$project" -f "$root/runtime/compose.yaml" -f "$root/runtime/compose.operator.yaml" -f "$root/runtime/compose.operator-review.yaml" run --rm --no-deps -T --entrypoint node "$role" /app/runtime/operator/assert-boundary.mjs "$role"
 done
 ./sfac down --volumes

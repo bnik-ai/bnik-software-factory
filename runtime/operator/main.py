@@ -14,6 +14,7 @@ scripts = {
     'demo': '/app/runtime/demo.py',
     'demo-source': '/app/runtime/worker/demo-source.py',
     'worker': '/app/runtime/worker.py',
+    'autonomy': '/app/runtime/autonomy.py',
     'recovery': '/app/runtime/recovery.py',
     'prepare-result': '/app/examples/invoice/prepare-result.py',
 }

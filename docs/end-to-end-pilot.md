@@ -13,7 +13,7 @@ merge, and verified Task reconciliation. A fixture run does not satisfy it.
 
 The sample is [a dependency-free invoice exercise](../examples/invoice/README.md).
 Only synthetic code is sent to the model. The runtime remains deliberately
-operator-driven: activation, execution and publication are separate actions.
+operator-driven in this default human-gated mode: activation, execution and publication are separate actions.
 No command below grants an agent permission to approve or merge its own work.
 
 ## Prepare identities and a clean environment

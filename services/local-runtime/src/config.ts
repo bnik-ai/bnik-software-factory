@@ -1,13 +1,45 @@
 import { createPrivateKey } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 import type { DatabaseConfig } from './database.js';
 import { type MergePolicy, parseMergePolicy } from './github/merge-policy.js';
 import type { QueueOptions } from './queue.js';
 
 type Env = Record<string, string | undefined>;
+/**
+ * Bounded autonomy (OSS-19/20). Present only when `FACTORY_EXECUTION=bounded` (live)
+ * or `FACTORY_AUTONOMY=bounded` (demo). The controller connects with its own database
+ * identity; the publisher is a separate GitHub App installation.
+ */
+export interface AutonomyConfig {
+  policyFile: string;
+  bundleDirectory: string;
+  controllerDatabasePassword: string;
+  reviewer: {
+    adapter: 'fixture' | 'claude';
+    model: string | null;
+    promptVersion: number;
+    maxTokens: number;
+    maxDiffBytes: number;
+  };
+  scanner: {
+    adapter: 'fixture' | 'trivy';
+    reference: string | null;
+    cacheVolume: string | null;
+  } | null;
+  publisher: {
+    appId: string;
+    appPrivateKey: string;
+    installationId: number;
+    mode: 'fork' | 'base';
+    forkRepository: string | null;
+    forkRepositoryId: number | null;
+  } | null;
+}
 export interface RuntimeConfig {
   mode: 'demo' | 'live';
-  execution?: 'disabled' | 'manual';
+  execution?: 'disabled' | 'manual' | 'bounded';
+  autonomy?: AutonomyConfig;
   repositoryId?: number;
   webhookUrl?: string;
   operators?: readonly string[];
@@ -76,6 +108,36 @@ export function databaseConfig(env: Env): DatabaseConfig {
   };
 }
 
+export interface ControllerConfig {
+  mode: 'demo' | 'live';
+  /** Live: the configured repository id; demo: null, the policy file names it. */
+  repositoryId: number | null;
+  controllerDatabasePassword: string;
+  policyFile: string;
+}
+/**
+ * What the ledger commands (activate, status, grant, revoke, pause, resume, approve,
+ * reconcile) need: bounded mode, the controller database password and the policy file.
+ * They run in a role that mounts no GitHub, model or publisher secret, so nothing else
+ * may be required here.
+ */
+export function resolveControllerConfig(env: Env = process.env): ControllerConfig {
+  const mode = required(env, 'FACTORY_MODE');
+  if (mode !== 'demo' && mode !== 'live') throw new Error('FACTORY_MODE_must_be_demo_or_live');
+  const bounded =
+    mode === 'demo' ? env.FACTORY_AUTONOMY === 'bounded' : env.FACTORY_EXECUTION === 'bounded';
+  if (!bounded) throw new Error('bounded_execution_required');
+  const controllerDatabasePassword = secret(env, 'FACTORY_CONTROLLER_DB_PASSWORD');
+  if (controllerDatabasePassword.length < 32)
+    throw new Error('FACTORY_CONTROLLER_DB_PASSWORD_must_have_at_least_32_characters');
+  return {
+    mode,
+    repositoryId:
+      mode === 'live' ? integer(env, 'FACTORY_REPOSITORY_ID', 0, 1, Number.MAX_SAFE_INTEGER) : null,
+    controllerDatabasePassword,
+    policyFile: absolutePath(env, 'FACTORY_AUTONOMY_POLICY_FILE'),
+  };
+}
 export function resolveConfig(env: Env = process.env): RuntimeConfig {
   const mode = required(env, 'FACTORY_MODE');
   if (mode !== 'demo' && mode !== 'live') throw new Error('FACTORY_MODE_must_be_demo_or_live');
@@ -145,22 +207,129 @@ export function resolveConfig(env: Env = process.env): RuntimeConfig {
     )
       throw new Error('FACTORY_OPERATORS_is_invalid');
     const execution = required(env, 'FACTORY_EXECUTION');
-    if (execution !== 'disabled' && execution !== 'manual')
-      throw new Error('FACTORY_EXECUTION_must_be_disabled_or_manual');
+    if (execution !== 'disabled' && execution !== 'manual' && execution !== 'bounded')
+      throw new Error('FACTORY_EXECUTION_must_be_disabled_manual_or_bounded');
     config.execution = execution;
     if (env.FACTORY_MERGE_POLICY_FILE)
       config.mergePolicy = parseMergePolicy(
         JSON.parse(readFileSync(env.FACTORY_MERGE_POLICY_FILE, 'utf8')),
       );
-    if (execution === 'manual') config.modelKey = secret(env, 'ANTHROPIC_API_KEY');
+    if (execution === 'manual' || execution === 'bounded')
+      config.modelKey = secret(env, 'ANTHROPIC_API_KEY');
     else if (env.ANTHROPIC_API_KEY || env.ANTHROPIC_API_KEY_FILE)
       throw new Error('disabled_execution_must_not_receive_model_credentials');
+    if (execution === 'bounded') config.autonomy = autonomyConfig(env, 'live');
+    else if (env.FACTORY_AUTONOMY) throw new Error('FACTORY_AUTONOMY_requires_bounded_execution');
   } else if (
     ['GITHUB_APP_ID', 'GITHUB_APP_PRIVATE_KEY', 'ANTHROPIC_API_KEY'].some(
       (key) => env[key] || env[`${key}_FILE`],
     )
   ) {
     throw new Error('demo_mode_must_not_receive_live_credentials');
-  }
+  } else if (env.FACTORY_AUTONOMY === 'bounded') config.autonomy = autonomyConfig(env, 'demo');
+  else if (env.FACTORY_AUTONOMY) throw new Error('FACTORY_AUTONOMY_must_be_bounded_or_unset');
   return config;
+}
+function absolutePath(env: Env, name: string): string {
+  const value = required(env, name);
+  if (!isAbsolute(value)) throw new Error(`${name}_must_be_absolute`);
+  return value;
+}
+function autonomyConfig(env: Env, mode: 'demo' | 'live'): AutonomyConfig {
+  const controllerDatabasePassword = secret(env, 'FACTORY_CONTROLLER_DB_PASSWORD');
+  if (controllerDatabasePassword.length < 32)
+    throw new Error('FACTORY_CONTROLLER_DB_PASSWORD_must_have_at_least_32_characters');
+  const reviewerAdapter = env.FACTORY_REVIEWER ?? (mode === 'demo' ? 'fixture' : undefined);
+  if (reviewerAdapter !== 'fixture' && reviewerAdapter !== 'claude')
+    throw new Error('FACTORY_REVIEWER_must_be_fixture_or_claude');
+  if (mode === 'demo' && reviewerAdapter !== 'fixture')
+    throw new Error('demo_autonomy_requires_fixture_reviewer');
+  // Fixture adapters emit vacuous receipts; a live policy must not be able to pin them.
+  if (mode === 'live' && reviewerAdapter === 'fixture')
+    throw new Error('live_autonomy_requires_claude_reviewer');
+  const model = env.FACTORY_REVIEWER_MODEL ?? null;
+  if (reviewerAdapter === 'claude' && !(model && /^claude-[A-Za-z0-9.-]{1,93}$/.test(model)))
+    throw new Error('FACTORY_REVIEWER_MODEL_is_required_for_claude_reviewer');
+  if (reviewerAdapter === 'fixture' && model) throw new Error('fixture_reviewer_takes_no_model');
+  const scannerAdapter = env.FACTORY_SCANNER ?? 'off';
+  if (mode === 'live' && scannerAdapter === 'fixture')
+    throw new Error('live_autonomy_forbids_fixture_scanner');
+  let scanner: AutonomyConfig['scanner'] = null;
+  if (scannerAdapter === 'fixture')
+    scanner = { adapter: 'fixture', reference: null, cacheVolume: null };
+  else if (scannerAdapter === 'trivy') {
+    const reference = required(env, 'FACTORY_SCANNER_IMAGE');
+    const cacheVolume = required(env, 'FACTORY_SCANNER_CACHE_VOLUME');
+    if (!/^[A-Za-z0-9][A-Za-z0-9_./:@-]{1,255}$/.test(reference))
+      throw new Error('FACTORY_SCANNER_IMAGE_is_invalid');
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{1,127}$/.test(cacheVolume))
+      throw new Error('FACTORY_SCANNER_CACHE_VOLUME_is_invalid');
+    scanner = { adapter: 'trivy', reference, cacheVolume };
+  } else if (scannerAdapter !== 'off')
+    throw new Error('FACTORY_SCANNER_must_be_off_fixture_or_trivy');
+  let publisher: AutonomyConfig['publisher'] = null;
+  const publisherKeys = [
+    'FACTORY_PUBLISHER_APP_ID',
+    'FACTORY_PUBLISHER_APP_PRIVATE_KEY',
+    'FACTORY_PUBLISHER_APP_PRIVATE_KEY_FILE',
+    'FACTORY_PUBLISHER_INSTALLATION_ID',
+    'FACTORY_PUBLICATION_MODE',
+    'FACTORY_FORK_REPOSITORY',
+    'FACTORY_FORK_REPOSITORY_ID',
+    'FACTORY_PUBLICATION_SECRETLESS_CI',
+  ];
+  if (mode === 'demo') {
+    if (publisherKeys.some((key) => env[key]))
+      throw new Error('demo_autonomy_must_not_receive_publisher_credentials');
+  } else {
+    const appId = required(env, 'FACTORY_PUBLISHER_APP_ID');
+    if (!/^\d+$/.test(appId)) throw new Error('FACTORY_PUBLISHER_APP_ID_is_invalid');
+    const appPrivateKey = secret(env, 'FACTORY_PUBLISHER_APP_PRIVATE_KEY');
+    try {
+      if (createPrivateKey(appPrivateKey).asymmetricKeyType !== 'rsa') throw new Error();
+    } catch {
+      throw new Error('FACTORY_PUBLISHER_APP_PRIVATE_KEY_must_be_an_RSA_private_key');
+    }
+    const publicationMode = required(env, 'FACTORY_PUBLICATION_MODE');
+    if (publicationMode !== 'fork' && publicationMode !== 'base')
+      throw new Error('FACTORY_PUBLICATION_MODE_must_be_fork_or_base');
+    let forkRepository: string | null = null;
+    let forkRepositoryId: number | null = null;
+    if (publicationMode === 'fork') {
+      forkRepository = required(env, 'FACTORY_FORK_REPOSITORY');
+      if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(forkRepository))
+        throw new Error('FACTORY_FORK_REPOSITORY_is_invalid');
+      forkRepositoryId = integer(env, 'FACTORY_FORK_REPOSITORY_ID', 0, 1, Number.MAX_SAFE_INTEGER);
+    } else if (env.FACTORY_PUBLICATION_SECRETLESS_CI !== 'attested')
+      // Pushing into the base repository runs its CI with its secrets on agent code.
+      throw new Error('base_publication_requires_FACTORY_PUBLICATION_SECRETLESS_CI_attested');
+    publisher = {
+      appId,
+      appPrivateKey,
+      installationId: integer(
+        env,
+        'FACTORY_PUBLISHER_INSTALLATION_ID',
+        0,
+        1,
+        Number.MAX_SAFE_INTEGER,
+      ),
+      mode: publicationMode,
+      forkRepository,
+      forkRepositoryId,
+    };
+  }
+  return {
+    policyFile: absolutePath(env, 'FACTORY_AUTONOMY_POLICY_FILE'),
+    bundleDirectory: absolutePath(env, 'FACTORY_ACCEPTANCE_BUNDLE_DIR'),
+    controllerDatabasePassword,
+    reviewer: {
+      adapter: reviewerAdapter,
+      model,
+      promptVersion: integer(env, 'FACTORY_REVIEWER_PROMPT_VERSION', 1, 1, 1000),
+      maxTokens: integer(env, 'FACTORY_REVIEWER_MAX_TOKENS', 4096, 256, 16384),
+      maxDiffBytes: integer(env, 'FACTORY_REVIEWER_MAX_DIFF_BYTES', 1_000_000, 10_000, 8_000_000),
+    },
+    scanner,
+    publisher,
+  };
 }
