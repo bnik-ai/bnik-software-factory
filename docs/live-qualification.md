@@ -75,6 +75,9 @@ and are read only by `./sfac`'s containers.
   is a functional failure and a missed detection, never a pass (a cancellation the protocol itself
   performs, such as the reconcile after a kill, completes the trial). The report is bound to the
   commit (same clean commit and same scorer before and after) and is written after every trial.
+- A fixture that ships its own multi-rule CODEOWNERS (A12) keeps it, so its merge is parked by
+  the gate's CODEOWNERS check rather than held for approval: the lane records A12's publication
+  hold and the hold of its revision, and a parked merge as settled, not as a timeout.
 - `proof` records the live-proof steps into the same report: `routine` (a merged functional
   trial: single parent is the observed base, tree is the tested tree, Task closed), `critical`
   (a held merge unlocked by the owner's native review of the exact head), `attestation` (base

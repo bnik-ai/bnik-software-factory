@@ -18,6 +18,9 @@ const fake = (async (url: string | URL | Request, init: RequestInit = {}) => {
   if (config.model.startsWith('claude-fixture-review')) {
     const critical = config.model === 'claude-fixture-review-critical';
     const malformed = config.model === 'claude-fixture-review-malformed';
+    const prose = config.model === 'claude-fixture-review-prose';
+    const twoObjects = config.model === 'claude-fixture-review-two-objects';
+    const truncated = config.model === 'claude-fixture-review-truncated';
     const verdict = critical
       ? {
           risk: 'critical',
@@ -48,10 +51,18 @@ const fake = (async (url: string | URL | Request, init: RequestInit = {}) => {
       content: [
         {
           type: 'text',
-          text: malformed ? 'LGTM, ship it' : `\`\`\`json\n${JSON.stringify(verdict)}\n\`\`\``,
+          text: malformed
+            ? 'LGTM, ship it'
+            : prose
+              ? `Sure, here is my verdict:\n${JSON.stringify(verdict)}\nHope this helps.`
+              : twoObjects
+                ? `${JSON.stringify(verdict)}\nActually, on reflection: ${JSON.stringify({ ...verdict, risk: 'critical', categories: ['governance'] })}`
+                : truncated
+                  ? `${JSON.stringify(verdict)} and then the reply stops here: {"risk":"crit`
+                  : `\`\`\`json\n${JSON.stringify(verdict)}\n\`\`\``,
         },
       ],
-      stop_reason: 'end_turn',
+      stop_reason: truncated ? 'max_tokens' : 'end_turn',
       stop_sequence: null,
       usage: { input_tokens: 400, output_tokens: 60 },
     });

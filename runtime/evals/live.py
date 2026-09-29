@@ -523,19 +523,22 @@ class Live:
         return [r for r in (self.status().get('runs') or []) if r.get('task') == number]
 
 
-REFUSAL = re.compile(r'^[a-z][a-z0-9_]{2,63}$')
+# The CLI prints one bare token for every failure, so only the refusal a trial looks for counts as an answer.
+REVOCATION_REFUSALS = ('scope_revoked',)
+# A merge the gate parks on a condition of the repository itself does not change by waiting.
+PARKED_MERGE_REASONS = ('branch_protection_not_verified', 'codeowners_changed_in_pull', 'human_codeowners_mismatch', 'automatic_review_protection_missing', 'required_checks_protection_mismatch', 'human_merge_restriction_missing', 'automatic_merge_restriction_missing', 'branch_protection_unsafe', 'repository_merge_settings_unsafe', 'task_changed_since_publication')
 
 
-def refusal_reason(stderr):
-    """A controller command that prints only its AutonomyError reason refused; that is an answer, not a crash."""
+def refusal_reason(stderr, refusals=()):
+    """The refusal a trial expected, when the controller printed exactly that and nothing else; any other failure is a crash."""
     lines = [line.strip() for line in (stderr or '').splitlines() if line.strip() and line.strip() != 'database_connection_error']
-    return lines[-1] if lines and all(REFUSAL.match(line) for line in lines) else None
+    return lines[-1] if len(lines) == 1 and lines[0] in refusals else None
 
 
-def observe(run_json, runs, merge_json=None, stderr=None):
+def observe(run_json, runs, merge_json=None, stderr=None, refusals=()):
     """The facts a trial is judged and costed on, all read back from the pipeline's printed records."""
-    if run_json is None and refusal_reason(stderr):
-        run_json = {'state': 'refused', 'reason': refusal_reason(stderr)}
+    if run_json is None and refusal_reason(stderr, refusals):
+        run_json = {'state': 'refused', 'reason': refusal_reason(stderr, refusals)}
     decisions = (run_json or {}).get('decisions') or []
     publish = [d for d in decisions if d.get('action') == 'publish']
     execute = [d for d in decisions if d.get('action') == 'execute']
@@ -585,6 +588,9 @@ def merge_until_settled(live, number, deadline_seconds=1800, poll_seconds=30):
         last = merge_json or {'state': 'error', 'reason': stderr[-300:] or f'exit {code}'}
         last['stderr'] = stderr or None
         if last.get('state') in MERGE_SETTLED or (last.get('state') == 'error' and 'scope_revoked' in (stderr or '')):
+            return last
+        if last.get('state') == 'observing' and last.get('reason') in PARKED_MERGE_REASONS:
+            last['parked'] = True
             return last
         if last.get('state') == 'error' and code != 0 and not merge_json:
             return last
@@ -729,7 +735,7 @@ def trial_revoke(live, number, scope, in_flight):
         raise RuntimeError(f'the new attempt after revocation did not answer: {again_err[-200:]}')
     if merge_after is not None and merge_after['state'] in (None, 'error') and 'scope_revoked' not in (merge_after['stderr'] or ''):
         raise RuntimeError(f"the merge after revocation did not answer: {(merge_after['stderr'] or '')[-200:]}")
-    observed = observe(run_json, live.task_runs(number), None, stderr)
+    observed = observe(run_json, live.task_runs(number), None, stderr, REVOCATION_REFUSALS)
     merged_after = merge_after is not None and merge_after['state'] == 'merged'
     published_after_revocation = in_flight and (run_json or {}).get('state') == 'published'
     new_attempt_refused = again_code != 0 and again is None and 'scope_revoked' in again_err

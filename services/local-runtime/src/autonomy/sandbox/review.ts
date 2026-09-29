@@ -131,13 +131,15 @@ async function main() {
         verdict = null;
       }
     }
+    // A reply cut at the token limit may end mid-object; whatever object the fallback found is not the verdict.
+    const truncated = body.stop_reason === 'max_tokens';
     process.stdout.write(
       `${JSON.stringify({
         version: 1,
         ok: true,
-        status: verdict === null ? 'error' : 'complete',
-        reason: verdict === null ? 'verdict_not_json' : null,
-        verdict,
+        status: truncated || verdict === null ? 'error' : 'complete',
+        reason: truncated ? 'verdict_truncated' : verdict === null ? 'verdict_not_json' : null,
+        verdict: truncated ? null : verdict,
         model: body.model ?? null,
         stopReason: body.stop_reason ?? null,
         usage: body.usage ?? null,

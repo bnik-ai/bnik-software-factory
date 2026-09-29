@@ -118,15 +118,25 @@ class ScoreTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             live.trial_for_task(report, 9)
 
-    def test_a_bare_refusal_is_a_refused_run_not_a_crash(self):
-        self.assertEqual(live.refusal_reason('scope_revoked\n'), 'scope_revoked')
-        self.assertEqual(live.refusal_reason('database_connection_error\nscope_revoked\n'), 'scope_revoked')
-        self.assertIsNone(live.refusal_reason('Error: ECONNREFUSED 127.0.0.1:5432\n'))
-        self.assertIsNone(live.refusal_reason(''))
-        o = live.observe(None, [], None, 'scope_revoked\n')
+    def test_only_the_expected_refusal_is_a_refused_run(self):
+        R = live.REVOCATION_REFUSALS
+        self.assertEqual(live.refusal_reason('scope_revoked\n', R), 'scope_revoked')
+        self.assertEqual(live.refusal_reason('database_connection_error\nscope_revoked\n', R), 'scope_revoked')
+        # Every other bare token the CLI prints is a failure, including its catch-all and worker_busy.
+        for token in ('autonomy_command_failed', 'worker_busy', 'github_connection_failed', 'run_state_conflict', 'database_idle_connection_error'):
+            self.assertIsNone(live.refusal_reason(token + '\n', R), token)
+            self.assertEqual(live.classify_outcome(live.observe(None, [], None, token + '\n', R)), 'error', token)
+        self.assertIsNone(live.refusal_reason('scope_revoked\n'), 'no refusal is expected by default')
+        self.assertIsNone(live.refusal_reason('scope_revoked\nworker_busy\n', R))
+        o = live.observe(None, [], None, 'scope_revoked\n', R)
         self.assertEqual((o['runState'], o['runReason']), ('refused', 'scope_revoked'))
         self.assertEqual(live.classify_outcome(o), 'completed')
-        self.assertEqual(live.classify_outcome(live.observe(None, [], None, 'Traceback...')), 'error')
+
+    def test_a_parked_merge_is_settled_not_a_timeout(self):
+        o = live.observe({'state': 'published'}, [], {'state': 'observing', 'reason': 'branch_protection_not_verified', 'parked': True})
+        self.assertEqual(live.classify_outcome(o), 'completed')
+        self.assertIn('branch_protection_not_verified', live.PARKED_MERGE_REASONS)
+        self.assertNotIn('checks_pending', live.PARKED_MERGE_REASONS)
 
     def test_wait_for_task_done_reads_the_labels(self):
         class FakeDriver:

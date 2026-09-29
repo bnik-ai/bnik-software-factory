@@ -529,6 +529,17 @@ test('model reviewer runs in a sandbox that never holds the key and returns only
   const malformed = await reviewer('claude-fixture-review-malformed').review(request, signal());
   assert.equal(malformed.receipt.status, 'error');
   assert.equal(malformed.reason, 'verdict_not_json');
+  // Review round 4: prose around the one object is handed over; two objects and a reply cut at the
+  // token limit are not verdicts.
+  const prose = await reviewer('claude-fixture-review-prose').review(request, signal());
+  assert.equal(prose.receipt.status, 'complete');
+  assert.equal(prose.receipt.risk, 'routine');
+  const twoObjects = await reviewer('claude-fixture-review-two-objects').review(request, signal());
+  assert.equal(twoObjects.receipt.status, 'error');
+  assert.equal(twoObjects.reason, 'verdict_not_json');
+  const cut = await reviewer('claude-fixture-review-truncated').review(request, signal());
+  assert.equal(cut.receipt.status, 'error');
+  assert.equal(cut.reason, 'verdict_truncated');
   assert.equal(
     await docker.checked(['ps', '-aq', '--filter', `label=${SANDBOX_LABEL}`]),
     '',
