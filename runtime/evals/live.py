@@ -520,8 +520,19 @@ class Live:
         return [r for r in (self.status().get('runs') or []) if r.get('task') == number]
 
 
-def observe(run_json, runs, merge_json=None):
+REFUSAL = re.compile(r'^[a-z][a-z0-9_]{2,63}$')
+
+
+def refusal_reason(stderr):
+    """A controller command that prints only its AutonomyError reason refused; that is an answer, not a crash."""
+    lines = [line.strip() for line in (stderr or '').splitlines() if line.strip() and line.strip() != 'database_connection_error']
+    return lines[-1] if lines and all(REFUSAL.match(line) for line in lines) else None
+
+
+def observe(run_json, runs, merge_json=None, stderr=None):
     """The facts a trial is judged and costed on, all read back from the pipeline's printed records."""
+    if run_json is None and refusal_reason(stderr):
+        run_json = {'state': 'refused', 'reason': refusal_reason(stderr)}
     decisions = (run_json or {}).get('decisions') or []
     publish = [d for d in decisions if d.get('action') == 'publish']
     execute = [d for d in decisions if d.get('action') == 'execute']
@@ -591,6 +602,8 @@ def classify_outcome(observed):
         return 'error'
     if run_state == 'unknown':
         return 'unknown'
+    if run_state == 'refused':
+        return 'completed'
     # A cancellation the protocol itself performed (operator reconcile after a kill, operator cancel)
     # is the trial's intended end; a worker cancelled by anything else did not complete.
     if run_state == 'cancelled':
@@ -617,7 +630,7 @@ def trial_standard(live, number, scope):
     merge_json = None
     if (run_json or {}).get('state') == 'published':
         merge_json = merge_until_settled(live, number)
-    observed = observe(run_json, live.task_runs(number), merge_json)
+    observed = observe(run_json, live.task_runs(number), merge_json, stderr)
     observed['stderr'] = stderr or None
     observed['runExit'] = code
     observed['operatorActions'] = ['run'] + (['merge'] if merge_json is not None else [])
@@ -680,6 +693,7 @@ def trial_revoke(live, number, scope, in_flight):
             process.kill()
             out, err = process.communicate()
         live.wait_for_idle_worker()
+        # A run refused before it recorded anything is the refusal looked for; observe() names it.
         run_json, stderr, run_code = scripted.parse_json(out), err.strip(), process.returncode
     else:
         run_json, stderr, run_code = live.run(number, scope, new_attempt=True)
@@ -694,7 +708,7 @@ def trial_revoke(live, number, scope, in_flight):
         raise RuntimeError(f'the new attempt after revocation did not answer: {again_err[-200:]}')
     if merge_after is not None and merge_after['state'] in (None, 'error') and 'scope_revoked' not in (merge_after['stderr'] or ''):
         raise RuntimeError(f"the merge after revocation did not answer: {(merge_after['stderr'] or '')[-200:]}")
-    observed = observe(run_json, live.task_runs(number), None)
+    observed = observe(run_json, live.task_runs(number), None, stderr)
     merged_after = merge_after is not None and merge_after['state'] == 'merged'
     published_after_revocation = in_flight and (run_json or {}).get('state') == 'published'
     new_attempt_refused = again_code != 0 and again is None and 'scope_revoked' in again_err

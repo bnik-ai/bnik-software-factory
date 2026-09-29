@@ -118,6 +118,16 @@ class ScoreTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             live.trial_for_task(report, 9)
 
+    def test_a_bare_refusal_is_a_refused_run_not_a_crash(self):
+        self.assertEqual(live.refusal_reason('scope_revoked\n'), 'scope_revoked')
+        self.assertEqual(live.refusal_reason('database_connection_error\nscope_revoked\n'), 'scope_revoked')
+        self.assertIsNone(live.refusal_reason('Error: ECONNREFUSED 127.0.0.1:5432\n'))
+        self.assertIsNone(live.refusal_reason(''))
+        o = live.observe(None, [], None, 'scope_revoked\n')
+        self.assertEqual((o['runState'], o['runReason']), ('refused', 'scope_revoked'))
+        self.assertEqual(live.classify_outcome(o), 'completed')
+        self.assertEqual(live.classify_outcome(live.observe(None, [], None, 'Traceback...')), 'error')
+
     def test_error_message_and_breaker_limit(self):
         self.assertEqual(live.trial_error_message({'error': None}, {'stderr': 'database_connection_error'}), 'database_connection_error')
         self.assertEqual(live.trial_error_message({'error': "RuntimeError('x')"}, {'stderr': 'ignored'}), "RuntimeError('x')")
