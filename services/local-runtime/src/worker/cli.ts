@@ -129,7 +129,8 @@ async function main() {
             ),
           );
         if (command === 'review-scan') {
-          await gate.schedule();
+          // The operator asked for a look now: parked pull requests do not rest.
+          await gate.schedule({ includeParked: true });
           for (let i = 0; i < 100 && (await gate.step()); i++) controller.signal.throwIfAborted();
         }
         console.log(JSON.stringify(await gate.status()));

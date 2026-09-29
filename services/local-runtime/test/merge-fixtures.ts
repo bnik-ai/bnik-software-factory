@@ -1,5 +1,5 @@
 import type { RuntimeConfig } from '../src/config.js';
-import type { Issue } from '../src/github/client.js';
+import { GitHubFailure, type Issue } from '../src/github/client.js';
 import type { GateGitHub, Pull } from '../src/github/merge-gate.js';
 import type { CheckRun, MergePolicy, Protection, Review } from '../src/github/merge-policy.js';
 import { liveConfig, repository, task } from './github-fixtures.js';
@@ -102,6 +102,8 @@ export class MergeFixture implements GateGitHub {
     labels: [{ name: 'kind:task' }, { name: 'status:proposed' }],
   };
   failRead = false;
+  /** Reads fail as a retryable GitHub failure (5xx, 429, 403, connection). */
+  failReadTransient = false;
   failAfterLabel = false;
   writes = 0;
   async check() {
@@ -114,6 +116,7 @@ export class MergeFixture implements GateGitHub {
   }
   async read<T>(path: string): Promise<T> {
     if (this.failRead) throw new Error('unreadable');
+    if (this.failReadTransient) throw new GitHubFailure('github_connection_failed', true);
     const value = path.endsWith('/factory-demo')
       ? this.repo
       : path.endsWith('/protection')

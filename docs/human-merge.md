@@ -116,19 +116,23 @@ Pairing stores immutable repository, installation, PR, and Task identities plus
 the Task title/body hash. Changing the Task or its backlink parks reconciliation;
 the CLI cannot silently replace a registered pair. Head commits may advance, but
 each advance needs fresh checks and human review. Fork PRs are not supported by
-this first profile. Register and observe the open PR before merging it. The gate's periodic
-scan looks at never-evaluated and pending pull requests every minute and at parked ones
-every 15 minutes (a delivery for a parked pull request still queues it at once), so a
-repository with many permanently parked pull requests does not starve fresh ones.
+this first profile. Register and observe the open PR before merging it.
 
-The control plane scans tracked PRs once a minute, including after a restart.
-`review-scan` requests a scan in the same durable queue; `review-status` reports
+The control plane scans tracked PRs once a minute, including after a restart: a
+scan queues one look per never-evaluated or pending pull request, and looks at a
+parked one again after 15 minutes (a delivery for a parked pull request still
+queues it at once), so a repository with many permanently parked pull requests
+does not starve fresh ones. A pull request parked by a retryable GitHub failure
+(server error, rate limit, connection) keeps the one-minute cadence. A scan queues
+at most 100 pull requests, stalest first; the rest follow on the next scans.
+`review-scan` queues a look at every tracked, unreconciled pull request at once,
+parked ones included, in the same durable queue; `review-status` reports
 `parked`, `awaiting_human_merge`, or `reconciled`, its reason, head and observation
 time. The status is a recorded observation, not a continuously valid permission
 to merge. GitHub's native branch protections are the merge-time enforcement.
 API failures and missing/failed/stale evidence park visibly and are reconsidered
-on later scans. Verify protection errors rather than weakening policy. Start with
-one active pilot PR; API quotas bound larger queues.
+on the next scan that includes them. Verify protection errors rather than
+weakening policy. Start with one active pilot PR; API quotas bound larger queues.
 
 An eligible observation waits for the human to merge. After merge, the runtime
 requires the same head, policy and protection, a preceding base observation, a

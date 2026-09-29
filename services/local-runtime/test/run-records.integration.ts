@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { after, before, beforeEach, test } from 'node:test';
 import type { Pool } from 'pg';
-import { HumanMergeGate } from '../src/github/reconcile.js';
+import { HumanMergeGate, SCAN_LIMIT } from '../src/github/reconcile.js';
 import { WorkerFailure } from '../src/worker/docker.js';
 import type { CodingJob, CodingOutcome } from '../src/worker/protocol.js';
 import { RunRecords, runLimits } from '../src/worker/records.js';
@@ -304,8 +304,16 @@ test('publication head links only to the matching successful Task and cannot be 
   }
 });
 
-test('the merge gate rescans parked pull requests with backoff, never-evaluated and pending ones every minute', async () => {
-  await admin.query('TRUNCATE factory_pr_pairs, factory_pr_state, factory_work CASCADE');
+/** Pull numbers with a pending or running merge-gate item, in queue order. */
+async function queuedPulls() {
+  return (
+    await admin.query<{ pull: number }>(
+      "SELECT (body->>'pull')::int AS pull FROM factory_work WHERE queue_name='HumanMergeGate' AND state IN ('pending','running') ORDER BY id",
+    )
+  ).rows.map((row) => row.pull);
+}
+
+test('the periodic scan rests parked pull requests, keeps transient parks and pending ones on the minute, and queues each pull once', async () => {
   const github = new MergeFixture();
   const gate = new HumanMergeGate(pool, github.config, github);
   const repositoryId = github.config.repositoryId as number;
@@ -315,11 +323,11 @@ test('the merge gate rescans parked pull requests with backoff, never-evaluated 
       'INSERT INTO factory_pr_pairs(repository_id,installation_id,pull_number,task_number,pair) VALUES($1,$2,$3,$4,$5::jsonb)',
       [repositoryId, installationId, pull, pull + 100, JSON.stringify({ pullNumber: pull })],
     );
-  const state = (pull: number, value: string, minutesAgo: number) =>
+  const state = (pull: number, value: string, minutesAgo: number, evidence = {}) =>
     admin.query(
       `INSERT INTO factory_pr_state(repository_id,pull_number,state,reason,head,evidence,updated_at)
-       VALUES($1,$2,$3,'test',$4,'{}'::jsonb,clock_timestamp() - ($5::int * interval '1 minute'))`,
-      [repositoryId, pull, value, 'a'.repeat(40), minutesAgo],
+       VALUES($1,$2,$3,'test',$4,$6::jsonb,clock_timestamp() - ($5::int * interval '1 minute'))`,
+      [repositoryId, pull, value, 'a'.repeat(40), minutesAgo, JSON.stringify(evidence)],
     );
   try {
     await pair(11); // never evaluated
@@ -331,13 +339,85 @@ test('the merge gate rescans parked pull requests with backoff, never-evaluated 
     await state(14, 'reconciled', 1); // settled for good
     await pair(15);
     await state(15, 'awaiting_human_merge', 1); // pending: every minute
+    await pair(16);
+    await state(16, 'parked', 1, { transient: true }); // a retryable GitHub failure: every minute
+    await pair(17); // never evaluated, but a delivery already queued its look
+    await gate.queue.enqueue(randomUUID(), 'example/factory-demo', {
+      pull: 17,
+      repositoryId,
+      installationId,
+    });
     await gate.schedule();
-    const queued = (
-      await admin.query<{ body: { pull: number } }>(
-        "SELECT body FROM factory_work WHERE queue_name='HumanMergeGate' AND state='pending' ORDER BY id",
-      )
-    ).rows.map((row) => row.body.pull);
-    assert.deepEqual(queued.sort(), [11, 13, 15]);
+    assert.deepEqual(
+      (await queuedPulls()).sort((a, b) => a - b),
+      [11, 13, 15, 16, 17],
+    );
+    // A later minute queues nothing twice while the looks are still queued.
+    await gate.schedule();
+    assert.deepEqual(
+      (await queuedPulls()).sort((a, b) => a - b),
+      [11, 13, 15, 16, 17],
+    );
+    // The operator's scan looks at every parked pull request now.
+    await gate.schedule({ includeParked: true });
+    assert.deepEqual(
+      (await queuedPulls()).sort((a, b) => a - b),
+      [11, 12, 13, 15, 16, 17],
+    );
+  } finally {
+    await gate.close();
+  }
+});
+
+test('a park by the gate itself rests until the operator asks, unless a retryable GitHub failure caused it', async () => {
+  const github = new MergeFixture();
+  const gate = new HumanMergeGate(pool, github.config, github);
+  const head = github.pull.head.sha;
+  try {
+    await gate.track(1, 2, head);
+    github.failRead = true;
+    assert.equal(await gate.step(), true);
+    assert.equal((await gate.status())[0].reason, 'review_surface_unreadable');
+    await gate.schedule();
+    assert.deepEqual(await queuedPulls(), []);
+    await gate.schedule({ includeParked: true });
+    assert.deepEqual(await queuedPulls(), [2]);
+    github.failRead = false;
+    github.failReadTransient = true;
+    assert.equal(await gate.step(), true);
+    const parked = (await gate.status())[0];
+    assert.equal(parked.reason, 'github_connection_failed');
+    assert.equal(parked.evidence.transient, true);
+    await gate.schedule();
+    assert.deepEqual(await queuedPulls(), [2]);
+    github.failReadTransient = false;
+    assert.equal(await gate.step(), true);
+    const looked = (await gate.status())[0];
+    assert.equal(looked.state, 'awaiting_human_merge');
+    assert.equal(looked.evidence.transient, undefined);
+  } finally {
+    await gate.close();
+  }
+});
+
+test('a scan queues at most SCAN_LIMIT pull requests, stalest first, and the rest on the next scan', async () => {
+  const github = new MergeFixture();
+  const gate = new HumanMergeGate(pool, github.config, github);
+  const repositoryId = github.config.repositoryId as number;
+  try {
+    const pulls = Array.from({ length: SCAN_LIMIT + 5 }, (_, index) => index + 1);
+    await admin.query(
+      `INSERT INTO factory_pr_pairs(repository_id,installation_id,pull_number,task_number,pair)
+       SELECT $1,$2,n,n+1000,jsonb_build_object('pullNumber',n) FROM unnest($3::int[]) AS n`,
+      [repositoryId, github.config.installationId, pulls],
+    );
+    await gate.schedule();
+    assert.equal((await queuedPulls()).length, SCAN_LIMIT);
+    await gate.schedule();
+    assert.deepEqual(
+      (await queuedPulls()).sort((a, b) => a - b),
+      pulls,
+    );
   } finally {
     await gate.close();
   }

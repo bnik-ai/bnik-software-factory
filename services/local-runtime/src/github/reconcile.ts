@@ -5,7 +5,7 @@ import { LeasedConsumer } from '../adapters.js';
 import type { RuntimeConfig } from '../config.js';
 import { transaction } from '../database.js';
 import { PostgresQueue, canonicalJson } from '../queue.js';
-import type { Issue } from './client.js';
+import { GitHubFailure, type Issue } from './client.js';
 import {
   type Foundation,
   type GateGitHub,
@@ -23,6 +23,8 @@ import { requireGate } from './merge-policy.js';
 
 /** How long a parked pull request rests before the periodic scan looks at it again. */
 export const PARKED_RESCAN_MINUTES = 15;
+/** The most pull requests one scan queues; the stalest go first, the rest wait for the next scan. */
+export const SCAN_LIMIT = 100;
 export class HumanMergeGate extends LeasedConsumer {
   constructor(
     private readonly pool: Pool,
@@ -61,26 +63,43 @@ export class HumanMergeGate extends LeasedConsumer {
     return pair;
   }
   /**
-   * The pairs due for a look: never evaluated, pending (anything but parked or reconciled), or
-   * parked long enough ago. A parked pull request rarely changes by itself, and each look costs
+   * Queues the pairs due for a look that no queued item covers yet: never evaluated, pending
+   * (anything but parked or reconciled), parked by a retryable GitHub failure (`transient`), or
+   * parked PARKED_RESCAN_MINUTES ago; `includeParked` (the operator's review-scan) queues every
+   * parked pair at once. A parked pull request rarely changes by itself, and each look costs
    * GitHub reads on this serial loop; rescanning every one every minute starved fresh deliveries
-   * (OSS-22 live lane: closures missed their window behind dozens of permanently parked pairs).
-   * A delivery for a parked pull request still enqueues it at once (`track`, intake).
+   * (OSS-22 live lane: closures missed their window behind dozens of permanently parked pairs),
+   * and queuing a pair again while its look is still queued grows the queue faster than the loop
+   * drains it. A delivery for a parked pull request still enqueues it at once (`track`, intake).
+   * At most SCAN_LIMIT pairs per scan, stalest first: the rest follow on later scans. The
+   * delivery key names the minute and the observation the look would follow, so one minute
+   * queues a pair once, a fresh look in the same minute (operator scan, transient park) still
+   * queues, and a dead item never blocks the next minute.
    */
-  async schedule() {
-    const rows = await this.pool.query<{ pull_number: number }>(
-      `SELECT p.pull_number FROM factory_pr_pairs p LEFT JOIN factory_pr_state s USING(repository_id,pull_number)
+  async schedule(options: { includeParked?: boolean } = {}) {
+    const rows = await this.pool.query<{ pull_number: number; mark: string }>(
+      `SELECT p.pull_number, COALESCE((extract(epoch FROM s.updated_at)*1000000)::bigint::text,'new') AS mark
+      FROM factory_pr_pairs p LEFT JOIN factory_pr_state s USING(repository_id,pull_number)
       WHERE p.repository_id=$1 AND p.installation_id=$2
         AND (s.state IS NULL OR (s.state <> 'reconciled'
-          AND (s.state <> 'parked' OR s.updated_at < clock_timestamp() - ($3::int * interval '1 minute'))))
-      ORDER BY s.updated_at NULLS FIRST, p.pull_number LIMIT 101`,
-      [this.config.repositoryId, this.config.installationId, PARKED_RESCAN_MINUTES],
+          AND (s.state <> 'parked' OR $4::boolean OR COALESCE((s.evidence->>'transient')::boolean, false)
+            OR s.updated_at < clock_timestamp() - ($3::int * interval '1 minute'))))
+        AND NOT EXISTS (SELECT 1 FROM factory_work w WHERE w.queue_name='HumanMergeGate'
+          AND w.state IN ('pending','running') AND (w.body->>'repositoryId')::bigint=p.repository_id
+          AND (w.body->>'pull')::bigint=p.pull_number)
+      ORDER BY s.updated_at NULLS FIRST, p.pull_number LIMIT $5::int`,
+      [
+        this.config.repositoryId,
+        this.config.installationId,
+        PARKED_RESCAN_MINUTES,
+        options.includeParked === true,
+        SCAN_LIMIT,
+      ],
     );
-    requireGate(rows.rows.length <= 100, 'tracked_pull_limit_exceeded');
     const bucket = Math.floor(Date.now() / 60_000);
     for (const row of rows.rows)
       await this.queue.enqueue(
-        `${this.config.repositoryId}:${row.pull_number}:${bucket}`,
+        `${this.config.repositoryId}:${row.pull_number}:${bucket}:${row.mark}`,
         this.config.repository.toLowerCase(),
         {
           pull: row.pull_number,
@@ -246,6 +265,10 @@ export class HumanMergeGate extends LeasedConsumer {
       }
     } catch (error) {
       reason = gateReason(error);
+      // A retryable GitHub failure (5xx, 429, 403, connection) observed nothing about the pull
+      // request: the next scan looks again instead of resting PARKED_RESCAN_MINUTES.
+      if (error instanceof GitHubFailure && error.retryable)
+        evidence = { ...(evidence as Record<string, unknown>), transient: true };
     }
     try {
       this.signal(work.lease_token).throwIfAborted();
@@ -295,9 +318,11 @@ export class HumanMergeGate extends LeasedConsumer {
     let next = 0;
     while (!signal.aborted) {
       try {
+        // The next scan is booked before this one runs: a failing scan never keeps step() from
+        // draining the queue.
         if (Date.now() >= next) {
-          await this.schedule();
           next = Date.now() + 60_000;
+          await this.schedule();
         }
         if (await this.step()) continue;
       } catch {
