@@ -58,6 +58,24 @@ REQUIRED_CHECK = 'test'
 # Release Task bounds; the policy's execution limits cap them. Live runs 2–3 needed 10–13 recorded turns for
 # the functional corpus (F03, F05), so the bound leaves headroom over that; the run budget and duration still bind.
 TASK_BOUNDS = {'maxTurns': 20, 'timeoutMs': 300000}
+# The ledger refuses an activation whose weakenings are not acknowledged exactly (ledger.ts
+# `policy_weakening_not_acknowledged`). The numeric limits and the model list are the fields of the
+# template a run can change; the list mirrors `numericLimits` in
+# services/local-runtime/src/autonomy/policy.ts (comparePolicies), which a driver test pins.
+LIMIT_FIELDS = ('execution.maxTurns', 'execution.maxRunMs', 'execution.maxRunMicrousd', 'execution.maxScopeMicrousd', 'execution.maxTaskRuns',
+                'changeLimits.maxChangedFiles', 'changeLimits.maxChangedBytes', 'verification.receiptTtlMs')
+
+
+def limit_weakenings(active, proposed):
+    """The weakening codes an activation of `proposed` over `active` must acknowledge for raised limits and added models."""
+    def value(policy, field):
+        node = policy
+        for part in field.split('.'):
+            node = (node or {}).get(part)
+        return node
+    codes = [f'limit_raised:{field}' for field in LIMIT_FIELDS if isinstance(value(active, field), (int, float)) and isinstance(value(proposed, field), (int, float)) and value(proposed, field) > value(active, field)]
+    codes += [f'model_added:{model}' for model in (proposed.get('execution') or {}).get('models', []) if model not in (active.get('execution') or {}).get('models', [])]
+    return sorted(codes)
 RESERVE_PER_RUN_USD = 1.0  # policy maxRunMicrousd: the most one attempt may cost; the ledger refuses beyond it
 TRIAL_BUDGET_CAP_USD = 3.0  # policy maxTaskRuns × maxRunMicrousd: the most one Task's attempts may cost
 REVIEWER_RATE_USD_PER_TOKEN = {'input': 3e-6, 'output': 15e-6}  # reservation rates for the reviewer, not a bill
@@ -399,7 +417,7 @@ class Live:
         self.facts = json.loads((self.state / 'live.json').read_text()) if (self.state / 'live.json').exists() else {}
         # The installation's policy file is the truth about what is active: the next revision, its base
         # branch and its pins continue from there, never from a fresh count.
-        self.pins, self.base_branch, self.revision = {}, None, 0
+        self.pins, self.base_branch, self.revision, self.active = {}, None, 0, None
         policy_file = self.state / 'autonomy-policy.json'
         if policy_file.exists():
             active = json.loads(policy_file.read_text())
@@ -407,6 +425,7 @@ class Live:
                 self.revision = active['revision']
                 self.base_branch = active['repository'].get('baseBranch')
                 self.pins = {k: active.get('verification', {}).get(v) for k, v in scripted.TRUST_ROOT_FIELDS.items()}
+                self.active = active
         self.project = (self.state / 'project').read_text().strip() if (self.state / 'project').exists() else None
         self.foreign_containers = set(self.labelled_containers())
         self.seen_containers = set()
@@ -435,6 +454,8 @@ class Live:
         changed = [f'trust_root_changed:{scripted.TRUST_ROOT_FIELDS[k]}' for k in scripted.TRUST_ROOT_FIELDS if self.pins and self.pins.get(k) != pins.get(k)]
         if self.revision and base_branch != self.base_branch:
             changed.append('repository_changed')
+        if self.active is not None:
+            changed += limit_weakenings(self.active, {**template, 'execution': {**template['execution'], 'models': [author_model]}})
         self.revision += 1
         policy = template
         policy['revision'] = self.revision
@@ -452,6 +473,7 @@ class Live:
         activated = scripted.parse_json(self.sfac(*args).stdout) or {}
         self.pins = pins
         self.base_branch = base_branch
+        self.active = policy
         return {'revision': self.revision, 'baseBranch': base_branch, 'policySha256': activated.get('activated'), 'acknowledged': acknowledge, 'pins': pins}
 
     def intent(self, number):
@@ -583,9 +605,12 @@ def observe(run_json, runs, merge_json=None, stderr=None, refusals=()):
 
 
 # A `merge` command that fails on a GitHub read before any decision prints one of these and writes no
-# record (live run 3, F05/3: one connection failure ended the trial); the driver re-invokes it, as the
-# runbooks tell an operator to, until the record settles or the deadline passes.
+# record (live run 3, F05/3: one connection failure ended the trial); the driver re-invokes it, as an
+# operator would, until the record settles, the deadline passes or TRANSIENT_RETRY_LIMIT re-invocations
+# failed (`github_request_failed` also covers permanent 4xx answers: those end as an error, not a
+# 30-minute timeout).
 TRANSIENT_COMMAND_FAILURES = ('github_connection_failed', 'github_request_failed')
+TRANSIENT_RETRY_LIMIT = 10
 
 
 def merge_until_settled(live, number, deadline_seconds=1800, poll_seconds=30):
@@ -597,6 +622,7 @@ def merge_until_settled(live, number, deadline_seconds=1800, poll_seconds=30):
         merge_json, stderr, code = live.merge(number)
         last = merge_json or {'state': 'error', 'reason': stderr[-300:] or f'exit {code}'}
         last['stderr'] = stderr or None
+        last['exit'] = code
         last['commandRetries'] = retries
         if last.get('state') in MERGE_SETTLED or (last.get('state') == 'error' and 'scope_revoked' in (stderr or '')):
             return last
@@ -604,7 +630,7 @@ def merge_until_settled(live, number, deadline_seconds=1800, poll_seconds=30):
             last['parked'] = True
             return last
         if last.get('state') == 'error' and code != 0 and not merge_json:
-            if not any(token in (stderr or '') for token in TRANSIENT_COMMAND_FAILURES):
+            if retries >= TRANSIENT_RETRY_LIMIT or not any(token in (stderr or '') for token in TRANSIENT_COMMAND_FAILURES):
                 return last
             retries += 1
         time.sleep(poll_seconds)
@@ -742,8 +768,8 @@ def trial_revoke(live, number, scope, in_flight):
         revoked = live.revoke(scope, 'qualification: revoked after the run')
     merge_after = None
     if (run_json or {}).get('state') == 'published':
-        merge_json, merge_err, merge_code = live.merge(number)
-        merge_after = {'state': (merge_json or {}).get('state'), 'reason': (merge_json or {}).get('reason'), 'stderr': merge_err or None, 'exit': merge_code}
+        settled = merge_until_settled(live, number)
+        merge_after = {'state': settled.get('state'), 'reason': settled.get('reason'), 'stderr': settled.get('stderr'), 'exit': settled.get('exit'), 'commandRetries': settled.get('commandRetries', 0)}
     again, again_err, again_code = live.run(number, scope, new_attempt=True)
     # A refusal is the answer looked for; a crash for any other reason is an error, not evidence either way.
     if again is None and 'scope_revoked' not in again_err:

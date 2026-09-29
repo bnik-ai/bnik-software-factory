@@ -68,7 +68,8 @@ and are read only by `./sfac`'s containers.
   automatic profile and verifies GitHub's answer, opens the Task (release bounds of 20 turns and
   5 minutes, which the demo policy also caps at 20 turns: live runs 2–3 needed 10–13 recorded turns
   for the functional corpus, and a 10-turn cap failed F03 twice), activates the next policy
-  revision (bundle digests, base branch; acknowledging exactly the trust roots that changed),
+  revision (bundle digests, base branch; acknowledging exactly the trust roots that changed and,
+  against the installation's active policy, any raised limit or added model),
   reads the intent from the live issue, grants a scope bound to it, and runs `autonomy run` and
   then `autonomy merge` until the record settles (a merge command that fails on a GitHub read
   before any decision, `github_connection_failed` or `github_request_failed`, is re-invoked until

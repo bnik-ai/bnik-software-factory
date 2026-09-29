@@ -3,6 +3,7 @@
 import base64
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -58,6 +59,8 @@ class MergeUntilSettledTest(unittest.TestCase):
         self.assertEqual(live.classify_outcome(live.observe({'state': 'published'}, [], out)), 'completed')
 
     def test_a_refusal_or_other_command_failure_returns_at_once(self):
+        # A stepping clock: an implementation that retried everything would run out its deadline and fail here, not hang.
+        live.time = Clock(step=1.0)
         for token in ('scope_revoked', 'worker_busy', 'autonomy_command_failed', 'merge_policy_not_configured'):
             calls = []
 
@@ -67,6 +70,19 @@ class MergeUntilSettledTest(unittest.TestCase):
                     return (None, token, 1)
             out = live.merge_until_settled(Live(), 7, deadline_seconds=600, poll_seconds=5)
             self.assertEqual((out['state'], out['reason'], len(calls), out.get('timedOut'), live.time.sleeps), ('error', token, 1, None, []), token)
+
+    def test_transient_failures_stop_at_the_retry_limit_as_an_error(self):
+        # A stepping clock with a long deadline: a driver without the cap times out and fails here, not hangs.
+        live.time = Clock(step=1.0)
+        calls = []
+
+        class Live:
+            def merge(self, number):
+                calls.append(number)
+                return (None, 'github_request_failed', 1)
+        out = live.merge_until_settled(Live(), 7, deadline_seconds=10_000, poll_seconds=5)
+        self.assertEqual((out['state'], out['reason'], out.get('timedOut'), out['commandRetries'], len(calls), out['exit']), ('error', 'github_request_failed', None, live.TRANSIENT_RETRY_LIMIT, live.TRANSIENT_RETRY_LIMIT + 1, 1))
+        self.assertEqual(live.classify_outcome(live.observe({'state': 'published'}, [], out)), 'error')
 
     def test_transient_failures_past_the_deadline_time_out_and_credit_nothing(self):
         live.time = Clock(step=40.0)
@@ -81,6 +97,23 @@ class MergeUntilSettledTest(unittest.TestCase):
         observed_out = live.observe({'state': 'published'}, [], out)
         self.assertEqual((observed_out['mergeCommandRetries'], live.classify_outcome(observed_out)), (1, 'timeout'))
         self.assertFalse(live.score('functional', {}, {**observed_out, 'acceptance': 'passed'})['functionalSuccess'])
+
+
+class ActivationAcknowledgementTest(unittest.TestCase):
+    def test_limit_fields_mirror_the_policy_comparator(self):
+        source = (ROOT / 'services/local-runtime/src/autonomy/policy.ts').read_text()
+        block = source.split('const numericLimits')[1].split('];')[0]
+        self.assertEqual(sorted(re.findall(r"'([A-Za-z.]+)'", block)), sorted(live.LIMIT_FIELDS))
+
+    def test_raised_limits_and_added_models_are_acknowledged_lowered_ones_are_not(self):
+        active = json.loads((ROOT / 'examples/autonomy-demo/autonomy-policy.json').read_text())
+        active['execution']['maxTurns'] = 10
+        proposed = json.loads(json.dumps(active))
+        self.assertEqual(live.limit_weakenings(active, proposed), [])
+        proposed['execution']['maxTurns'] = 20
+        proposed['changeLimits']['maxChangedBytes'] = active['changeLimits']['maxChangedBytes'] - 1
+        proposed['execution']['models'] = ['claude-opus-5-5']
+        self.assertEqual(live.limit_weakenings(active, proposed), ['limit_raised:execution.maxTurns', 'model_added:claude-opus-5-5'])
 
 
 class ScoreTest(unittest.TestCase):
