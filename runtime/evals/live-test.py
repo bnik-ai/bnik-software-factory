@@ -124,6 +124,18 @@ class ConstructionTest(unittest.TestCase):
                 live.staging_apps(tmp)['driver'].jwt()
             self.assertEqual(list(live.staging_apps(tmp)), ['driver'])
 
+    def test_live_resumes_revision_base_branch_and_pins_from_the_active_policy_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp)
+            (state / 'live.json').write_text(json.dumps({'repository': 'o/r', 'apps': {}}))
+            self.assertEqual((live.Live(state).revision, live.Live(state).base_branch), (0, None))
+            (state / 'autonomy-policy.json').write_text(json.dumps({'revision': 4, 'repository': {'fullName': 'o/r', 'baseBranch': 'q/F02/2'}, 'verification': {'acceptanceSuiteSha256': 's', 'acceptanceHarnessSha256': 'h', 'acceptanceRunnerImage': 'i', 'reviewerConfigSha256': 'r'}}))
+            resumed = live.Live(state)
+            self.assertEqual((resumed.revision, resumed.base_branch), (4, 'q/F02/2'))
+            self.assertEqual(resumed.pins, {'ACCEPTANCE_SUITE_SHA256': 's', 'ACCEPTANCE_HARNESS_SHA256': 'h', 'ACCEPTANCE_RUNNER_IMAGE': 'i', 'REVIEWER_CONFIG_SHA256': 'r'})
+            (state / 'autonomy-policy.json').write_text(json.dumps({'revision': 9, 'repository': {'fullName': 'other/repo', 'baseBranch': 'x'}}))
+            self.assertEqual(live.Live(state).revision, 0)
+
     def test_budget_reserves_the_per_run_cap_and_caps_the_grant(self):
         budget = live.Budget(2.5)
         self.assertTrue(budget.can_start())

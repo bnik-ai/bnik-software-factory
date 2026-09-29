@@ -381,10 +381,17 @@ class Live:
         self.state = Path(state)
         self.env = {k: os.environ[k] for k in ('PATH', 'HOME', 'DOCKER_HOST', 'DOCKER_CONFIG', 'DOCKER_CONTEXT') if k in os.environ}
         self.env['SFAC_STATE_DIR'] = str(self.state)
-        self.pins = {}
-        self.base_branch = None
-        self.revision = 0
         self.facts = json.loads((self.state / 'live.json').read_text()) if (self.state / 'live.json').exists() else {}
+        # The installation's policy file is the truth about what is active: the next revision, its base
+        # branch and its pins continue from there, never from a fresh count.
+        self.pins, self.base_branch, self.revision = {}, None, 0
+        policy_file = self.state / 'autonomy-policy.json'
+        if policy_file.exists():
+            active = json.loads(policy_file.read_text())
+            if isinstance(active.get('revision'), int) and active.get('repository', {}).get('fullName') == self.facts.get('repository'):
+                self.revision = active['revision']
+                self.base_branch = active['repository'].get('baseBranch')
+                self.pins = {k: active.get('verification', {}).get(v) for k, v in scripted.TRUST_ROOT_FIELDS.items()}
         self.project = (self.state / 'project').read_text().strip() if (self.state / 'project').exists() else None
         self.foreign_containers = set(self.labelled_containers())
         self.seen_containers = set()
@@ -467,7 +474,10 @@ class Live:
     def labelled_containers(self):
         found = []
         for label in ('io.software-factory.worker-run', 'io.software-factory.autonomy-run'):
-            out = subprocess.run(['docker', 'ps', '-q', '--filter', f'label={label}'], env=self.env, capture_output=True, text=True).stdout
+            try:
+                out = subprocess.run(['docker', 'ps', '-q', '--filter', f'label={label}'], env=self.env, capture_output=True, text=True).stdout
+            except OSError:
+                out = ''
             found += out.split()
         return found
 
@@ -881,9 +891,6 @@ def command_lane(args):
     report = json.loads(Path(args.report).read_text()) if args.resume and Path(args.report).exists() else new_report(live, authorization, budget, cases, args)
     if args.resume and report['trials']:
         budget.spent = float(report.get('budget', {}).get('spentUsd') or 0)
-        live.revision = len(report.get('activations') or [])
-        live.pins = (report['activations'][-1]['pins'] if report.get('activations') else {})
-        live.base_branch = report['activations'][-1]['baseBranch'] if report.get('activations') else None
     done = {(t['case'], t['trial']) for t in report['trials']}
     try:
         for entry in cases:
