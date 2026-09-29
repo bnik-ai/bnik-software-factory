@@ -788,6 +788,14 @@ def check_resume_budget(report, limit_usd):
         raise SystemExit(f'the report was started with a budget of {recorded} USD; resume with the same budget or start a new report')
 
 
+def trial_for_task(report, task_number):
+    """The lane's record of the trial that opened this Task; the proof steps build on what the lane left."""
+    matches = [t for t in report.get('trials', []) if t.get('taskNumber') == task_number]
+    if len(matches) != 1:
+        raise SystemExit(f'task {task_number} belongs to {len(matches)} recorded trials; expected exactly one')
+    return matches[0]
+
+
 def trial_error_message(record, observed):
     """What went wrong in a trial that did not complete: the exception if one was raised, else the CLI's stderr."""
     return (record.get('error') or (observed or {}).get('stderr') or 'no output')[:160]
@@ -1057,7 +1065,15 @@ def command_proof(args):
         proof['ledger'] = {'mounts': 'autonomy-operator (config, controller password, webhook secret, policy)', 'commands': outputs, 'at': utc()}
     elif args.step == 'critical':
         # A merge held for approval: the owner's native APPROVED review of the exact head unlocks exactly that merge.
+        # The lane has moved the default branch on since; the gate requires the trial's branch to be the
+        # default branch again and the policy to name it, so the proof restores both first.
         number = args.task
+        trial = trial_for_task(report, number)
+        corpus = json.loads((ROOT / 'evals/corpus.json').read_text())
+        entry = next(c for c in load_cases(corpus, args.held_out, [trial['case']]) if c['id'] == trial['case'])
+        driver.set_default_branch(trial['branch'])
+        activation = live.activate(entry['acceptance'], trial['branch'], live.facts['authorModel'])
+        report.setdefault('activations', []).append({'case': trial['case'], 'trial': trial['trial'], 'proof': 'critical', **activation})
         before = merge_until_settled(live, number, deadline_seconds=60, poll_seconds=10)
         pull_number = before.get('pullNumber')
         head_before = before.get('head')
@@ -1073,6 +1089,7 @@ def command_proof(args):
         merged_commit = driver.git_commit(outcome['mergeCommit']) if outcome.get('mergeCommit') else None
         task = driver.issue(number)
         proof['critical'] = {
+            'case': trial['case'], 'trial': trial['trial'], 'branch': trial['branch'], 'driverCommit': subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True).stdout.strip() or None,
             'taskNumber': number, 'pullNumber': pull_number, 'head': head_before, 'heldReason': before.get('reason'), 'stateAfter': outcome.get('state'), 'reasonAfter': outcome.get('reason'),
             'approvingReviewIds': [r['id'] for r in approving], 'humanInterventions': len(approving), 'mergeCommit': outcome.get('mergeCommit'),
             'mergeCommitParents': [p['sha'] for p in (merged_commit or {}).get('parents', [])], 'mergeCommitTree': (merged_commit or {}).get('tree', {}).get('sha'),

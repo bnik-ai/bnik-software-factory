@@ -107,6 +107,12 @@ class ScoreTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             live.check_resume_budget({'budget': {'limitUsd': 25.0}}, 10)
 
+    def test_trial_for_task_finds_exactly_one(self):
+        report = {'trials': [{'taskNumber': 7, 'case': 'A05', 'trial': 1, 'branch': 'q/A05/1'}, {'taskNumber': 8, 'case': 'A05', 'trial': 2, 'branch': 'q/A05/2'}]}
+        self.assertEqual(live.trial_for_task(report, 8)['branch'], 'q/A05/2')
+        with self.assertRaises(SystemExit):
+            live.trial_for_task(report, 9)
+
     def test_error_message_and_breaker_limit(self):
         self.assertEqual(live.trial_error_message({'error': None}, {'stderr': 'database_connection_error'}), 'database_connection_error')
         self.assertEqual(live.trial_error_message({'error': "RuntimeError('x')"}, {'stderr': 'ignored'}), "RuntimeError('x')")
