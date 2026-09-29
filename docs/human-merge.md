@@ -81,7 +81,11 @@ protection, not modification of it.
 
 Copy `runtime/merge-policy.example.json` to the ignored `runtime/merge-policy.json`
 and replace its branch, human logins, check names, and check App IDs. This is trusted
-operator configuration; never load policy from a PR. Then start the control plane:
+operator configuration; never load policy from a PR. The control plane reads the file
+again before every look of the merge gate, so an edit takes effect at the next look
+without a restart (an unreadable or invalid file parks the look as
+`merge_policy_unreadable` or `merge_policy_invalid`), and every observation records the
+digest of the policy it used. Then start the control plane:
 
 ```sh
 docker compose --env-file runtime/.env -f runtime/compose.yaml -f runtime/compose.live.yaml -f runtime/compose.worker.yaml -f runtime/compose.review.yaml up -d --build --wait

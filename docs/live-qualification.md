@@ -62,7 +62,9 @@ and are read only by `./sfac`'s containers.
   never enter the tree or the report. Per trial it seeds the case's fixture tree as branch
   `q/<commit>/<CASE>/<n>` (with, unless the fixture ships its own, a single-rule CODEOWNERS and a CI
   workflow producing the required `test` check; a fixture's own governance file is part of its case), makes that branch the repository default branch (the
-  live Task source and the merge gate both read the default branch), protects it with the
+  live Task source and the merge gate both read the default branch; the gate reads
+  `merge-policy.json` before every look, so the per-trial base branch takes effect without
+  restarting the control plane), protects it with the
   automatic profile and verifies GitHub's answer, opens the Task (release bounds of 20 turns and
   5 minutes, which the demo policy also caps at 20 turns: live runs 2–3 needed 10–13 recorded turns
   for the functional corpus, and a 10-turn cap failed F03 twice), activates the next policy

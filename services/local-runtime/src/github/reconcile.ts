@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { Pool, PoolClient } from 'pg';
 import { LeasedConsumer } from '../adapters.js';
-import type { RuntimeConfig } from '../config.js';
+import { type RuntimeConfig, readMergePolicy } from '../config.js';
 import { transaction } from '../database.js';
 import { PostgresQueue, canonicalJson } from '../queue.js';
 import { GitHubFailure, type Issue } from './client.js';
@@ -34,9 +34,26 @@ export class HumanMergeGate extends LeasedConsumer {
     super(new PostgresQueue(pool, 'HumanMergeGate', config.queue));
     requireGate(config.mode === 'live' && config.mergePolicy, 'merge_policy_not_configured');
   }
+  /** This look's configuration: the merge policy as its file holds it now, else as loaded. */
+  private current(): RuntimeConfig {
+    if (!this.config.mergePolicyFile) return this.config;
+    try {
+      return {
+        ...this.config,
+        mergePolicy: readMergePolicy(
+          this.config.mergePolicyFile,
+          this.config.autonomy?.merger ?? undefined,
+        ),
+      };
+    } catch (error) {
+      if (error instanceof GitHubFailure) throw error;
+      throw new GitHubFailure('merge_policy_unreadable');
+    }
+  }
   async track(task: number, pull: number, head: string) {
-    const pair = await pairPull(this.config, this.github, task, pull, head, {
-      headRepositoryIds: headRepositoryIds(this.config),
+    const config = this.current();
+    const pair = await pairPull(config, this.github, task, pull, head, {
+      headRepositoryIds: headRepositoryIds(config),
     });
     await transaction(this.pool, async (client) => {
       const inserted = await client.query(
@@ -145,6 +162,7 @@ export class HumanMergeGate extends LeasedConsumer {
       );
       const pair = rows.rows[0]?.pair;
       requireGate(pair, 'pair_not_registered');
+      const config = this.current();
       const settled = await this.pool.query<{
         state: string;
         reason: string;
@@ -164,7 +182,7 @@ export class HumanMergeGate extends LeasedConsumer {
         );
         // A merge the autonomy ledger admitted and the merger App performed (OSS-21) is an
         // accepted actor for exactly that merge commit; every other merge needs a configured human.
-        const autonomyMerge = this.config.mergePolicy?.merger
+        const autonomyMerge = config.mergePolicy?.merger
           ? (
               await this.pool.query<{ merge_commit: string }>(
                 "SELECT merge_commit FROM factory_autonomy_merges WHERE repository_id=$1 AND pull_number=$2 AND state='merged' AND merge_commit IS NOT NULL ORDER BY updated_at DESC LIMIT 1",
@@ -173,16 +191,16 @@ export class HumanMergeGate extends LeasedConsumer {
             ).rows[0]
           : undefined;
         const inspected = await inspectGate(
-          this.config,
+          config,
           this.github,
           pair,
           previous.rows[0]?.foundation,
           {
-            headRepositoryIds: headRepositoryIds(this.config),
-            ...(autonomyMerge && this.config.mergePolicy?.merger
+            headRepositoryIds: headRepositoryIds(config),
+            ...(autonomyMerge && config.mergePolicy?.merger
               ? {
                   acceptMerger: {
-                    login: `${this.config.mergePolicy.merger.appSlug}[bot]`,
+                    login: `${config.mergePolicy.merger.appSlug}[bot]`,
                     mergeCommit: autonomyMerge.merge_commit,
                   },
                 }
@@ -200,7 +218,7 @@ export class HumanMergeGate extends LeasedConsumer {
           });
         }
         evidence = { foundation };
-        const review = await reviewEvidence(this.config, this.github, pull);
+        const review = await reviewEvidence(config, this.github, pull);
         evidence = { foundation, ...review };
         if (!pull.merged) {
           state = 'awaiting_human_merge';

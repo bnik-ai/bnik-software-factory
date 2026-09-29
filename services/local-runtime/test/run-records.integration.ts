@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { after, before, beforeEach, test } from 'node:test';
 import type { Pool } from 'pg';
+import type { MergePolicy } from '../src/github/merge-policy.js';
 import { HumanMergeGate, SCAN_LIMIT } from '../src/github/reconcile.js';
 import { WorkerFailure } from '../src/worker/docker.js';
 import type { CodingJob, CodingOutcome } from '../src/worker/protocol.js';
@@ -420,6 +424,45 @@ test('a scan queues at most SCAN_LIMIT pull requests, stalest first, and the res
     );
   } finally {
     await gate.close();
+  }
+});
+
+test('the gate reads merge-policy.json before every look, so an edited base branch takes effect without a restart', async () => {
+  const github = new MergeFixture();
+  const dir = mkdtempSync(join(tmpdir(), 'merge-policy-'));
+  const file = join(dir, 'merge-policy.json');
+  const write = (baseBranch: string) =>
+    writeFileSync(file, JSON.stringify({ ...github.config.mergePolicy, baseBranch }));
+  write('main');
+  // The loaded copy names a branch the repository never had; only the file is current.
+  const gate = new HumanMergeGate(
+    pool,
+    {
+      ...github.config,
+      mergePolicy: { ...(github.config.mergePolicy as MergePolicy), baseBranch: 'stale' },
+      mergePolicyFile: file,
+    },
+    github,
+  );
+  try {
+    await gate.track(1, 2, github.pull.head.sha);
+    await gate.step();
+    assert.equal((await gate.status())[0].state, 'awaiting_human_merge');
+    write('release');
+    await gate.schedule();
+    await gate.step();
+    assert.equal((await gate.status())[0].reason, 'repository_merge_settings_unsafe');
+    write('main');
+    await gate.schedule({ includeParked: true });
+    await gate.step();
+    assert.equal((await gate.status())[0].state, 'awaiting_human_merge');
+    writeFileSync(file, '{');
+    await gate.schedule();
+    await gate.step();
+    assert.equal((await gate.status())[0].reason, 'merge_policy_unreadable');
+  } finally {
+    await gate.close();
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 

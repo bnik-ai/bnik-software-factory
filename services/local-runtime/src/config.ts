@@ -59,6 +59,8 @@ export interface RuntimeConfig {
   webhookUrl?: string;
   operators?: readonly string[];
   mergePolicy?: MergePolicy;
+  /** Where the merge policy was read from; the merge gate reads it again before every look. */
+  mergePolicyFile?: string;
   database: DatabaseConfig;
   queue: QueueOptions;
   repository: string;
@@ -186,6 +188,27 @@ function reviewerSettings(
   return settings;
 }
 
+/**
+ * The merge policy as its file holds it now, validated as at start (parse, merger App identity).
+ * The merge gate reads it before every look: a resident control plane otherwise keeps the policy it
+ * started with, and a base branch changed since then parks every current pull request as
+ * repository_merge_settings_unsafe while each command process sees the new file (OSS-22 live lane).
+ */
+export function readMergePolicy(
+  file: string,
+  merger?: { appId: string; appSlug: string },
+): MergePolicy {
+  const policy = parseMergePolicy(JSON.parse(readFileSync(file, 'utf8')));
+  if (
+    merger &&
+    (policy.merger === undefined ||
+      String(policy.merger.appId) !== merger.appId ||
+      policy.merger.appSlug !== merger.appSlug)
+  )
+    throw new ConfigurationError('merge_policy_merger_must_match_FACTORY_MERGER_settings');
+  return policy;
+}
+
 export function resolveConfig(env: Env = process.env): RuntimeConfig {
   const mode = required(env, 'FACTORY_MODE');
   if (mode !== 'demo' && mode !== 'live')
@@ -260,10 +283,12 @@ export function resolveConfig(env: Env = process.env): RuntimeConfig {
     if (execution !== 'disabled' && execution !== 'manual' && execution !== 'bounded')
       throw new ConfigurationError('FACTORY_EXECUTION_must_be_disabled_manual_or_bounded');
     config.execution = execution;
-    if (env.FACTORY_MERGE_POLICY_FILE)
+    if (env.FACTORY_MERGE_POLICY_FILE) {
+      config.mergePolicyFile = env.FACTORY_MERGE_POLICY_FILE;
       config.mergePolicy = parseMergePolicy(
         JSON.parse(readFileSync(env.FACTORY_MERGE_POLICY_FILE, 'utf8')),
       );
+    }
     if (execution === 'manual' || execution === 'bounded')
       config.modelKey = secret(env, 'ANTHROPIC_API_KEY');
     else if (env.ANTHROPIC_API_KEY || env.ANTHROPIC_API_KEY_FILE)
