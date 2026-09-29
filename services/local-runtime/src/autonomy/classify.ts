@@ -268,7 +268,7 @@ export const CONTENT_RULES: readonly ContentRule[] = [
     category: 'security_auth',
     side: 'added',
     pattern:
-      /\b(child_process|execsync|spawnsync|execfile|execa|subprocess|os\.system|os\.popen|shell\s*=\s*true|dangerouslysetinnerhtml|pickle\.loads?|exec\.command|command::new|processbuilder|process\.start|runtime\.getruntime|shell_exec|passthru|proc_open|kernel\.system|io\.popen)\b|\b(eval|exec|spawn|fork|system|popen)\s*\(|\bnew\s+function\s*\(|\bfunction\s*\(\s*["'`]|`[^`]*\$\(|\beval\b/i,
+      /\b(child_process|execsync|spawnsync|execfile|execfilesync|execa|subprocess|os\.system|os\.popen|shell\s*=\s*true|dangerouslysetinnerhtml|pickle\.loads?|exec\.command|command::new|processbuilder|process\.start|runtime\.getruntime|shell_exec|passthru|proc_open|kernel\.system|io\.popen)\b|\b(eval|exec|spawn|fork|system|popen)\s*\(|\bnew\s+function\s*\(|\bfunction\s*\(\s*["'`]|`[^`]*\$\(|\beval\b/i,
   },
   {
     code: 'transport_verification_disabled',
@@ -413,6 +413,17 @@ function isTestFile(path: string | null): boolean {
   return TEST_LOCATION.test(lowercasePath) && RUNNABLE_SOURCE.test(lowercasePath);
 }
 const PROSE = /\.(md|markdown|mdx|txt|rst|adoc)$/;
+/**
+ * A test that spawns a program is how a CLI is tested (OSS-22 live lane, F03): in a test file a
+ * process-spawn primitive alone is not a critical addition. Shell interpretation and dynamic code
+ * stay critical everywhere; a spawn that also names them on the line is not exempt.
+ */
+const TEST_SPAWN = /\b(child_process|execfile|execfilesync|spawn|spawnsync|fork|subprocess)\b/i;
+const SHELL_OR_DYNAMIC_EXECUTION =
+  /\b(exec|execsync|eval|system|popen)\s*\(|shell\s*[:=]\s*true|\bnew\s+function\s*\(|\bfunction\s*\(\s*["'`]|`[^`]*\$\(|\beval\b|os\.system|os\.popen|shell_exec|passthru|proc_open|kernel\.system|io\.popen|exec\.command|command::new|processbuilder|process\.start|runtime\.getruntime|dangerouslysetinnerhtml|pickle\.loads?/i;
+function isTestSpawn(line: string): boolean {
+  return TEST_SPAWN.test(line) && !SHELL_OR_DYNAMIC_EXECUTION.test(line);
+}
 const ASSERTION =
   /\bassert\w*|\bexpect\s*\(|\.should\b|\bt\.(is|not|equal|deepequal|true|false|truthy|falsy|throws|rejects|errorf?|fatalf?)\b|\bpytest\.raises\b|\bself\.assert\w*/i;
 /** Longer lines are not pattern-matched (bounded regex cost); they need a human instead. */
@@ -715,7 +726,13 @@ export function classifyChanges(policy: AutonomyPolicy, manifest: ChangeManifest
       if (
         inspected.some(
           (line) =>
-            rule.pattern.test(line) && (rule.requires === undefined || rule.requires.test(line)),
+            rule.pattern.test(line) &&
+            (rule.requires === undefined || rule.requires.test(line)) &&
+            !(
+              rule.code === 'code_execution_primitive' &&
+              (oldIsTest || newIsTest) &&
+              isTestSpawn(line)
+            ),
         )
       )
         addReason(rule.code, rule.category, displayPath);

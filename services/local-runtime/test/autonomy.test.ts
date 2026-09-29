@@ -466,6 +466,36 @@ test('security modules, destructive data APIs and execution calls are recognized
       'data_schema_or_migration',
     ),
   );
+  // OSS-22 live lane (F03): a test that spawns the repository's own CLI is routine; shell
+  // interpretation and dynamic code in a test stay critical, and the same spawn outside a test too.
+  for (const line of [
+    "const { execFileSync } = require('node:child_process');",
+    "const out = execFileSync(process.execPath, ['report.js', '--json'], { encoding: 'utf8' });",
+    "const child = spawnSync('node', ['cli.js']);",
+    "result = subprocess.run(['python3', 'cli.py', '--json'], capture_output=True)",
+  ]) {
+    assert.ok(
+      !classifiedCodes(added('test/report.cli.test.js', `${line}\n`)).includes(
+        'code_execution_primitive',
+      ),
+      `test spawn: ${line}`,
+    );
+    assert.ok(
+      classifiedCodes(added('src/report.js', `${line}\n`)).includes('code_execution_primitive'),
+      `same line in source: ${line}`,
+    );
+  }
+  for (const line of [
+    "spawnSync('sh', ['-c', cmd], { shell: true });",
+    'execSync(`node cli.js ${flag}`);',
+    'eval(fixture);',
+    'subprocess.run(cmd, shell=True)',
+    'const run = new Function(body);',
+  ])
+    assert.ok(
+      classifiedCodes(added('test/cli.test.js', `${line}\n`)).includes('code_execution_primitive'),
+      `still critical in a test: ${line}`,
+    );
   assert.ok(
     classifiedCodes(added('src/run.js', 'exec(q.cmd);\n')).includes('code_execution_primitive'),
   );
