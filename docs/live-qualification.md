@@ -84,7 +84,9 @@ and are read only by `./sfac`'s containers.
   factory's printed views (`estimatedUsd`, a conservative reservation for the reviewer's usage);
   each grant is capped at `min(3, remaining)` USD and the lane stops before an attempt when less
   than one per-run reservation (USD 1) remains, or after three consecutive trials that did not
-  complete (an outage, not the factory). Every trial counts: an error, timeout, unknown or cancelled outcome
+  complete (an outage, not the factory). The authorization's budget is the job's total: a run
+  after another under the same authorization is started with `--budget-usd` set to what the
+  earlier reports leave of it (the driver accounts one invocation, the maintainer the job). Every trial counts: an error, timeout, unknown or cancelled outcome
   is a functional failure and a missed detection, never a pass (a cancellation the protocol itself
   performs, such as the reconcile after a kill, completes the trial). The report is bound to the
   commit (same clean commit and same scorer before and after) and is written after every trial.
