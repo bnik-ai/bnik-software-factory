@@ -708,8 +708,9 @@ def command_rehearse(args):
     driver = Driver(driver_for(live, args.staging), live.facts['repository'])
     corpus = json.loads((ROOT / 'evals/corpus.json').read_text())
     entry = load_cases(corpus, args.held_out, args.case or ['F01'])[0]
-    branch = f"q/{entry['id']}/rehearsal"
-    scope = f"q-{entry['id']}-rehearsal".lower()
+    stamp = datetime.now(timezone.utc).strftime('%H%M%S')
+    branch = f"q/{entry['id']}/rehearsal-{stamp}"
+    scope = f"q-{entry['id']}-rehearsal-{stamp}".lower()
     seeded = seed_trial(live, driver, entry, branch, 0, scope, 0.01)
     revoked = live.revoke(scope, 'rehearsal: nothing runs')
     status = live.status()
