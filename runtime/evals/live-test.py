@@ -24,6 +24,65 @@ def observed(**overrides):
     return base
 
 
+class Clock:
+    """A stand-in for the `time` module: every `time()` call advances by `step`, `sleep` records its argument."""
+    def __init__(self, step=0.0):
+        self.now, self.step, self.sleeps = 0.0, step, []
+
+    def time(self):
+        self.now += self.step
+        return self.now
+
+    def sleep(self, seconds):
+        self.sleeps.append(seconds)
+
+
+class MergeUntilSettledTest(unittest.TestCase):
+    def setUp(self):
+        self.real_time = live.time
+        live.time = Clock()
+
+    def tearDown(self):
+        live.time = self.real_time
+
+    def test_transient_command_failure_is_reinvoked_until_the_record_settles(self):
+        calls = []
+
+        class Live:
+            def merge(self, number):
+                calls.append(number)
+                return (None, 'github_connection_failed', 1) if len(calls) < 3 else ({'state': 'merged', 'mergeCommit': 'c' * 40}, '', 0)
+        out = live.merge_until_settled(Live(), 7, deadline_seconds=600, poll_seconds=5)
+        self.assertEqual((out['state'], out['commandRetries'], len(calls), live.time.sleeps), ('merged', 2, 3, [5, 5]))
+        self.assertEqual(live.observe({'state': 'published'}, [], out)['mergeCommandRetries'], 2)
+        self.assertEqual(live.classify_outcome(live.observe({'state': 'published'}, [], out)), 'completed')
+
+    def test_a_refusal_or_other_command_failure_returns_at_once(self):
+        for token in ('scope_revoked', 'worker_busy', 'autonomy_command_failed', 'merge_policy_not_configured'):
+            calls = []
+
+            class Live:
+                def merge(self, number):
+                    calls.append(number)
+                    return (None, token, 1)
+            out = live.merge_until_settled(Live(), 7, deadline_seconds=600, poll_seconds=5)
+            self.assertEqual((out['state'], out['reason'], len(calls), out.get('timedOut'), live.time.sleeps), ('error', token, 1, None, []), token)
+
+    def test_transient_failures_past_the_deadline_time_out_and_credit_nothing(self):
+        live.time = Clock(step=40.0)
+        calls = []
+
+        class Live:
+            def merge(self, number):
+                calls.append(number)
+                return (None, 'github_request_failed', 1)
+        out = live.merge_until_settled(Live(), 7, deadline_seconds=100, poll_seconds=5)
+        self.assertEqual((out['state'], out['timedOut'], out['commandRetries'], len(calls)), ('error', True, 1, 2))
+        observed_out = live.observe({'state': 'published'}, [], out)
+        self.assertEqual((observed_out['mergeCommandRetries'], live.classify_outcome(observed_out)), (1, 'timeout'))
+        self.assertFalse(live.score('functional', {}, {**observed_out, 'acceptance': 'passed'})['functionalSuccess'])
+
+
 class ScoreTest(unittest.TestCase):
     def test_functional_merged_with_passing_acceptance_is_success(self):
         s = live.score('functional', {}, observed())
@@ -180,7 +239,7 @@ class ConstructionTest(unittest.TestCase):
         body = live.task_body(task, 'claude-sonnet-5')
         self.assertRegex(body, r'(?m)^intent-kind: bugfix$')
         block = json.loads(body.split('```factory-task\n')[1].split('```')[0])
-        self.assertEqual(block, {'prompt': 'Fix x', 'tests': ['node --test'], 'model': 'claude-sonnet-5', 'maxTurns': 10, 'timeoutMs': 300000})
+        self.assertEqual(block, {'prompt': 'Fix x', 'tests': ['node --test'], 'model': 'claude-sonnet-5', 'maxTurns': 20, 'timeoutMs': 300000})
         self.assertNotIn('intent-kind', live.task_body({**task, 'intentKind': 'change'}, 'm'))
 
     def test_protection_mirror_accepts_only_the_automatic_profile(self):

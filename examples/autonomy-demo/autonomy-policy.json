@@ -12,7 +12,7 @@
   "criticalPaths": [],
   "execution": {
     "models": ["claude-sonnet-5"],
-    "maxTurns": 10,
+    "maxTurns": 20,
     "maxRunMs": 300000,
     "maxRunMicrousd": 1000000,
     "maxScopeMicrousd": 5000000,

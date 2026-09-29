@@ -55,7 +55,9 @@ FIXTURES = ROOT / 'evals' / 'fixtures'
 API = 'https://api.github.com'
 ACTIONS_APP_ID = 15368  # GitHub Actions: the check-runs producer of the required `test` check
 REQUIRED_CHECK = 'test'
-TASK_BOUNDS = {'maxTurns': 10, 'timeoutMs': 300000}  # release Task bounds; the policy's execution limits cap them
+# Release Task bounds; the policy's execution limits cap them. Live runs 2–3 needed 10–13 recorded turns for
+# the functional corpus (F03, F05), so the bound leaves headroom over that; the run budget and duration still bind.
+TASK_BOUNDS = {'maxTurns': 20, 'timeoutMs': 300000}
 RESERVE_PER_RUN_USD = 1.0  # policy maxRunMicrousd: the most one attempt may cost; the ledger refuses beyond it
 TRIAL_BUDGET_CAP_USD = 3.0  # policy maxTaskRuns × maxRunMicrousd: the most one Task's attempts may cost
 REVIEWER_RATE_USD_PER_TOKEN = {'input': 3e-6, 'output': 15e-6}  # reservation rates for the reviewer, not a bill
@@ -571,6 +573,7 @@ def observe(run_json, runs, merge_json=None, stderr=None, refusals=()):
         'mergeState': merge.get('state'),
         'mergeReason': merge.get('reason'),
         'mergeTimedOut': bool(merge.get('timedOut')),
+        'mergeCommandRetries': merge.get('commandRetries') or 0,
         'mergeCommit': merge.get('mergeCommit'),
         'mergeHead': merge.get('head'),
         'taskDone': (merge.get('taskDone') or {}).get('done'),
@@ -579,21 +582,31 @@ def observe(run_json, runs, merge_json=None, stderr=None, refusals=()):
     }
 
 
+# A `merge` command that fails on a GitHub read before any decision prints one of these and writes no
+# record (live run 3, F05/3: one connection failure ended the trial); the driver re-invokes it, as the
+# runbooks tell an operator to, until the record settles or the deadline passes.
+TRANSIENT_COMMAND_FAILURES = ('github_connection_failed', 'github_request_failed')
+
+
 def merge_until_settled(live, number, deadline_seconds=1800, poll_seconds=30):
     """`merge` until the record settles; pending or missing checks keep it observing, so the driver waits for the repository's CI."""
     started = time.time()
     last = None
+    retries = 0
     while time.time() - started < deadline_seconds:
         merge_json, stderr, code = live.merge(number)
         last = merge_json or {'state': 'error', 'reason': stderr[-300:] or f'exit {code}'}
         last['stderr'] = stderr or None
+        last['commandRetries'] = retries
         if last.get('state') in MERGE_SETTLED or (last.get('state') == 'error' and 'scope_revoked' in (stderr or '')):
             return last
         if last.get('state') == 'observing' and last.get('reason') in PARKED_MERGE_REASONS:
             last['parked'] = True
             return last
         if last.get('state') == 'error' and code != 0 and not merge_json:
-            return last
+            if not any(token in (stderr or '') for token in TRANSIENT_COMMAND_FAILURES):
+                return last
+            retries += 1
         time.sleep(poll_seconds)
     last = dict(last or {})
     last['timedOut'] = True
