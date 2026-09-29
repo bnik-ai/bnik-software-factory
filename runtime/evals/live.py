@@ -11,6 +11,8 @@ record it is given.
     python3 runtime/evals/live.py ids     --staging DIR
     python3 runtime/evals/live.py init    --staging DIR --state DIR --authorization FILE --webhook-url URL
                                           --owner LOGIN --owner-id N --reviewer-model M --author-model M
+    python3 runtime/evals/live.py prepare --state DIR --staging DIR --authorization FILE
+    python3 runtime/evals/live.py rehearse --state DIR --staging DIR --authorization FILE [--case ID]
     python3 runtime/evals/live.py lane    --state DIR --staging DIR --authorization FILE --report PATH
                                           [--case ID ...] [--trials N] [--held-out DIR] [--budget-usd X]
     python3 runtime/evals/live.py proof   --state DIR --staging DIR --authorization FILE --report PATH
@@ -156,6 +158,8 @@ class App:
     def token(self):
         if time.time() < self._token_until:
             return self._token
+        if getattr(self, 'installation_id', None) is None:
+            raise RuntimeError(f'{self.role}: installation id unknown; resolve it with describe() or from live.json')
         minted = github('POST', f'/app/installations/{self.installation_id}/access_tokens', self.jwt())
         self._token = minted['token']
         self._token_until = time.time() + 50 * 60
@@ -170,8 +174,12 @@ class Driver:
         self.repository = repository
         self.prefix = f'/repos/{repository}'
 
+    def url(self, path):
+        """'' and '/x' address this repository; a full URL passes through."""
+        return self.prefix + path if path == '' or path.startswith('/') else path
+
     def call(self, method, path, body=None, **kw):
-        return github(method, self.prefix + path if path.startswith('/') else path, self.app.token(), body, **kw)
+        return github(method, self.url(path), self.app.token(), body, **kw)
 
     def repository_facts(self):
         return self.call('GET', '')
@@ -673,6 +681,41 @@ def trial_approve_revise(live, number, scope, approver):
     return observed
 
 
+def seed_trial(live, driver, entry, branch, trial_number, scope, grant_budget_usd):
+    """The GitHub side of one trial, from a clean fixture state to a granted scope: branch, default branch,
+    protection, Task, policy revision, intent, grant. Nothing here calls a model."""
+    owner = live.facts['owner']
+    merger_slug = live.facts['apps']['merger']['slug']
+    case = entry['id']
+    seeded = driver.create_branch_from_tree(branch, fixture_files(entry['source'], owner, entry['task']['tests']), f'{case} trial {trial_number}: fixture state')
+    driver.set_default_branch(branch)
+    protection = driver.protect(branch, [owner], merger_slug)
+    if not protection_ok(protection, [owner], merger_slug):
+        raise RuntimeError('branch protection does not match the automatic-merge profile')
+    issue = driver.create_issue(f"[{case}] {entry['task']['title']}", task_body(entry['task'], live.facts['authorModel']), ['kind:task', 'status:proposed'])
+    activation = live.activate(entry['acceptance'], branch, live.facts['authorModel'])
+    intent = live.intent(issue['number'])
+    granted = live.grant(scope, intent['grant'], grant_budget_usd)
+    return {'branch': branch, 'baseCommit': seeded['commit'], 'baseTree': seeded['tree'], 'taskNumber': issue['number'], 'taskUrl': issue['url'], 'taskId': intent.get('taskId'),
+            'intentSha256': intent.get('intentSha256'), 'activation': activation, 'granted': granted, 'protectionVerified': True}
+
+
+def command_rehearse(args):
+    """One case's GitHub side end to end, then the scope revoked: proves protection, default-branch switch,
+    activation and the live intent read on this repository before any budget is spent."""
+    live = Live(args.state)
+    load_authorization(args.authorization, live.facts.get('repository'))
+    driver = Driver(driver_for(live, args.staging), live.facts['repository'])
+    corpus = json.loads((ROOT / 'evals/corpus.json').read_text())
+    entry = load_cases(corpus, args.held_out, args.case or ['F01'])[0]
+    branch = f"q/{entry['id']}/rehearsal"
+    scope = f"q-{entry['id']}-rehearsal".lower()
+    seeded = seed_trial(live, driver, entry, branch, 0, scope, 0.01)
+    revoked = live.revoke(scope, 'rehearsal: nothing runs')
+    status = live.status()
+    print(json.dumps({**seeded, 'revoked': revoked, 'activePolicySha256': status.get('activePolicySha256'), 'scopes': len(status.get('scopes') or [])}, indent=2))
+
+
 def load_cases(corpus, held_out_dir, selected):
     """Visible cases from the tree's fixtures; held-out cases from the private directory the job is given (spec text stays there)."""
     cases = []
@@ -715,8 +758,18 @@ def load_authorization(path, repository=None):
 
 
 def staging_apps(staging):
+    """The Apps whose keys are still staged: all four before `init`, the driver alone after it moved the installation's keys."""
     registry = json.loads((Path(staging) / 'apps.json').read_text())
-    return {role: App(role, Path(staging) / APP_KEYS[role], registry[role]['appId'], registry[role].get('slug')) for role in APP_KEYS if role in registry}
+    return {role: App(role, Path(staging) / APP_KEYS[role], registry[role]['appId'], registry[role].get('slug')) for role in APP_KEYS if role in registry and (Path(staging) / APP_KEYS[role]).exists()}
+
+
+def driver_for(live, staging):
+    """The driver App with the installation id `init` recorded; no network round trip to rediscover it."""
+    app = staging_apps(staging)['driver']
+    facts = live.facts['apps']['driver']
+    app.installation_id = facts['installationId']
+    app.slug = facts['slug']
+    return app
 
 
 def command_ids(args):
@@ -768,11 +821,20 @@ def command_init(args):
     (state / 'merge-policy.json').write_text(json.dumps({'version': 1, 'baseBranch': 'main', 'reviewers': [args.owner], 'mergers': [args.owner], 'requiredChecks': [{'name': REQUIRED_CHECK, 'appId': ACTIONS_APP_ID}], 'merger': {'appSlug': facts['merger']['slug'], 'appId': facts['merger']['appId']}}, indent=2) + '\n')
     (state / 'merge-policy.json').chmod(0o600)
     (state / 'live.json').write_text(json.dumps({'repository': repository, 'repositoryId': repository_id, 'owner': args.owner, 'ownerId': args.owner_id, 'apps': facts, 'reviewerModel': args.reviewer_model, 'authorModel': args.author_model, 'webhookUrl': args.webhook_url, 'initializedAt': utc()}, indent=2) + '\n')
-    driver = Driver(apps['driver'], repository)
+    print(json.dumps({'repository': repository, 'repositoryId': repository_id, 'apps': {r: {k: v for k, v in f.items() if k in ('appId', 'slug', 'installationId')} for r, f in facts.items()},
+                      'next': f'place the model key at {secrets_dir}/model_key (mode 0600); run prepare, then ./sfac build && ./sfac up with SFAC_STATE_DIR={state}'}, indent=2))
+    command_prepare(args)
+
+
+def command_prepare(args):
+    """Repository settings the merge gate requires and the labels the factory writes; idempotent."""
+    live = Live(args.state)
+    load_authorization(args.authorization, live.facts.get('repository'))
+    driver = Driver(driver_for(live, args.staging), live.facts['repository'])
     settings = driver.configure_repository()
     driver.ensure_labels()
-    print(json.dumps({'repository': repository, 'repositoryId': repository_id, 'apps': {r: {k: v for k, v in f.items() if k in ('appId', 'slug', 'installationId')} for r, f in facts.items()},
-                      'mergeSettings': {k: settings.get(k) for k in ('allow_squash_merge', 'allow_merge_commit', 'allow_rebase_merge', 'allow_auto_merge')}, 'next': f'place the model key at {secrets_dir}/model_key (mode 0600), then ./sfac build && ./sfac up with SFAC_STATE_DIR={state}'}, indent=2))
+    print(json.dumps({'repository': live.facts['repository'], 'defaultBranch': settings.get('default_branch'), 'private': settings.get('private'),
+                      'mergeSettings': {k: settings.get(k) for k in ('allow_squash_merge', 'allow_merge_commit', 'allow_rebase_merge', 'allow_auto_merge')}, 'labels': STATUS_LABELS}, indent=2))
 
 
 def new_report(live, authorization, budget, cases, args):
@@ -812,8 +874,7 @@ def command_lane(args):
     live = Live(args.state)
     authorization = load_authorization(args.authorization, live.facts.get('repository'))
     budget = Budget(min(float(authorization['budgetUsd']), float(args.budget_usd)) if args.budget_usd else float(authorization['budgetUsd']))
-    apps = staging_apps(args.staging)
-    driver = Driver(apps['driver'], live.facts['repository'])
+    driver = Driver(driver_for(live, args.staging), live.facts['repository'])
     corpus = json.loads((ROOT / 'evals/corpus.json').read_text())
     cases = load_cases(corpus, args.held_out, args.case)
     report = json.loads(Path(args.report).read_text()) if args.resume and Path(args.report).exists() else new_report(live, authorization, budget, cases, args)
@@ -823,7 +884,6 @@ def command_lane(args):
         live.pins = (report['activations'][-1]['pins'] if report.get('activations') else {})
         live.base_branch = report['activations'][-1]['baseBranch'] if report.get('activations') else None
     done = {(t['case'], t['trial']) for t in report['trials']}
-    owner = live.facts['owner']
     try:
         for entry in cases:
             case = entry['id']
@@ -842,18 +902,10 @@ def command_lane(args):
                 try:
                     if not live.wait_for_idle_worker():
                         raise RuntimeError('a worker or sandbox container of this installation was still running when the trial should start')
-                    seeded = driver.create_branch_from_tree(branch, fixture_files(entry['source'], owner, entry['task']['tests']), f'{case} trial {trial_number}: fixture state')
-                    driver.set_default_branch(branch)
-                    protection = driver.protect(branch, [owner], live.facts['apps']['merger']['slug'])
-                    if not protection_ok(protection, [owner], live.facts['apps']['merger']['slug']):
-                        raise RuntimeError('branch protection does not match the automatic-merge profile')
-                    issue = driver.create_issue(f"[{case}] {entry['task']['title']}", task_body(entry['task'], live.facts['authorModel']), ['kind:task', 'status:proposed'])
-                    record.update({'baseCommit': seeded['commit'], 'baseTree': seeded['tree'], 'taskNumber': issue['number'], 'taskUrl': issue['url']})
-                    activation = live.activate(entry['acceptance'], branch, live.facts['authorModel'])
-                    report['activations'].append({'case': case, 'trial': trial_number, **activation})
-                    intent = live.intent(issue['number'])
-                    record['intentSha256'] = intent.get('intentSha256')
-                    live.grant(scope, intent['grant'], budget.grant_budget())
+                    seeded = seed_trial(live, driver, entry, branch, trial_number, scope, budget.grant_budget())
+                    record.update({k: seeded[k] for k in ('baseCommit', 'baseTree', 'taskNumber', 'taskUrl', 'intentSha256')})
+                    issue = {'number': seeded['taskNumber']}
+                    report['activations'].append({'case': case, 'trial': trial_number, **seeded['activation']})
                     orchestration = entry['rule'].get('orchestration')
                     if orchestration == 'kill':
                         observed = trial_kill(live, issue['number'], scope)
@@ -901,8 +953,7 @@ def command_proof(args):
     authorization = load_authorization(args.authorization, live.facts.get('repository'))
     report = json.loads(Path(args.report).read_text())
     proof = report.setdefault('liveProof', {})
-    apps = staging_apps(args.staging)
-    driver = Driver(apps['driver'], live.facts['repository'])
+    driver = Driver(driver_for(live, args.staging), live.facts['repository'])
     if args.step == 'attestation':
         # Base publication without the secretless-CI attestation: the configuration refuses to load at all.
         env_file = live.state / '.env'
@@ -967,8 +1018,7 @@ def command_cleanup(args):
     authorization = load_authorization(args.authorization, live.facts.get('repository'))
     done = {'repository': authorization['repository']}
     if args.delete_repository:
-        apps = staging_apps(args.staging)
-        Driver(apps['driver'], live.facts['repository']).delete_repository()
+        Driver(driver_for(live, args.staging), live.facts['repository']).delete_repository()
         done['repositoryDeleted'] = True
     for container in live.seen_containers & set(live.labelled_containers()):
         subprocess.run(['docker', 'rm', '-f', container], env=live.env, capture_output=True)
@@ -979,7 +1029,7 @@ def command_cleanup(args):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('command', choices=['ids', 'init', 'lane', 'proof', 'cleanup'])
+    parser.add_argument('command', choices=['ids', 'init', 'prepare', 'rehearse', 'lane', 'proof', 'cleanup'])
     parser.add_argument('--staging', type=Path, required=True, help='Directory holding apps.json and the driver key (and, before init, the installation keys)')
     parser.add_argument('--state', type=Path, help='SFAC_STATE_DIR of the live installation (outside the source tree)')
     parser.add_argument('--authorization', type=Path, required=True)
@@ -1006,6 +1056,14 @@ def main():
             if getattr(args, name) is None:
                 parser.error(f'init requires --{name.replace("_", "-")}')
         command_init(args)
+    elif args.command == 'prepare':
+        if not args.state:
+            parser.error('prepare requires --state')
+        command_prepare(args)
+    elif args.command == 'rehearse':
+        if not args.state:
+            parser.error('rehearse requires --state')
+        command_rehearse(args)
     elif args.command == 'lane':
         if not (args.state and args.report):
             parser.error('lane requires --state and --report')

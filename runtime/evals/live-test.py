@@ -109,6 +109,21 @@ class ConstructionTest(unittest.TestCase):
         bypass['required_pull_request_reviews']['bypass_pull_request_allowances'] = {'apps': [{'slug': 'x'}]}
         self.assertFalse(live.protection_ok(bypass, ['owner'], 'merger'))
 
+    def test_driver_addresses_the_repository_for_empty_and_relative_paths(self):
+        driver = live.Driver.__new__(live.Driver)
+        driver.prefix = '/repos/o/r'
+        self.assertEqual(driver.url(''), '/repos/o/r')
+        self.assertEqual(driver.url('/issues'), '/repos/o/r/issues')
+        self.assertEqual(driver.url('https://api.github.com/app'), 'https://api.github.com/app')
+
+    def test_staging_apps_loads_only_keys_still_staged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / 'apps.json').write_text(json.dumps({role: {'appId': i, 'slug': role} for i, role in enumerate(live.APP_KEYS, 1)}))
+            (Path(tmp) / 'driver_private_key').write_bytes(b'not a key')
+            with self.assertRaises(Exception):
+                live.staging_apps(tmp)['driver'].jwt()
+            self.assertEqual(list(live.staging_apps(tmp)), ['driver'])
+
     def test_budget_reserves_the_per_run_cap_and_caps_the_grant(self):
         budget = live.Budget(2.5)
         self.assertTrue(budget.can_start())
