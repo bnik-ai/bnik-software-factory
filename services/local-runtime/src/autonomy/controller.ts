@@ -565,6 +565,8 @@ export class AutonomyController {
                 ...run.evidence,
                 workerRunId: result.runId ?? null,
                 patchSha256: result.outcome.patchSha256,
+                // A failed attempt spent too (OSS-22 live lane: a max-turns failure cost five cents).
+                estimatedUsd: estimated,
               },
             });
             return { run, decisions };

@@ -555,6 +555,7 @@ def observe(run_json, runs, merge_json=None, stderr=None):
         'review': (verification.get('review') or {}).get('status'),
         'reviewRisk': (verification.get('review') or {}).get('risk'),
         'publication': (run_json or {}).get('publication'),
+        'tree': (run_json or {}).get('tree'),
         'actionSha256': (run_json or {}).get('actionSha256'),
         'changedPaths': (run_json or {}).get('changedPaths'),
         'generatedPaths': (run_json or {}).get('generatedPaths'),
@@ -569,6 +570,7 @@ def observe(run_json, runs, merge_json=None, stderr=None):
         'mergeTimedOut': bool(merge.get('timedOut')),
         'mergeCommit': merge.get('mergeCommit'),
         'mergeHead': merge.get('head'),
+        'taskDone': (merge.get('taskDone') or {}).get('done'),
         'pullNumber': merge.get('pullNumber') or ((run_json or {}).get('publication') or {}).get('pullNumber'),
         'mergeDecisions': merge.get('decisions') or [],
     }
@@ -628,11 +630,27 @@ def trial_cost(observed):
     return round(author, 6), round(reviewer, 6)
 
 
-def trial_standard(live, number, scope):
+def wait_for_task_done(driver, number, timeout_seconds=300, poll_seconds=10):
+    """The runtime's merge gate closes the Task (`status:done`) asynchronously, from the pull request's
+    close delivery; the next trial must not move the default branch before that reconciliation ran."""
+    deadline = time.time() + timeout_seconds
+    labels = []
+    while True:
+        labels = [label['name'] for label in driver.issue(number).get('labels', [])]
+        if 'status:done' in labels:
+            return {'done': True, 'labels': labels}
+        if time.time() >= deadline:
+            return {'done': False, 'labels': labels}
+        time.sleep(poll_seconds)
+
+
+def trial_standard(live, number, scope, driver=None):
     run_json, stderr, code = live.run(number, scope, new_attempt=True)
     merge_json = None
     if (run_json or {}).get('state') == 'published':
         merge_json = merge_until_settled(live, number)
+        if driver is not None and (merge_json or {}).get('state') == 'merged':
+            merge_json['taskDone'] = wait_for_task_done(driver, number)
     observed = observe(run_json, live.task_runs(number), merge_json, stderr)
     observed['stderr'] = stderr or None
     observed['runExit'] = code
@@ -1027,7 +1045,7 @@ def command_lane(args):
                     elif orchestration == 'approve-revise':
                         observed = trial_approve_revise(live, issue['number'], scope, live.facts['ownerId'])
                     else:
-                        observed = trial_standard(live, issue['number'], scope)
+                        observed = trial_standard(live, issue['number'], scope, driver)
                     outcome = classify_outcome(observed)
                     record['error'] = None
                 except Exception as exc:  # a trial that errors is recorded, never skipped
@@ -1068,12 +1086,14 @@ def command_proof(args):
     proof = report.setdefault('liveProof', {})
     driver = Driver(driver_for(live, args.staging), live.facts['repository'])
     if args.step == 'attestation':
-        # Base publication without the secretless-CI attestation: the configuration refuses to load at all.
+        # Base publication without the secretless-CI attestation: the supervisor's configuration (the one
+        # that holds the publisher) refuses to load at all. `status` runs under the controller identity
+        # and never loads the publisher, so `merge-scan` is the command that carries the proof.
         env_file = live.state / '.env'
         original = env_file.read_text()
         try:
             env_file.write_text(''.join(line for line in original.splitlines(keepends=True) if not line.startswith('FACTORY_PUBLICATION_SECRETLESS_CI=')))
-            result = live.sfac('autonomy', 'status', check=False)
+            result = live.sfac('autonomy', 'merge-scan', check=False)
         finally:
             env_file.write_text(original)
         proof['attestation'] = {'refused': result.returncode != 0 and 'base_publication_requires_FACTORY_PUBLICATION_SECRETLESS_CI_attested' in (result.stderr + result.stdout), 'exit': result.returncode, 'stderr': result.stderr.strip()[-400:], 'at': utc()}
@@ -1118,7 +1138,9 @@ def command_proof(args):
             'taskLabels': [l['name'] for l in task.get('labels', [])], 'taskState': task.get('state'), 'at': utc(),
         }
     elif args.step == 'routine':
-        trials = [t for t in report['trials'] if t['kind'] == 'functional' and t.get('mergeCommit')]
+        merged = [t for t in report['trials'] if t['kind'] == 'functional' and t.get('mergeCommit')]
+        # The gate's reconciliation closes the Task; the proof is a trial where GitHub shows that now.
+        trials = [t for t in merged if 'status:done' in [l['name'] for l in driver.issue(t['taskNumber']).get('labels', [])]] or merged
         if not trials:
             proof['routine'] = {'demonstrated': False, 'why': 'no functional trial merged'}
         else:

@@ -128,6 +128,15 @@ class ScoreTest(unittest.TestCase):
         self.assertEqual(live.classify_outcome(o), 'completed')
         self.assertEqual(live.classify_outcome(live.observe(None, [], None, 'Traceback...')), 'error')
 
+    def test_wait_for_task_done_reads_the_labels(self):
+        class FakeDriver:
+            def __init__(self, sequence): self.sequence = list(sequence)
+            def issue(self, number): return {'labels': [{'name': n} for n in self.sequence.pop(0)]}
+        self.assertEqual(live.wait_for_task_done(FakeDriver([['kind:task', 'status:in_review'], ['kind:task', 'status:done']]), 1, timeout_seconds=5, poll_seconds=0)['done'], True)
+        self.assertEqual(live.wait_for_task_done(FakeDriver([['status:in_review']] * 3), 1, timeout_seconds=0, poll_seconds=0)['done'], False)
+        o = live.observe({'state': 'published'}, [], {'state': 'merged', 'taskDone': {'done': True}})
+        self.assertTrue(o['taskDone'])
+
     def test_error_message_and_breaker_limit(self):
         self.assertEqual(live.trial_error_message({'error': None}, {'stderr': 'database_connection_error'}), 'database_connection_error')
         self.assertEqual(live.trial_error_message({'error': "RuntimeError('x')"}, {'stderr': 'ignored'}), "RuntimeError('x')")
@@ -243,6 +252,7 @@ class ConstructionTest(unittest.TestCase):
         merge = {'state': 'merged', 'reason': None, 'mergeCommit': 'm', 'head': 'h', 'pullNumber': 7, 'decisions': [{'action': 'merge', 'outcome': 'allow'}]}
         o = live.observe(run_json, runs, merge)
         self.assertEqual((o['publish'], o['acceptance'], o['attempts'], o['executedAttempts'], o['runCosts'], o['mergeState'], o['pullNumber'], o['mergeCommit']), ('allow', 'passed', 2, 2, [0.3, 0.2], 'merged', 7, 'm'))
+        self.assertEqual(live.observe({**run_json, 'tree': 't' * 40}, runs, merge)['tree'], 't' * 40)
 
     def test_load_cases_keeps_held_out_specs_out_of_the_tree(self):
         corpus = json.loads((ROOT / 'evals/corpus.json').read_text())
