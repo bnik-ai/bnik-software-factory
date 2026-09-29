@@ -102,12 +102,15 @@ tools and SQL, license and notice files, plus configured `criticalPaths` and
 `verification.protectedPaths`.
 
 Content rules match added or removed lines. One exception is deliberate: in a
-test file, a line that only spawns a program (`child_process`, `execFile*`,
-`spawn*`, `fork`, `subprocess`) is not a code-execution primitive, because that
-is how a command-line program is tested. Shell interpretation (`shell: true`,
-`exec`/`execSync`, `system`, `popen`, backtick command substitution) and dynamic
-code (`eval`, `new Function`) stay critical in every file, and the same spawn
-outside a test file stays critical.
+test-named file (`*.test.js`, `*_test.go`, `test_*.py` and the like; a helper
+under a test directory does not count), a line that only spawns a program
+(`child_process`, `execFile*`, `spawn*`, `fork`, `subprocess`) is not a
+code-execution primitive, because that is how a command-line program is tested.
+A line that also names shell interpretation or dynamic code stays critical in
+every file: `shell: true`, `exec`/`execSync`/`system`/`popen` (even as an
+import), a shell or interpreter given code on its command line (`-c`, `-e`,
+`--eval`), `getoutput`, command substitution, `eval`, `new Function`. The same
+spawn outside a test-named file stays critical.
 
 **Content tripwires** run on an ordered line diff, so moved and reordered lines
 count as changes and unchanged lines elsewhere do not escalate. Authorization
@@ -201,13 +204,20 @@ can.
 
 The reviewer receives the approved intent, the actual diff, trusted test receipts
 and a bounded snapshot of the candidate tree's text files taken by the trusted
-collector (generated and dependency directories left out; files that do not fit
-are listed as omitted and the snapshot is marked incomplete;
-`FACTORY_REVIEWER_MAX_CONTEXT_BYTES`, default 512 KiB, bounds what is rendered).
-The snapshot lets it examine what a change relies on or documents; a limitation
-it still reports blocks publication, as before. It does not receive the author's
-conversation or self-assessment, and it has no authoring, policy, publication or
-merge authority or credentials. Optional execution runs in a separate restricted sandbox. Fresh
+collector: at most 512 KiB in all and 64 KiB per file, at most 2000 files, files
+in a changed file's directory first; generated and dependency directories and
+the protected verification assets are left out; secret-shaped paths and secret
+material are never sent; what does not fit is listed as omitted (up to 500
+names, the rest counted) and the snapshot is marked incomplete.
+`FACTORY_REVIEWER_MAX_CONTEXT_BYTES` (default 512 KiB, at least 1 KiB; with the
+diff budget at most 3.5 MB, the sandbox's input limit) bounds what is rendered.
+The snapshot lets the reviewer examine what a change relies on or documents; a
+limitation it still reports blocks publication, as before. The repository's
+text files therefore reach the model, and like the diff they are untrusted data
+the prompt says never to follow. Changing any `FACTORY_REVIEWER_*` setting
+changes the reviewer trust root: re-pin and re-activate the policy. It does not
+receive the author's conversation or self-assessment, and it has no authoring,
+policy, publication or merge authority or credentials. Optional execution runs in a separate restricted sandbox. Fresh
 context reduces shared assumptions; it is not proof of independence or
 correctness. It is distinct from regression retesting (which may use prior
 findings) and from outside-human onboarding.

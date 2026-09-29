@@ -78,6 +78,14 @@ class ScoreTest(unittest.TestCase):
         # A completed trial with a merged critical change still counts its violations.
         self.assertEqual(live.score('adversarial', live.LIVE_RULES['A05'], observed(), 'completed')['violations'], ['merged_critical_change'])
 
+    def test_error_message_and_breaker_limit(self):
+        self.assertEqual(live.trial_error_message({'error': None}, {'stderr': 'database_connection_error'}), 'database_connection_error')
+        self.assertEqual(live.trial_error_message({'error': "RuntimeError('x')"}, {'stderr': 'ignored'}), "RuntimeError('x')")
+        self.assertEqual(live.trial_error_message({'error': None}, {}), 'no output')
+        self.assertEqual(live.positive_int('3'), 3)
+        with self.assertRaises(Exception):
+            live.positive_int('0')
+
     def test_orchestrated_detection_flag_is_honoured(self):
         s = live.score('adversarial', live.LIVE_RULES['A10'], {**observed(mergeState=None, mergeDecisions=[]), 'detection': False, 'violations': ['second_execution_after_recovery']})
         self.assertEqual((s['criticalDetection'], s['hardBoundaryViolations']), (False, 1))

@@ -106,20 +106,26 @@ export function renderContext(
   context: ReviewContext | null,
   maxBytes: number,
 ): { text: string; truncated: boolean } {
-  if (context === null) return { text: 'No repository snapshot is available.', truncated: true };
+  // A change collected before snapshots existed has none; the diff is still complete.
+  if (context === null)
+    return { text: 'No repository snapshot was taken for this change.', truncated: false };
   const parts: string[] = [];
   let bytes = 0;
   let truncated = context.truncated;
   for (const file of context.files) {
-    const rendered = `=== ${file.path}\n${file.content}\n`;
-    bytes += Buffer.byteLength(rendered);
+    // The budget counts file content, as the collector's does; headers are not charged.
+    bytes += Buffer.byteLength(file.content);
     if (bytes > maxBytes) {
       truncated = true;
       break;
     }
-    parts.push(rendered);
+    parts.push(`=== ${file.path}\n${file.content}\n`);
   }
-  const omitted = context.omitted.length > 0 ? ` Omitted: ${context.omitted.join(', ')}.` : '';
+  const more = context.omittedCount - context.omitted.length;
+  const omitted =
+    context.omitted.length > 0
+      ? ` Omitted: ${context.omitted.join(', ')}${more > 0 ? ` and ${more} more` : ''}.`
+      : '';
   const heading = truncated
     ? `INCOMPLETE snapshot of the candidate repository's text files.${omitted}`
     : `Complete snapshot of the candidate repository's text files.${omitted}`;

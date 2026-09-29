@@ -1,4 +1,5 @@
 import { MAX_ARCHIVE_BYTES, sha256 } from '../../worker/protocol.js';
+import { SECRET_MATERIAL_CONTENT, SECRET_MATERIAL_PATH } from '../../worker/secrets.js';
 import {
   GIT_MODES,
   fail,
@@ -19,40 +20,82 @@ const MAX_FILES = 10_000;
 const MAX_TEXT_BYTES = 64 * 1024 * 1024;
 const MAX_FILE_BYTES = MAX_ARCHIVE_BYTES;
 // OSS-22: the reviewer sees a bounded snapshot of the candidate tree's text files, not only the
-// diff, so it can examine what a change relies on. Generated and dependency directories are not
-// context; what does not fit is listed as omitted and the snapshot marked incomplete.
+// diff, so it can examine what a change relies on. Generated and dependency directories and the
+// protected verification assets are not context; secret-shaped paths and secret material are never
+// sent; files near the change come first; what does not fit is listed as omitted (counted beyond
+// the list) and the snapshot marked incomplete. Sizes come from the listing, so no blob above the
+// per-file cap is ever read.
 const CONTEXT_BYTES = 512 * 1024;
 const CONTEXT_FILE_BYTES = 64 * 1024;
 const CONTEXT_MAX_FILES = 2_000;
 const CONTEXT_OMITTED_LIST = 500;
 const CONTEXT_EXCLUDED =
   /(^|\/)(\.git|node_modules|\.factory|vendor|dist|build|coverage|__pycache__|\.venv|\.cache|target)\//;
+export interface Snapshot {
+  files: { path: string; content: string }[];
+  omitted: string[];
+  omittedCount: number;
+  truncated: boolean;
+}
+const directoryOf = (path: string) =>
+  path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+const topOf = (path: string) => (path.includes('/') ? path.slice(0, path.indexOf('/')) : '');
+
+/** Files in a changed file's directory first, then its top-level directory, then the rest; each group by path. */
+export function relevanceOrder<T extends { path: string }>(
+  entries: T[],
+  changedPaths: string[],
+): T[] {
+  const directories = new Set(changedPaths.map(directoryOf));
+  const tops = new Set(changedPaths.map(topOf));
+  const rank = (path: string) =>
+    directories.has(directoryOf(path)) ? 0 : tops.has(topOf(path)) ? 1 : 2;
+  return [...entries].sort((a, b) => {
+    const byRank = rank(a.path) - rank(b.path);
+    return byRank !== 0 ? byRank : a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
+  });
+}
 
 async function snapshot(
   run: (args: string[], stdin: Buffer | undefined, limit: number) => Promise<Buffer>,
   tree: string,
-): Promise<{ files: { path: string; content: string }[]; omitted: string[]; truncated: boolean }> {
-  const listing = (await run(['ls-tree', '-r', '-z', tree], undefined, 64 * 1024 * 1024)).toString(
-    'utf8',
-  );
-  const entries: { mode: string; sha: string; path: string }[] = [];
+  changedPaths: string[],
+): Promise<Snapshot> {
+  const listing = (
+    await run(['ls-tree', '-r', '-l', '-z', tree], undefined, 64 * 1024 * 1024)
+  ).toString('utf8');
+  const entries: { mode: string; sha: string; size: number; path: string }[] = [];
   for (const record of listing.split('\0')) {
     if (record === '') continue;
-    const match = /^([0-7]{6}) (blob|commit|tree) ([0-9a-f]{40})\t([\s\S]+)$/.exec(record);
+    const match = /^([0-7]{6}) (blob|commit|tree) ([0-9a-f]{40}) +(-|\d+)\t([\s\S]+)$/.exec(record);
     if (!match) fail('collector_tree_unparseable');
-    entries.push({ mode: match[1] as string, sha: match[3] as string, path: match[4] as string });
+    entries.push({
+      mode: match[1] as string,
+      sha: match[3] as string,
+      size: match[4] === '-' ? -1 : Number(match[4]),
+      path: match[5] as string,
+    });
   }
-  entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const files: { path: string; content: string }[] = [];
   const omitted: string[] = [];
+  let omittedCount = 0;
   const omit = (path: string) => {
+    omittedCount += 1;
     if (omitted.length < CONTEXT_OMITTED_LIST) omitted.push(path);
   };
   let bytes = 0;
   let truncated = false;
-  for (const entry of entries) {
+  for (const entry of relevanceOrder(entries, changedPaths)) {
     if (CONTEXT_EXCLUDED.test(entry.path)) continue;
     if (entry.mode !== '100644' && entry.mode !== '100755') {
+      omit(entry.path);
+      continue;
+    }
+    if (SECRET_MATERIAL_PATH.test(entry.path.toLowerCase())) {
+      omit(entry.path);
+      continue;
+    }
+    if (entry.size < 0 || entry.size > CONTEXT_FILE_BYTES) {
       omit(entry.path);
       continue;
     }
@@ -67,6 +110,10 @@ async function snapshot(
       continue;
     }
     const content = blob.toString('utf8');
+    if (SECRET_MATERIAL_CONTENT.test(content)) {
+      omit(entry.path);
+      continue;
+    }
     if (bytes + Buffer.byteLength(content) > CONTEXT_BYTES) {
       truncated = true;
       omit(entry.path);
@@ -75,7 +122,7 @@ async function snapshot(
     bytes += Buffer.byteLength(content);
     files.push({ path: entry.path, content });
   }
-  return { files, omitted, truncated };
+  return { files, omitted, omittedCount, truncated };
 }
 
 async function main() {
@@ -161,7 +208,13 @@ async function main() {
     if (after.bytes !== null && (binary || after.mode === '120000'))
       blobs[path] = after.bytes.toString('base64');
   }
-  const context = await snapshot(run, prepared.candidateTree);
+  const context = await snapshot(
+    run,
+    prepared.candidateTree,
+    (files as { newPath: string | null; oldPath: string | null }[]).map(
+      (file) => file.newPath ?? file.oldPath ?? '',
+    ),
+  );
   process.stdout.write(
     `${JSON.stringify({
       version: 1,

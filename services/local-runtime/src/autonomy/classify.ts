@@ -1,3 +1,4 @@
+import { SECRET_MATERIAL_CONTENT, SECRET_MATERIAL_PATH } from '../worker/secrets.js';
 import type { AutonomyPolicy, CriticalCategory } from './policy.js';
 import { pathWithin, requireAutonomy, requireRecord, requireRepositoryPath } from './schema.js';
 
@@ -194,8 +195,7 @@ export const BUILT_IN_PATH_RULES: readonly PathRule[] = [
   {
     code: 'secret_material_path',
     category: 'secrets_permissions',
-    pattern:
-      /(^|\/)\.env(\.[^/]*)?$|\.(pem|key|p12|pfx|jks|keystore|crt|cer|gpg|asc)$|(^|\/)id_(rsa|dsa|ecdsa|ed25519)(\.pub)?$|(^|\/|[-_.])(secret|secrets|credential|credentials)([-_./]|$)/,
+    pattern: SECRET_MATERIAL_PATH,
   },
   {
     code: 'deployment_definition',
@@ -268,7 +268,7 @@ export const CONTENT_RULES: readonly ContentRule[] = [
     category: 'security_auth',
     side: 'added',
     pattern:
-      /\b(child_process|execsync|spawnsync|execfile|execfilesync|execa|subprocess|os\.system|os\.popen|shell\s*=\s*true|dangerouslysetinnerhtml|pickle\.loads?|exec\.command|command::new|processbuilder|process\.start|runtime\.getruntime|shell_exec|passthru|proc_open|kernel\.system|io\.popen)\b|\b(eval|exec|spawn|fork|system|popen)\s*\(|\bnew\s+function\s*\(|\bfunction\s*\(\s*["'`]|`[^`]*\$\(|\beval\b/i,
+      /\b(child_process|execsync|spawnsync|execfile|execfilesync|execa|subprocess|os\.system|os\.popen|shell\s*[:=]\s*true|dangerouslysetinnerhtml|pickle\.loads?|exec\.command|command::new|processbuilder|process\.start|runtime\.getruntime|shell_exec|passthru|proc_open|kernel\.system|io\.popen)\b|\b(eval|exec|spawn|fork|system|popen)\s*\(|\bnew\s+function\s*\(|\bfunction\s*\(\s*["'`]|`[^`]*\$\(|\beval\b/i,
   },
   {
     code: 'transport_verification_disabled',
@@ -287,8 +287,7 @@ export const CONTENT_RULES: readonly ContentRule[] = [
     code: 'secret_material',
     category: 'secrets_permissions',
     side: 'added',
-    pattern:
-      /-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(ghp|gho|ghs|ghu|ghr|github_pat)_[A-Za-z0-9_]{20,}|\bsk-ant-[A-Za-z0-9_-]{20,}|\bsk-(proj|svcacct|admin)-[A-Za-z0-9_-]{20,}|\b(sk|rk)_live_[A-Za-z0-9]{16,}|\bAIza[0-9A-Za-z_-]{35}\b|\bAKIA[0-9A-Z]{16}\b|\bxox[baprse]-[A-Za-z0-9-]{10,}|\bglpat-[A-Za-z0-9_-]{20,}|\bnpm_[A-Za-z0-9]{36}\b|\bhf_[A-Za-z0-9]{30,}/,
+    pattern: SECRET_MATERIAL_CONTENT,
   },
   {
     code: 'secret_or_credential_handling',
@@ -414,13 +413,22 @@ function isTestFile(path: string | null): boolean {
 }
 const PROSE = /\.(md|markdown|mdx|txt|rst|adoc)$/;
 /**
- * A test that spawns a program is how a CLI is tested (OSS-22 live lane, F03): in a test file a
- * process-spawn primitive alone is not a critical addition. Shell interpretation and dynamic code
- * stay critical everywhere; a spawn that also names them on the line is not exempt.
+ * A test that spawns a program is how a CLI is tested (OSS-22 live lane, F03): in a test-named file
+ * a process-spawn primitive alone is not a critical addition. Shell interpretation (a shell or an
+ * interpreter given code on its command line, `shell: true`, `exec`/`execSync`/`system`/`popen`,
+ * command substitution) and dynamic code stay critical everywhere; a line that also names them is
+ * not exempt, and helpers under a test directory are not test-named.
  */
 const TEST_SPAWN = /\b(child_process|execfile|execfilesync|spawn|spawnsync|fork|subprocess)\b/i;
 const SHELL_OR_DYNAMIC_EXECUTION =
-  /\b(exec|execsync|eval|system|popen)\s*\(|shell\s*[:=]\s*true|\bnew\s+function\s*\(|\bfunction\s*\(\s*["'`]|`[^`]*\$\(|\beval\b|os\.system|os\.popen|shell_exec|passthru|proc_open|kernel\.system|io\.popen|exec\.command|command::new|processbuilder|process\.start|runtime\.getruntime|dangerouslysetinnerhtml|pickle\.loads?/i;
+  /\b(exec|execsync|system|popen)\b|shell\s*[:=]\s*true|\bnew\s+function\s*\(|\bfunction\s*\(\s*["'`]|`[^`]*\$\(|\beval\b|os\.system|os\.popen|shell_exec|passthru|proc_open|kernel\.system|io\.popen|exec\.command|command::new|processbuilder|process\.start|runtime\.getruntime|dangerouslysetinnerhtml|pickle\.loads?|["'`]-(l?c|e|p|eval)["'`]|--eval\b|\bget(status)?output\b|create_subprocess_shell|process\.spawn\s*\(\s*["'`]/i;
+const TEST_NAMED =
+  /[._-](test|spec|cy|e2e)s?\.[a-z0-9]+$|(^|\/)test_[^/]+\.py$|_test\.(go|dart)$|(^|\/)conftest\.py$|tests?\.(java|kt|cs|scala|swift)$/;
+function isTestNamed(path: string | null): boolean {
+  if (path === null) return false;
+  const lowercasePath = path.toLowerCase();
+  return TEST_NAMED.test(lowercasePath) && RUNNABLE_SOURCE.test(lowercasePath);
+}
 function isTestSpawn(line: string): boolean {
   return TEST_SPAWN.test(line) && !SHELL_OR_DYNAMIC_EXECUTION.test(line);
 }
@@ -730,7 +738,7 @@ export function classifyChanges(policy: AutonomyPolicy, manifest: ChangeManifest
             (rule.requires === undefined || rule.requires.test(line)) &&
             !(
               rule.code === 'code_execution_primitive' &&
-              (oldIsTest || newIsTest) &&
+              isTestNamed(change.newPath) &&
               isTestSpawn(line)
             ),
         )

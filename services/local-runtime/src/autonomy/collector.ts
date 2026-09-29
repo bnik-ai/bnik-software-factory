@@ -8,19 +8,27 @@ import { AutonomyError, requireAutonomy, requireGitObject, requireRecord } from 
 export interface ReviewContext {
   files: { path: string; content: string }[];
   omitted: string[];
+  /** Every omitted file, counted beyond the listed ones. */
+  omittedCount: number;
   truncated: boolean;
 }
 const CONTEXT_MAX_FILES = 2_000;
 const CONTEXT_MAX_OMITTED = 500;
 const CONTEXT_MAX_BYTES = 1024 * 1024;
 export function parseReviewContext(value: unknown): ReviewContext {
-  requireRecord(value, ['files', 'omitted', 'truncated'], 'collector_context_invalid');
+  requireRecord(
+    value,
+    ['files', 'omitted', 'omittedCount', 'truncated'],
+    'collector_context_invalid',
+  );
   const context = value as unknown as ReviewContext;
   requireAutonomy(
     Array.isArray(context.files) &&
       context.files.length <= CONTEXT_MAX_FILES &&
       Array.isArray(context.omitted) &&
       context.omitted.length <= CONTEXT_MAX_OMITTED &&
+      Number.isSafeInteger(context.omittedCount) &&
+      context.omittedCount >= context.omitted.length &&
       typeof context.truncated === 'boolean',
     'collector_context_invalid',
   );
@@ -46,7 +54,12 @@ export function parseReviewContext(value: unknown): ReviewContext {
       typeof path === 'string' && path.length > 0 && path.length <= 1024,
       'collector_context_invalid',
     );
-  return { files: context.files, omitted: context.omitted, truncated: context.truncated };
+  return {
+    files: context.files,
+    omitted: context.omitted,
+    omittedCount: context.omittedCount,
+    truncated: context.truncated,
+  };
 }
 export interface CollectedChange {
   /** Commit of the extracted base snapshot inside the sandbox (not the GitHub commit). */

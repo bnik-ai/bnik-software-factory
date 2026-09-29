@@ -737,6 +737,18 @@ def command_rehearse(args):
     print(json.dumps({**seeded, 'revoked': revoked, 'activePolicySha256': status.get('activePolicySha256'), 'scopes': len(status.get('scopes') or [])}, indent=2))
 
 
+def trial_error_message(record, observed):
+    """What went wrong in a trial that did not complete: the exception if one was raised, else the CLI's stderr."""
+    return (record.get('error') or (observed or {}).get('stderr') or 'no output')[:160]
+
+
+def positive_int(value):
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError('must be at least 1')
+    return number
+
+
 def load_cases(corpus, held_out_dir, selected):
     """Visible cases from the tree's fixtures; held-out cases from the private directory the job is given (spec text stays there)."""
     cases = []
@@ -957,10 +969,10 @@ def command_lane(args):
                 })
                 report['trials'].append(record)
                 finish_report(report, budget, cases, args.report)
-                consecutive_errors = consecutive_errors + 1 if record['error'] else 0
+                consecutive_errors = consecutive_errors + 1 if outcome == 'error' else 0
                 if consecutive_errors >= args.max_consecutive_errors:
                     # A host or GitHub outage would otherwise turn every remaining case into an instant error.
-                    budget.stopped = f"{consecutive_errors} consecutive trial errors, last {record['error'][:160]}; remaining cases NOT_RUN"
+                    budget.stopped = f"{consecutive_errors} consecutive trial errors, last {trial_error_message(record, observed)}; remaining cases NOT_RUN"
                     print(f'STOP {budget.stopped}', flush=True)
                     raise StopIteration
                 print(f"{case} T{trial_number} {outcome} run={observed.get('runState')}/{observed.get('runReason')} publish={observed.get('publish')} merge={observed.get('mergeState')}/{observed.get('mergeReason')} "
@@ -1069,7 +1081,7 @@ def main():
     parser.add_argument('--held-out', type=Path)
     parser.add_argument('--budget-usd', type=float)
     parser.add_argument('--resume', action='store_true', help='Continue a report: trials already recorded are kept, never re-run')
-    parser.add_argument('--max-consecutive-errors', type=int, default=3, help='Stop the lane after this many consecutive trial errors (an outage, not the factory)')
+    parser.add_argument('--max-consecutive-errors', type=positive_int, default=3, help='Stop the lane after this many consecutive trial errors (an outage, not the factory)')
     parser.add_argument('--step', choices=['attestation', 'ledger', 'critical', 'routine'])
     parser.add_argument('--task', type=int)
     parser.add_argument('--await-minutes', type=int, default=30)

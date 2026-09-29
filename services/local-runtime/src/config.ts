@@ -146,6 +146,34 @@ export function resolveControllerConfig(env: Env = process.env): ControllerConfi
     policyFile: absolutePath(env, 'FACTORY_AUTONOMY_POLICY_FILE'),
   };
 }
+
+/** The review sandbox reads at most 4 MiB of input; the diff and snapshot budgets must fit it. */
+const REVIEW_INPUT_LIMIT = 3_500_000;
+function reviewerSettings(
+  env: NodeJS.ProcessEnv,
+  adapter: 'fixture' | 'claude',
+  model: string | null,
+): AutonomyConfig['reviewer'] {
+  const settings = {
+    adapter,
+    model,
+    // Prompt 2 (OSS-22): the reviewer also receives the repository snapshot.
+    promptVersion: integer(env, 'FACTORY_REVIEWER_PROMPT_VERSION', 2, 1, 1000),
+    maxTokens: integer(env, 'FACTORY_REVIEWER_MAX_TOKENS', 4096, 256, 16384),
+    maxDiffBytes: integer(env, 'FACTORY_REVIEWER_MAX_DIFF_BYTES', 1_000_000, 10_000, 8_000_000),
+    maxContextBytes: integer(
+      env,
+      'FACTORY_REVIEWER_MAX_CONTEXT_BYTES',
+      512 * 1024,
+      1024,
+      4_000_000,
+    ),
+  };
+  if (settings.maxDiffBytes + settings.maxContextBytes > REVIEW_INPUT_LIMIT)
+    throw new Error('reviewer_input_budgets_exceed_sandbox_limit');
+  return settings;
+}
+
 export function resolveConfig(env: Env = process.env): RuntimeConfig {
   const mode = required(env, 'FACTORY_MODE');
   if (mode !== 'demo' && mode !== 'live') throw new Error('FACTORY_MODE_must_be_demo_or_live');
@@ -375,15 +403,7 @@ function autonomyConfig(env: Env, mode: 'demo' | 'live'): AutonomyConfig {
     policyFile: absolutePath(env, 'FACTORY_AUTONOMY_POLICY_FILE'),
     bundleDirectory: absolutePath(env, 'FACTORY_ACCEPTANCE_BUNDLE_DIR'),
     controllerDatabasePassword,
-    reviewer: {
-      adapter: reviewerAdapter,
-      model,
-      // Prompt 2 (OSS-22): the reviewer also receives the repository snapshot.
-      promptVersion: integer(env, 'FACTORY_REVIEWER_PROMPT_VERSION', 2, 1, 1000),
-      maxTokens: integer(env, 'FACTORY_REVIEWER_MAX_TOKENS', 4096, 256, 16384),
-      maxDiffBytes: integer(env, 'FACTORY_REVIEWER_MAX_DIFF_BYTES', 1_000_000, 10_000, 8_000_000),
-      maxContextBytes: integer(env, 'FACTORY_REVIEWER_MAX_CONTEXT_BYTES', 512 * 1024, 0, 4_000_000),
-    },
+    reviewer: reviewerSettings(env, reviewerAdapter, model),
     scanner,
     publisher,
     merger,

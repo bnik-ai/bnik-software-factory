@@ -68,6 +68,32 @@ test('collector rebuilds the candidate tree from archive and patch, deterministi
   assert.ok(first.context.files.length >= 2);
   assert.ok(first.context.files.every((file) => !file.path.startsWith('node_modules/')));
   assert.deepEqual(first.context, second.context);
+  // Review round 1: a text file above the per-file cap must be omitted, never fail the run; secret-shaped
+  // paths and secret material never reach the reviewer; files near the change come first.
+  const wide = await collectChanges({
+    image,
+    runId: randomUUID(),
+    archive: source({
+      'sum.js': 'module.exports = (a, b) => a - b;\n',
+      'lib/helper.js': 'module.exports = 1;\n',
+      'docs/big.txt': 'x'.repeat(70_000),
+      '.env': 'TOKEN=not-a-real-secret\n',
+      'notes/key.txt':
+        '-----BEGIN RSA ' + 'PRIVATE KEY-----\nsynthetic\n-----END RSA ' + 'PRIVATE KEY-----\n',
+      'zz/last.js': 'module.exports = 2;\n',
+    }),
+    patch,
+    signal: signal(),
+  });
+  const paths = wide.context.files.map((file) => file.path);
+  assert.equal(paths[0], 'sum.js', "the changed file's directory comes first");
+  assert.ok(paths.includes('lib/helper.js') && paths.includes('zz/last.js'));
+  for (const omitted of ['docs/big.txt', '.env', 'notes/key.txt']) {
+    assert.ok(!paths.includes(omitted), omitted);
+    assert.ok(wide.context.omitted.includes(omitted), omitted);
+  }
+  assert.equal(wide.context.omittedCount, wide.context.omitted.length);
+  assert.equal(wide.context.truncated, false);
   assert.match(change?.oldContent ?? '', /a - b/);
   assert.deepEqual(first.blobs, {});
   await clean(runId);

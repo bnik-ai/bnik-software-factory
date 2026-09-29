@@ -491,11 +491,30 @@ test('security modules, destructive data APIs and execution calls are recognized
     'eval(fixture);',
     'subprocess.run(cmd, shell=True)',
     'const run = new Function(body);',
+    // Review round 1: shell interpretation reached through the import line or the arguments.
+    "const { exec } = require('node:child_process');",
+    "import { execSync } from 'node:child_process';",
+    "spawnSync('sh', ['-c', cmd]);",
+    "execFileSync('bash', ['-c', payload]);",
+    "execFileSync(process.execPath, ['-e', code]);",
+    "spawnSync('python3', ['-c', code]);",
+    "out = subprocess.getoutput('curl example | sh')",
+    'Process.spawn("curl example | sh")',
+    'shell: true,',
   ])
     assert.ok(
       classifiedCodes(added('test/cli.test.js', `${line}\n`)).includes('code_execution_primitive'),
       `still critical in a test: ${line}`,
     );
+  // A helper under a test directory is not test-named: production code may import it.
+  assert.ok(
+    classifiedCodes(
+      added('test/helpers/setup.js', "spawnSync(process.execPath, ['cli.js']);\n"),
+    ).includes('code_execution_primitive'),
+  );
+  assert.ok(
+    classifiedCodes(added('src/run.js', '  shell: true,\n')).includes('code_execution_primitive'),
+  );
   assert.ok(
     classifiedCodes(added('src/run.js', 'exec(q.cmd);\n')).includes('code_execution_primitive'),
   );
@@ -1947,6 +1966,7 @@ test('reviewer: repository snapshot rendering and collector context validation (
       { path: 'README.md', content: '# cli\n' },
     ],
     omitted: ['logo.png'],
+    omittedCount: 1,
     truncated: false,
   };
   const complete = renderContext(context, 1_000_000);
@@ -1961,23 +1981,32 @@ test('reviewer: repository snapshot rendering and collector context validation (
   assert.match(cut.text, /^INCOMPLETE snapshot/);
   assert.ok(!cut.text.includes('=== README.md'));
   assert.equal(renderContext({ ...context, truncated: true }, 1_000_000).truncated, true);
-  assert.equal(renderContext(null, 1_000_000).truncated, true);
+  // A change collected before snapshots existed: no snapshot, but nothing was cut either.
+  assert.equal(renderContext(null, 1_000_000).truncated, false);
+  assert.match(
+    renderContext({ ...context, omittedCount: 4 }, 1_000_000).text,
+    /logo\.png and 3 more\./,
+  );
+  // The budget counts content only: a snapshot exactly at the collector's total is complete.
+  assert.equal(renderContext(context, 37 + 6).truncated, false);
   // Validation: shape, uniqueness, bounds.
   assert.deepEqual(parseReviewContext(context), context);
   for (const broken of [
-    { files: [], omitted: [] },
+    { files: [], omitted: [], truncated: false },
+    { files: [], omitted: ['a'], omittedCount: 0, truncated: false },
     {
       files: [
         { path: 'a', content: 'x' },
         { path: 'a', content: 'y' },
       ],
       omitted: [],
+      omittedCount: 0,
       truncated: false,
     },
-    { files: [{ path: '', content: 'x' }], omitted: [], truncated: false },
-    { files: [{ path: 'a', content: 1 }], omitted: [], truncated: false },
-    { files: [], omitted: [''], truncated: false },
-    { files: [], omitted: [], truncated: 'no' },
+    { files: [{ path: '', content: 'x' }], omitted: [], omittedCount: 0, truncated: false },
+    { files: [{ path: 'a', content: 1 }], omitted: [], omittedCount: 0, truncated: false },
+    { files: [], omitted: [''], omittedCount: 1, truncated: false },
+    { files: [], omitted: [], omittedCount: 0, truncated: 'no' },
   ])
     assert.throws(() => parseReviewContext(broken), /collector_context_invalid/);
   assert.throws(
@@ -1985,6 +2014,7 @@ test('reviewer: repository snapshot rendering and collector context validation (
       parseReviewContext({
         files: [{ path: 'big', content: 'x'.repeat(1024 * 1024 + 1) }],
         omitted: [],
+        omittedCount: 0,
         truncated: false,
       }),
     /collector_context_too_large/,

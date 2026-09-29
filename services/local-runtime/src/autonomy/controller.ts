@@ -1001,6 +1001,8 @@ export function repositoryLockKey(repositoryId: number): string {
  * client until it rolls back. NOWAIT: a held row means another command is active, and the
  * caller reports that instead of waiting. The runtime role has no privilege on the table.
  */
+/** Longer than any single controller command (a run is bounded by the policy's maxRunMs). */
+export const LOCK_SESSION_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 export async function lockRows(
   client: PoolClient,
   repositoryId: number,
@@ -1013,8 +1015,9 @@ export async function lockRows(
     );
   await client.query('BEGIN');
   // The lock transaction idles while the author works, longer than the pool's 15 s
-  // idle-in-transaction timeout (database.ts); the lock must hold for the whole command.
-  await client.query('SET LOCAL idle_in_transaction_session_timeout = 0');
+  // idle-in-transaction timeout (database.ts); the lock must hold for the whole command, and
+  // a wedged-but-alive controller must still lose it eventually.
+  await client.query(`SET LOCAL idle_in_transaction_session_timeout = ${LOCK_SESSION_TIMEOUT_MS}`);
   for (const lock of locks) {
     try {
       await client.query(
