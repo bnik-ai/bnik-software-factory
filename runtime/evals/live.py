@@ -65,6 +65,12 @@ TASK_BOUNDS = {'maxTurns': 20, 'timeoutMs': 300000}
 TSX = ROOT / 'services/local-runtime/node_modules/.bin/tsx'
 
 
+def require_toolchain():
+    """The comparator runs on the host: the locked services/local-runtime dependencies (npm ci) must be installed before any budget or repository write."""
+    if not TSX.exists():
+        raise RuntimeError(f'live lane needs the locked services/local-runtime dependencies on the host (npm ci): {TSX} is missing')
+
+
 def policy_plan(current, proposed):
     """The ledger's answer for an activation of `proposed` over `current`: its weakening codes and the current document's digest."""
     with tempfile.TemporaryDirectory() as tmp:
@@ -448,6 +454,9 @@ class Live:
         shutil.rmtree(target, ignore_errors=True)
         shutil.copytree(bundle_dir, target)
         policy_file = self.state / 'autonomy-policy.json'
+        merge_policy_file = self.state / 'merge-policy.json'
+        # What the files held before this activation: restored if the ledger refuses it.
+        previous = (policy_file.read_text() if policy_file.exists() else None, merge_policy_file.read_text())
         template = json.loads((ROOT / 'examples/autonomy-demo/autonomy-policy.json').read_text())
         if not policy_file.exists():
             policy_file.write_text(json.dumps(template) + '\n')
@@ -466,14 +475,16 @@ class Live:
             # the ledger's active document (a refused activation is rolled back below, so only a crash
             # between the two, or a hand edit, can make them differ).
             plan = policy_plan(self.active, policy)
+            acknowledge = plan['weakenings']
             if not self.drift_checked:
                 ledger = self.status().get('activePolicySha256')
-                if ledger and ledger != plan['currentSha256']:
+                if ledger is None:
+                    # A kept state file over a fresh ledger: the ledger sees an initial activation.
+                    policy['revision'] = 1
+                    acknowledge = ['initial_activation', 'mode_changed:human_gated->bounded']
+                elif ledger != plan['currentSha256']:
                     raise RuntimeError("policy_file_drifted_from_ledger: STATE/autonomy-policy.json is not the ledger's active policy; restore it from the last accepted activation")
                 self.drift_checked = True
-            acknowledge = plan['weakenings']
-        merge_policy_file = self.state / 'merge-policy.json'
-        previous = (policy_file.read_text() if policy_file.exists() else None, merge_policy_file.read_text())
         policy_file.write_text(json.dumps(policy, indent=2) + '\n')
         policy_file.chmod(0o600)
         merge_policy = json.loads(previous[1])
@@ -491,7 +502,7 @@ class Live:
             sys.stderr.write(result.stdout[-6000:] + result.stderr[-3000:])
             raise RuntimeError(f'sfac autonomy activate exited {result.returncode}')
         activated = scripted.parse_json(result.stdout) or {}
-        self.revision += 1
+        self.revision = policy['revision']
         self.pins = pins
         self.base_branch = base_branch
         self.active = policy
@@ -1289,14 +1300,17 @@ def main():
             parser.error('prepare requires --state')
         command_prepare(args)
     elif args.command == 'rehearse':
+        require_toolchain()
         if not args.state:
             parser.error('rehearse requires --state')
         command_rehearse(args)
     elif args.command == 'lane':
+        require_toolchain()
         if not (args.state and args.report):
             parser.error('lane requires --state and --report')
         command_lane(args)
     elif args.command == 'proof':
+        require_toolchain()
         if not (args.state and args.report and args.step):
             parser.error('proof requires --state, --report and --step')
         if args.step == 'critical' and not args.task:

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Unit checks of the live driver's judgement and construction helpers; no network, no Docker, no model."""
 import base64
+import contextlib
+import io
 import json
 import os
 import re
@@ -177,7 +179,7 @@ class ActivateTest(unittest.TestCase):
 
     def test_refused_activation_restores_both_files_and_the_revision(self):
         self.activate_result = subprocess.CompletedProcess([], 1, '', 'policy_weakening_not_acknowledged\n')
-        with self.assertRaisesRegex(RuntimeError, 'activate exited 1'):
+        with self.assertRaisesRegex(RuntimeError, 'activate exited 1'), contextlib.redirect_stderr(io.StringIO()):
             self.driver.activate(self.bundle, 'q/t', 'claude-sonnet-5')
         policy, merge = self.files()
         self.assertEqual((policy, merge['baseBranch'], self.driver.revision, self.driver.active), (self.active, 'main', 3, self.active))
@@ -194,6 +196,23 @@ class ActivateTest(unittest.TestCase):
         self.ledger = live.policy_plan(self.active, valid_policy(4, maxTurns=10))['currentSha256']
         out = self.driver.activate(self.bundle, 'main', 'claude-sonnet-5')
         self.assertEqual(out['acknowledged'], ['limit_raised:execution.maxTurns', 'trust_root_changed:evalProtocolSha256'])
+
+    def test_a_kept_state_file_over_a_fresh_ledger_activates_initially(self):
+        self.ledger = None
+        out = self.driver.activate(self.bundle, 'main', 'claude-sonnet-5')
+        self.assertEqual((out['revision'], out['acknowledged']), (1, ['initial_activation', 'mode_changed:human_gated->bounded']))
+        self.assertEqual((self.files()[0]['revision'], self.driver.revision), (1, 1))
+
+    def test_a_refused_first_activation_leaves_no_policy_file_behind(self):
+        state = Path(self.tmp.name)
+        (state / 'autonomy-policy.json').unlink()
+        self.driver = live.Live(state)
+        self.driver.sfac = self.driver_sfac
+        self.activate_result = subprocess.CompletedProcess([], 1, '', 'policy_revision_not_increasing\n')
+        with self.assertRaisesRegex(RuntimeError, 'activate exited 1'), contextlib.redirect_stderr(io.StringIO()):
+            self.driver.activate(self.bundle, 'main', 'claude-sonnet-5')
+        self.assertFalse((state / 'autonomy-policy.json').exists())
+        self.assertEqual(json.loads((state / 'merge-policy.json').read_text())['baseBranch'], 'main')
 
     def test_a_policy_file_that_drifted_from_the_ledger_stops_before_activating(self):
         self.ledger = 'f' * 64

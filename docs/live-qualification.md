@@ -44,7 +44,9 @@ failures); it is never `PASS`.
 
 The job is a script the maintainer runs from the candidate root with the authorization record,
 a staging directory holding the App registrations, and a state directory outside the source
-tree. It never reads a secret value; the installation's keys move into `STATE/secrets` at `init`
+tree. It needs Python 3, Docker, and the locked `services/local-runtime` dependencies installed
+on the host (`npm ci`): `rehearse`, `lane` and `proof` refuse to start without them, because
+the policy comparator runs there before any budget or repository write. It never reads a secret value; the installation's keys move into `STATE/secrets` at `init`
 and are read only by `./sfac`'s containers.
 
 - `ids` resolves App ids, slugs, installation ids and the repository id through each App's own
