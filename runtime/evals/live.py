@@ -1093,10 +1093,17 @@ def command_proof(args):
         original = env_file.read_text()
         try:
             env_file.write_text(''.join(line for line in original.splitlines(keepends=True) if not line.startswith('FACTORY_PUBLICATION_SECRETLESS_CI=')))
-            result = live.sfac('autonomy', 'merge-scan', check=False)
+            without = live.sfac('autonomy', 'merge-scan', check=False)
         finally:
             env_file.write_text(original)
-        proof['attestation'] = {'refused': result.returncode != 0 and 'base_publication_requires_FACTORY_PUBLICATION_SECRETLESS_CI_attested' in (result.stderr + result.stdout), 'exit': result.returncode, 'stderr': result.stderr.strip()[-400:], 'at': utc()}
+        control = live.sfac('autonomy', 'merge-scan', check=False)
+        proof['attestation'] = {
+            'refused': without.returncode != 0 and control.returncode == 0,
+            'reasonNamed': 'base_publication_requires_FACTORY_PUBLICATION_SECRETLESS_CI_attested' in (without.stderr + without.stdout),
+            'withoutAttestation': {'exit': without.returncode, 'stderr': without.stderr.strip()[-200:]},
+            'withAttestation': {'exit': control.returncode, 'scanned': bool(scripted.parse_json(control.stdout))},
+            'at': utc(),
+        }
     elif args.step == 'ledger':
         commands = [('status', ['autonomy', 'status']), ('pause', ['autonomy', 'pause', '--reason', 'qualification ledger proof']), ('status-paused', ['autonomy', 'status']), ('resume', ['autonomy', 'resume']), ('status-resumed', ['autonomy', 'status'])]
         outputs = []

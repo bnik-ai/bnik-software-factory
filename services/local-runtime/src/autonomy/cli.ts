@@ -55,7 +55,7 @@ import {
 import { type AutonomyRun, AutonomyRuns } from './runs.js';
 import { sweepSandboxes } from './sandbox.js';
 import { AutonomyError, requireAutonomy, sha256Json } from './schema.js';
-import { costView } from './views.js';
+import { commandFailureReason, costView } from './views.js';
 
 /**
  * Operator CLI for bounded autonomy. Every command runs with the controller database
@@ -879,12 +879,6 @@ async function main() {
   }
 }
 main().catch((error) => {
-  console.error(
-    error instanceof AutonomyError
-      ? error.reason
-      : error instanceof GitHubFailure
-        ? error.reason
-        : 'autonomy_command_failed',
-  );
+  console.error(commandFailureReason(error));
   process.exitCode = 1;
 });

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { costView } from '../src/autonomy/views.js';
+import { commandFailureReason, costView } from '../src/autonomy/views.js';
 
 test('costView exposes the SDK estimate and the reviewer usage from the run evidence', () => {
   const view = costView({
@@ -30,4 +30,20 @@ test('costView reports null, never a number it cannot vouch for', () => {
     costView({ evidence: { estimatedUsd: '0.5', reviewUsage: { input_tokens: -5, n: 1 } } }),
     { estimatedUsd: null, reviewUsage: { n: 1 } },
   );
+});
+
+test('commandFailureReason names refusals and configuration errors, never arbitrary messages', () => {
+  assert.equal(commandFailureReason({ reason: 'scope_revoked' }), 'scope_revoked');
+  assert.equal(
+    commandFailureReason(
+      new Error('base_publication_requires_FACTORY_PUBLICATION_SECRETLESS_CI_attested'),
+    ),
+    'base_publication_requires_FACTORY_PUBLICATION_SECRETLESS_CI_attested',
+  );
+  assert.equal(
+    commandFailureReason(new Error('connect ECONNREFUSED 127.0.0.1:5432')),
+    'autonomy_command_failed',
+  );
+  assert.equal(commandFailureReason({ reason: 'x'.repeat(200) }), 'autonomy_command_failed');
+  assert.equal(commandFailureReason(undefined), 'autonomy_command_failed');
 });
