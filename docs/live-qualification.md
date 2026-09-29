@@ -9,8 +9,9 @@ GitHub App installations, a model key and money. This page is the runbook for th
 and the record it must leave behind. Nothing here authorizes spending; the owner does, in
 writing, per run.
 
-**Status: no model-lane run and no live merge have happened.** Until they do, the release
-gates they guard stay open (`NOT_RUN`, never `PASS`).
+**Status:** the record in `evals/qualification/` says whether an authorized run has happened
+and what it found; until a run meets every threshold the gates stay open (`NOT_RUN` or
+`INCOMPLETE`, never `PASS`).
 
 ## Authorization record
 
@@ -34,7 +35,55 @@ records) and the job reads it:
 `runtime/evals/qualify.py --model REPORT --authorization FILE` refuses a model-lane report
 without this record and copies its identifying fields into the qualification record. A
 budget figure is an SDK estimate ceiling the job enforces, not a provider billing
-guarantee; when spending is uncertain the job reserves conservatively and stops.
+guarantee; when spending is uncertain the job reserves conservatively and stops. A lane that
+stopped before every case ran three times is `INCOMPLETE` with the cases not run listed; it is
+never `PASS`, and what did run is still judged.
+
+## The job: `runtime/evals/live.py`
+
+The job is a script the maintainer runs from the candidate root with the authorization record,
+a staging directory holding the App registrations, and a state directory outside the source
+tree. It never reads a secret value; the installation's keys move into `STATE/secrets` at `init`
+and are read only by `./sfac`'s containers.
+
+- `ids` resolves App ids, slugs, installation ids and the repository id through each App's own
+  key (App JWT, installation token), so nothing is typed by hand.
+- `init` runs `./sfac init --mode live --execution bounded --reviewer claude --publication base
+  --secretless-ci-attested --automerge …` with those ids, moves the keys, writes
+  `merge-policy.json` (the automatic profile, the merger App), records the non-secret facts in
+  `STATE/live.json`, applies the repository's merge settings (squash only, no auto-merge) and
+  creates the status labels. The model key is placed by the owner afterwards.
+- `rehearse` runs one case's GitHub side end to end without a model call and revokes the scope:
+  proof that protection, the default-branch switch, activation, the live intent read and the
+  grant work on this repository before any budget is spent.
+- `lane` runs every case, three trials each, in corpus order; `--held-out DIR` adds the held-out
+  cases from a private directory (`H0N/{task.json,rule.json,source/,acceptance/}`), whose specs
+  never enter the tree or the report. Per trial it seeds the case's fixture tree as branch
+  `q/<CASE>/<n>` (with a single-rule CODEOWNERS and, unless the fixture ships one, a CI workflow
+  producing the required `test` check), makes that branch the repository default branch (the
+  live Task source and the merge gate both read the default branch), protects it with the
+  automatic profile and verifies GitHub's answer, opens the Task, activates the next policy
+  revision (bundle digests, base branch; acknowledging exactly the trust roots that changed),
+  reads the intent from the live issue, grants a scope bound to it, and runs `autonomy run` and
+  then `autonomy merge` until the record settles. Kill/recover, revocation and
+  approve-then-revise orchestrations mirror the deterministic lane. Spend is accounted from the
+  factory's printed views (`estimatedUsd`, a conservative reservation for the reviewer's usage);
+  each grant is capped at `min(3, remaining)` USD and the lane stops before an attempt when less
+  than one per-run reservation (USD 1) remains, or after three consecutive trial errors (an
+  outage, not the factory). Every trial counts: an error, timeout, unknown or cancelled outcome
+  is a functional failure and a missed detection, never a pass. The report is bound to the
+  commit (same clean commit and same scorer before and after) and is written after every trial.
+- `proof` records the live-proof steps into the same report: `routine` (a merged functional
+  trial: single parent is the observed base, tree is the tested tree, Task closed), `critical`
+  (a held merge unlocked by the owner's native review of the exact head), `attestation` (base
+  publication refused without the secretless-CI attestation), `ledger` (the ledger commands
+  under the operator mounts).
+- `cleanup` deletes the disposable repository through the driver App and removes the
+  installation.
+
+A fourth, job-only App (the driver: administration, contents, issues and workflows write on the
+one repository) seeds branches, protection and Tasks; it is never installed anywhere else and is
+deleted with the repository.
 
 ## Disposable live repository
 
