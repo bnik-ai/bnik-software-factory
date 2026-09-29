@@ -68,12 +68,16 @@ and are read only by `./sfac`'s containers.
   automatic profile and verifies GitHub's answer, opens the Task (release bounds of 20 turns and
   5 minutes, which the demo policy also caps at 20 turns: live runs 2–3 needed 10–13 recorded turns
   for the functional corpus, and a 10-turn cap failed F03 twice), activates the next policy
-  revision (bundle digests, base branch; acknowledging exactly the trust roots that changed and,
-  against the installation's active policy, any raised limit or added model),
+  revision (bundle digests, base branch; acknowledging exactly the weakenings the runtime's own
+  comparator reports against the installation's active policy, run by the job through
+  `runtime/evals/policy-plan.ts`; a refused activation restores the previous policy files, and a
+  policy file that no longer matches the ledger's active digest stops the job with
+  `policy_file_drifted_from_ledger`),
   reads the intent from the live issue, grants a scope bound to it, and runs `autonomy run` and
   then `autonomy merge` until the record settles (a merge command that fails on a GitHub read
   before any decision, `github_connection_failed` or `github_request_failed`, is re-invoked until
-  the deadline and the record counts the retries; any other failure settles). Kill/recover, revocation and
+  the record settles, at most ten times and within the deadline, and the record counts the
+  retries; any other failure settles). Kill/recover, revocation and
   approve-then-revise orchestrations mirror the deterministic lane. Spend is accounted from the
   factory's printed views (`estimatedUsd`, a conservative reservation for the reviewer's usage);
   each grant is capped at `min(3, remaining)` USD and the lane stops before an attempt when less

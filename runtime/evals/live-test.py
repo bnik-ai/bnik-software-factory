@@ -99,21 +99,108 @@ class MergeUntilSettledTest(unittest.TestCase):
         self.assertFalse(live.score('functional', {}, {**observed_out, 'acceptance': 'passed'})['functionalSuccess'])
 
 
-class ActivationAcknowledgementTest(unittest.TestCase):
-    def test_limit_fields_mirror_the_policy_comparator(self):
-        source = (ROOT / 'services/local-runtime/src/autonomy/policy.ts').read_text()
-        block = source.split('const numericLimits')[1].split('];')[0]
-        self.assertEqual(sorted(re.findall(r"'([A-Za-z.]+)'", block)), sorted(live.LIMIT_FIELDS))
+def valid_policy(revision=1, base_branch='main', **execution):
+    """The demo template as the driver writes it: pins filled, repository and approvers set."""
+    policy = json.loads((ROOT / 'examples/autonomy-demo/autonomy-policy.json').read_text())
+    policy['revision'] = revision
+    policy['repository'] = {'fullName': 'example/repo', 'id': 1, 'installationId': 2, 'baseBranch': base_branch}
+    policy['execution'] = {**policy['execution'], **execution}
+    policy['approvers'] = {'githubUserIds': [55]}
+    # The protocol digest stays the template's: it is the trust root the driver does not pin itself.
+    policy['verification'].update({'acceptanceSuiteSha256': 'a' * 64, 'acceptanceHarnessSha256': 'b' * 64, 'reviewerConfigSha256': 'c' * 64,
+                                   'acceptanceRunnerImage': 'sha256:' + 'e' * 64})
+    return policy
 
-    def test_raised_limits_and_added_models_are_acknowledged_lowered_ones_are_not(self):
-        active = json.loads((ROOT / 'examples/autonomy-demo/autonomy-policy.json').read_text())
-        active['execution']['maxTurns'] = 10
-        proposed = json.loads(json.dumps(active))
-        self.assertEqual(live.limit_weakenings(active, proposed), [])
-        proposed['execution']['maxTurns'] = 20
-        proposed['changeLimits']['maxChangedBytes'] = active['changeLimits']['maxChangedBytes'] - 1
-        proposed['execution']['models'] = ['claude-opus-5-5']
-        self.assertEqual(live.limit_weakenings(active, proposed), ['limit_raised:execution.maxTurns', 'model_added:claude-opus-5-5'])
+
+class ActivationPlanTest(unittest.TestCase):
+    def test_plan_is_the_runtime_comparators_answer(self):
+        active = valid_policy(1, maxTurns=10)
+        proposed = valid_policy(2, base_branch='q/x', maxTurns=20, models=['claude-opus-5-5'])
+        proposed['changeLimits']['maxChangedBytes'] -= 1  # a strengthening: never acknowledged
+        plan = live.policy_plan(active, proposed)
+        self.assertEqual(plan['weakenings'], ['limit_raised:execution.maxTurns', 'model_added:claude-opus-5-5', 'repository_changed'])
+        self.assertRegex(plan['currentSha256'], r'^[0-9a-f]{64}$')
+        self.assertEqual(live.policy_plan(active, valid_policy(2, maxTurns=10))['weakenings'], [])
+
+    def test_plan_refuses_a_revision_that_does_not_increase(self):
+        with self.assertRaisesRegex(RuntimeError, 'policy_revision_not_increasing'):
+            live.policy_plan(valid_policy(2), valid_policy(2))
+
+
+class ActivateTest(unittest.TestCase):
+    """`Live.activate` against a fake ./sfac: the ledger's plan is acknowledged, a refusal rolls the files back, drift stops the job."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        state = Path(self.tmp.name)
+        self.active = valid_policy(3, maxTurns=10)
+        (state / 'live.json').write_text(json.dumps({'repository': 'example/repo', 'repositoryId': 1, 'ownerId': 55, 'apps': {'intake': {'installationId': 2}}}))
+        (state / 'merge-policy.json').write_text(json.dumps({'baseBranch': 'main'}))
+        (state / 'autonomy-policy.json').write_text(json.dumps(self.active, indent=2) + '\n')
+        self.original_containers = live.Live.labelled_containers
+        live.Live.labelled_containers = lambda self: []
+        self.driver = live.Live(state)
+        self.pins = {env: self.active['verification'][field] for env, field in live.scripted.TRUST_ROOT_FIELDS.items()}
+        self.calls = []
+        self.ledger = live.policy_plan(self.active, valid_policy(4, maxTurns=10))['currentSha256']
+        self.activate_result = subprocess.CompletedProcess([], 0, json.dumps({'activated': 'x' * 64}), '')
+
+        def fake_sfac(*args, expected=0, timeout=1800, check=True):
+            self.calls.append(args)
+            if args[:3] == ('autonomy', 'pin', '--env'):
+                return subprocess.CompletedProcess(args, 0, '\n'.join(f'{k}={v}' for k, v in self.pins.items()) + '\n', '')
+            if args[:2] == ('autonomy', 'status'):
+                return subprocess.CompletedProcess(args, 0, json.dumps({'activePolicySha256': self.ledger}), '')
+            if args[:2] == ('autonomy', 'activate'):
+                if check and self.activate_result.returncode != expected:
+                    raise RuntimeError('unexpected check=True')
+                return self.activate_result
+            raise AssertionError(f'unexpected sfac call {args}')
+        self.driver.sfac = self.driver_sfac = fake_sfac
+        self.bundle = ROOT / 'examples/autonomy-demo/acceptance'
+
+    def tearDown(self):
+        live.Live.labelled_containers = self.original_containers
+        self.tmp.cleanup()
+
+    def files(self):
+        state = Path(self.tmp.name)
+        return json.loads((state / 'autonomy-policy.json').read_text()), json.loads((state / 'merge-policy.json').read_text())
+
+    def test_accepted_activation_acknowledges_the_plan_and_advances_the_files(self):
+        out = self.driver.activate(self.bundle, 'q/t', 'claude-sonnet-5')
+        activate = next(c for c in self.calls if c[:2] == ('autonomy', 'activate'))
+        self.assertEqual(activate, ('autonomy', 'activate', '--acknowledge', 'limit_raised:execution.maxTurns,repository_changed'))
+        policy, merge = self.files()
+        self.assertEqual((policy['revision'], policy['execution']['maxTurns'], policy['repository']['baseBranch'], merge['baseBranch']), (4, 20, 'q/t', 'q/t'))
+        self.assertEqual((out['revision'], out['acknowledged'], self.driver.revision, self.driver.active), (4, ['limit_raised:execution.maxTurns', 'repository_changed'], 4, policy))
+
+    def test_refused_activation_restores_both_files_and_the_revision(self):
+        self.activate_result = subprocess.CompletedProcess([], 1, '', 'policy_weakening_not_acknowledged\n')
+        with self.assertRaisesRegex(RuntimeError, 'activate exited 1'):
+            self.driver.activate(self.bundle, 'q/t', 'claude-sonnet-5')
+        policy, merge = self.files()
+        self.assertEqual((policy, merge['baseBranch'], self.driver.revision, self.driver.active), (self.active, 'main', 3, self.active))
+        # The next attempt in the same process plans against the unchanged active document again.
+        self.activate_result = subprocess.CompletedProcess([], 0, json.dumps({'activated': 'x' * 64}), '')
+        self.assertEqual(self.driver.activate(self.bundle, 'q/t', 'claude-sonnet-5')['acknowledged'], ['limit_raised:execution.maxTurns', 'repository_changed'])
+
+    def test_a_changed_protocol_digest_is_acknowledged_like_any_other_trust_root(self):
+        state = Path(self.tmp.name)
+        self.active['verification']['evalProtocolSha256'] = 'd' * 64
+        (state / 'autonomy-policy.json').write_text(json.dumps(self.active, indent=2) + '\n')
+        self.driver = live.Live(state)
+        self.driver.sfac = self.driver_sfac
+        self.ledger = live.policy_plan(self.active, valid_policy(4, maxTurns=10))['currentSha256']
+        out = self.driver.activate(self.bundle, 'main', 'claude-sonnet-5')
+        self.assertEqual(out['acknowledged'], ['limit_raised:execution.maxTurns', 'trust_root_changed:evalProtocolSha256'])
+
+    def test_a_policy_file_that_drifted_from_the_ledger_stops_before_activating(self):
+        self.ledger = 'f' * 64
+        with self.assertRaisesRegex(RuntimeError, 'policy_file_drifted_from_ledger'):
+            self.driver.activate(self.bundle, 'q/t', 'claude-sonnet-5')
+        self.assertFalse(any(c[:2] == ('autonomy', 'activate') for c in self.calls))
+        self.assertEqual(self.files()[0], self.active)
 
 
 class ScoreTest(unittest.TestCase):
