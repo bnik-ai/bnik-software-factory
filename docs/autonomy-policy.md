@@ -226,7 +226,10 @@ incomplete. `FACTORY_REVIEWER_MAX_CONTEXT_BYTES` (default 640 KiB, at least
 1 KiB, charged for headings and the omitted list as well; with the diff budget
 at most 3.5 MB, the sandbox's input limit) bounds what is rendered.
 The snapshot lets the reviewer examine what a change relies on or documents; a
-limitation it still reports blocks publication, as before. The repository's
+limitation it still reports blocks publication, as before. The prompt says that
+the protected acceptance suite is deliberately never shown (its receipt is the
+evidence), and a verdict that is not one JSON object makes the review
+inconclusive, which also blocks. The repository's
 text files therefore reach the model, and like the diff they are untrusted data
 the prompt says never to follow. Changing any `FACTORY_REVIEWER_*` setting
 changes the reviewer trust root: re-pin and re-activate the policy. It does not

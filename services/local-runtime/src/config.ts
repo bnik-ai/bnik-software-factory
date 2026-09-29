@@ -157,8 +157,9 @@ function reviewerSettings(
   const settings = {
     adapter,
     model,
-    // Prompt 2 (OSS-22): the reviewer also receives the repository snapshot.
-    promptVersion: integer(env, 'FACTORY_REVIEWER_PROMPT_VERSION', 2, 1, 1000),
+    // Prompt 2 (OSS-22): the reviewer also receives the repository snapshot; 3: the protected suite
+    // is never shown and the reply is one JSON object.
+    promptVersion: integer(env, 'FACTORY_REVIEWER_PROMPT_VERSION', 3, 1, 1000),
     maxTokens: integer(env, 'FACTORY_REVIEWER_MAX_TOKENS', 4096, 256, 16384),
     maxDiffBytes: integer(env, 'FACTORY_REVIEWER_MAX_DIFF_BYTES', 1_000_000, 10_000, 8_000_000),
     // 640 KiB: the collector's 512 KiB of content plus headings and the omitted list.

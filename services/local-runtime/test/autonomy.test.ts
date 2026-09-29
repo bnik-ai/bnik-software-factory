@@ -2070,6 +2070,51 @@ test('further dependency manifests, executable manifests and verification metada
     assert.ok(classifiedCodes(added(path, 'x\n')).includes(expected), `${path} -> ${expected}`);
 });
 
+test('review evidence: an errored review is inconclusive, not inconsistent (OSS-22 run 2, A04)', async () => {
+  const { reviewReasons } = await import('../src/autonomy/evidence.js');
+  const policy = policyFixture();
+  const request = requestFor(policy, 'publish');
+  const subject = {
+    repositoryId: policy.repository.id,
+    taskId: 'TASK_1',
+    base: request.base,
+    tree: TREE,
+    changesSha256: '0'.repeat(64),
+  };
+  const receipt = {
+    version: 1,
+    kind: 'review',
+    runId: '00000000-0000-4000-8000-000000000001',
+    subject,
+    intentSha256: request.task.intentSha256,
+    reviewerConfigSha256: policy.verification.reviewerConfigSha256,
+    context: 'fresh',
+    status: 'error',
+    // The reviewer's error receipt: critical by construction, with no category to name.
+    risk: 'critical',
+    categories: [],
+    findings: [],
+    limitations: [],
+    snapshot: 'none',
+    completedAt: NOW,
+  };
+  assert.deepEqual(
+    reviewReasons(policy, subject, request.task.intentSha256, receipt, NOW).map((r) => r.code),
+    ['review_inconclusive'],
+  );
+  assert.throws(
+    () =>
+      reviewReasons(
+        policy,
+        subject,
+        request.task.intentSha256,
+        { ...receipt, status: 'complete' },
+        NOW,
+      ),
+    /review_risk_categories_inconsistent/,
+  );
+});
+
 test('reviewer: repository snapshot rendering and collector context validation (OSS-22)', async () => {
   const { renderContext } = await import('../src/autonomy/reviewer.js');
   const { parseReviewContext, parseCollectorOutput } = await import('../src/autonomy/collector.js');

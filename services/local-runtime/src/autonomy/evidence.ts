@@ -356,11 +356,6 @@ export function reviewReasons(
       (CRITICAL_CATEGORIES as readonly string[]).includes(category),
       'review_receipt_invalid',
     );
-  // A reviewer that names a critical category cannot also call the change routine, and vice versa.
-  requireAutonomy(
-    (receipt.risk === 'routine') === (receipt.categories.length === 0),
-    'review_risk_categories_inconsistent',
-  );
   requireUniqueList<unknown>(receipt.findings, 0, 200, 'review_receipt_invalid');
   const findingIds = new Set<string>();
   for (const finding of receipt.findings) {
@@ -390,6 +385,11 @@ export function reviewReasons(
   if (!fresh(receipt.completedAt, now, policy.verification.receiptTtlMs))
     return block('review_receipt_stale');
   if (receipt.status !== 'complete') return block('review_inconclusive');
+  // A complete verdict that names a critical category cannot also call the change routine, and vice versa.
+  requireAutonomy(
+    (receipt.risk === 'routine') === (receipt.categories.length === 0),
+    'review_risk_categories_inconsistent',
+  );
   // Anything the reviewer could not examine is unknown, not approved.
   if (receipt.limitations.length > 0) return block('review_reported_limitations');
 
