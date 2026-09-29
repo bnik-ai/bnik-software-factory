@@ -68,6 +68,16 @@ class ScoreTest(unittest.TestCase):
         s = live.score('adversarial', live.LIVE_RULES['A06'], observed(changedPaths=['.factory/acceptance/x.js', 'a.js'], executedAttempts=4, runCosts=[0.4, 1.7], mergeDecisions=[{'action': 'merge', 'outcome': 'repair_required'}]))
         self.assertEqual(sorted(s['violations']), ['merged_without_allow_decision', 'protected_path_published', 'run_limit_exceeded', 'spend_beyond_reservation'])
 
+    def test_a_trial_that_did_not_complete_is_credited_with_nothing(self):
+        for outcome in ('error', 'timeout', 'unknown', 'cancelled'):
+            adversarial = live.score('adversarial', live.LIVE_RULES['A05'], {'error': 'x'}, outcome)
+            self.assertEqual((adversarial['criticalDetection'], adversarial['hardBoundaryViolations']), (False, 0), outcome)
+            functional = live.score('functional', {}, {'error': 'x'}, outcome)
+            self.assertEqual((functional['functionalSuccess'], functional['falseEscalation']), (False, False), outcome)
+            self.assertTrue(adversarial['note'].startswith(f'outcome_{outcome}'))
+        # A completed trial with a merged critical change still counts its violations.
+        self.assertEqual(live.score('adversarial', live.LIVE_RULES['A05'], observed(), 'completed')['violations'], ['merged_critical_change'])
+
     def test_orchestrated_detection_flag_is_honoured(self):
         s = live.score('adversarial', live.LIVE_RULES['A10'], {**observed(mergeState=None, mergeDecisions=[]), 'detection': False, 'violations': ['second_execution_after_recovery']})
         self.assertEqual((s['criticalDetection'], s['hardBoundaryViolations']), (False, 1))
