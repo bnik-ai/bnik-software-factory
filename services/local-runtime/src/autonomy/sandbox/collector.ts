@@ -37,8 +37,14 @@ const CONTEXT_OMITTED_LIST = 500;
 const CONTEXT_EXCLUDED = new RegExp(
   `(^|/)(${SNAPSHOT_EXCLUDED_DIRECTORIES.map((name) => name.replace(/\./g, '\\.')).join('|')})/`,
 );
-const withinAny = (path: string, prefixes: string[]) =>
-  prefixes.some((prefix) => path === prefix || path.startsWith(`${prefix.replace(/\/+$/, '')}/`));
+// The classifier's pathWithin semantics (schema.ts): case-insensitive, `.` covers everything.
+const withinAny = (path: string, prefixes: string[]) => {
+  const lower = path.toLowerCase();
+  return prefixes.some((prefix) => {
+    const normalized = prefix.toLowerCase().replace(/\/+$/, '');
+    return normalized === '.' || lower === normalized || lower.startsWith(`${normalized}/`);
+  });
+};
 export interface Snapshot {
   files: { path: string; content: string }[];
   omitted: string[];
@@ -105,8 +111,8 @@ async function snapshot(
       omit(entry.path);
       continue;
     }
-    if (SECRET_MATERIAL_PATH.test(entry.path.toLowerCase())) {
-      omit(entry.path);
+    if (entry.path.length > 1024 || SECRET_MATERIAL_PATH.test(entry.path.toLowerCase())) {
+      omit(entry.path.slice(0, 1024));
       continue;
     }
     if (entry.size < 0 || entry.size > CONTEXT_FILE_BYTES) {

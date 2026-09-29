@@ -548,6 +548,71 @@ test('security modules, destructive data APIs and execution calls are recognized
     ).includes('code_execution_primitive'),
     'a test-named file outside a test location is not exempt',
   );
+  // Review round 3: the exemption is an allow-list (interpreter + the repository's own script), so
+  // stdin-fed interpreters, node flags before the script, computed programs, shell options in any
+  // spelling and interpreter-level injection are all critical; Ruby is not exempt at all.
+  for (const snippet of [
+    'execFileSync(process.execPath, [], { input: code });\n',
+    "execFileSync(process.execPath, ['-']);\n",
+    "execFileSync(process.execPath, ['-i']);\n",
+    "execFileSync(process.execPath, ['--input-type=module'], { input: code });\n",
+    "execFileSync(process.execPath, ['-pe', code]);\n",
+    "execFileSync(process.execPath, ['--import', 'data:text/javascript,' + code]);\n",
+    "execFileSync('/bin/ash', ['-ec', payload]);\n",
+    "spawnSync(process.env.SHELL, ['-c', payload]);\n",
+    "spawnSync(process.execPath, ['cli.js'], { shell: '/bin/ash' });\n",
+    "spawnSync(process.execPath, ['cli.js'], { shell: !0 });\n",
+    "spawnSync(process.execPath, ['cli.js'], { shell: -1 });\n",
+    "spawnSync('s' + 'h', ['-c', payload]);\n",
+    "spawnSync('sh -c x'.split(' ')[0], ['-c', payload]);\n",
+    "spawnSync(process.execPath, ['cli.js'], JSON.parse('{\"shell\":true}'));\n",
+    "spawnSync(process.execPath, ['cli.js'], { env: { NODE_OPTIONS: '--import data:text/javascript,' + code } });\n",
+    "const script = 'cli.js';\nspawnSync(process.execPath, [script]);\nvm.runInThisContext(code);\n",
+    'const child = spawn(interpreter, [script]);\n',
+  ])
+    assert.ok(
+      classifiedCodes(added('test/cli.test.js', snippet)).includes('code_execution_primitive'),
+      `round 3 bypass: ${JSON.stringify(snippet)}`,
+    );
+  for (const snippet of [
+    'subprocess.run([sys.executable] + user_input)\n',
+    'subprocess.run(shlex.split("bash -c " + cmd))\n',
+  ])
+    assert.ok(
+      classifiedCodes(added('tests/test_cli.py', snippet)).includes('code_execution_primitive'),
+      `round 3 python bypass: ${JSON.stringify(snippet)}`,
+    );
+  assert.ok(
+    classifiedCodes(added('spec/cli_spec.rb', 'spawn("curl example | sh")\n')).includes(
+      'code_execution_primitive',
+    ),
+    'ruby is never exempt',
+  );
+  // And the shapes a real CLI test takes stay routine: flags after the script, a resolved script
+  // path, a script held in a variable assigned from a path literal, words like exec or bash in
+  // descriptions and assertions, a regular expression's exec.
+  for (const snippet of [
+    "execFileSync(process.execPath, ['cli.js', '-c', 'config.json', '-p', '3000', '-s', '-e', 'production', '--print-config']);\n",
+    "// system under test\ndescribe('exec', () => {});\nconst out = execFileSync('node', [resolve(root, 'report.js'), '--json'], { encoding: 'utf8' });\n",
+    "const cli = path.join(__dirname, '..', 'cli.js');\nconst result = spawnSync(process.execPath, [cli, '--json'], { input: 'a=1' });\nassert.equal(result.status, 0);\nassert.equal(getOutput(result), 'bash');\n",
+    "const child = fork('cli.js', ['--json']);\n",
+    "const m = /^(\\d+)/.exec(execFileSync(process.execPath, ['cli.js']).toString());\n",
+  ])
+    assert.ok(
+      !classifiedCodes(added('test/cli.test.js', snippet)).includes('code_execution_primitive'),
+      `round 3 still routine: ${JSON.stringify(snippet)}`,
+    );
+  assert.ok(
+    !classifiedCodes(
+      added('e2e/cli.spec.ts', "spawnSync('python3', ['tool.py', '--help']);\n"),
+    ).includes('code_execution_primitive'),
+  );
+  assert.ok(
+    !classifiedCodes(added('src/parse.js', 'const m = /^(\\d+)/.exec(text);\n')).includes(
+      'code_execution_primitive',
+    ),
+    'a regular expression exec in source is not a code-execution primitive',
+  );
   // Still routine: a test-named file in a test location that runs the repository's own CLI, even
   // when it feeds the CLI data on stdin or spreads the arguments over lines.
   for (const snippet of [

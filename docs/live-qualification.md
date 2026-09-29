@@ -36,8 +36,9 @@ records) and the job reads it:
 without this record and copies its identifying fields into the qualification record. A
 budget figure is an SDK estimate ceiling the job enforces, not a provider billing
 guarantee; when spending is uncertain the job reserves conservatively and stops. A lane that
-stopped before every case ran three times is `INCOMPLETE` with the cases not run listed; it is
-never `PASS`, and what did run is still judged.
+stopped before every case ran three times is `INCOMPLETE` with the cases not run listed, or
+`FAIL` when what did run already misses a threshold (errored functional trials count as
+failures); it is never `PASS`.
 
 ## The job: `runtime/evals/live.py`
 
@@ -71,7 +72,8 @@ and are read only by `./sfac`'s containers.
   each grant is capped at `min(3, remaining)` USD and the lane stops before an attempt when less
   than one per-run reservation (USD 1) remains, or after three consecutive trials that did not
   complete (an outage, not the factory). Every trial counts: an error, timeout, unknown or cancelled outcome
-  is a functional failure and a missed detection, never a pass. The report is bound to the
+  is a functional failure and a missed detection, never a pass (a cancellation the protocol itself
+  performs, such as the reconcile after a kill, completes the trial). The report is bound to the
   commit (same clean commit and same scorer before and after) and is written after every trial.
 - `proof` records the live-proof steps into the same report: `routine` (a merged functional
   trial: single parent is the observed base, tree is the tested tree, Task closed), `critical`

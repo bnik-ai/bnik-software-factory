@@ -111,18 +111,16 @@ export function renderContext(
   if (context === null)
     return { text: 'No repository snapshot was taken for this change.', truncated: false };
   // Everything rendered is charged against the budget, the review sandbox's input is bounded.
-  let omittedList = context.omitted.join(', ');
-  let omittedCount = context.omittedCount;
-  if (omittedList.length > OMITTED_LIST_BYTES) {
-    const kept = context.omitted.slice(0, Math.max(1, Math.floor(context.omitted.length / 2)));
+  let omittedNames = context.omitted;
+  if (omittedNames.join(', ').length > OMITTED_LIST_BYTES) {
+    const kept = omittedNames.slice(0, Math.max(1, Math.floor(omittedNames.length / 2)));
     while (kept.length > 1 && kept.join(', ').length > OMITTED_LIST_BYTES) kept.pop();
-    omittedList = kept.join(', ');
-    omittedCount = context.omittedCount;
-    context = { ...context, omitted: kept };
+    omittedNames = kept;
   }
-  const more = omittedCount - context.omitted.length;
+  const omittedList = omittedNames.join(', ');
+  const more = context.omittedCount - omittedNames.length;
   const omitted =
-    context.omitted.length > 0
+    omittedNames.length > 0
       ? ` Omitted: ${omittedList}${more > 0 ? ` and ${more} more` : ''}.`
       : '';
   const parts: string[] = [];
@@ -142,6 +140,32 @@ export function renderContext(
 }
 /** The omitted list is bounded too; beyond it the count says how many more. */
 const OMITTED_LIST_BYTES = 64 * 1024;
+/** What sandbox/review.ts reads at most, JSON-encoded; the budgets are on raw text. */
+const REVIEW_SANDBOX_INPUT_BYTES = 4 * 1024 * 1024;
+/**
+ * The diff and the snapshot within their budgets, then shrunk until their JSON encoding fits the
+ * sandbox's input limit: the snapshot gives way first (it is context), the diff last (a cut diff
+ * is a limitation the receipt reports).
+ */
+export function fitReviewInput(
+  request: ReviewRequest,
+  config: ReviewerConfig,
+): { text: string; truncated: boolean; context: { text: string; truncated: boolean } } {
+  let diffBudget = config.maxDiffBytes;
+  let contextBudget = config.maxContextBytes;
+  for (;;) {
+    const diff = renderDiff(request.changes, diffBudget);
+    const context = renderContext(request.context, contextBudget);
+    const encoded = Buffer.byteLength(
+      JSON.stringify({ intent: request.intent, diff: diff.text, context: context.text }),
+    );
+    if (encoded <= REVIEW_SANDBOX_INPUT_BYTES - 64 * 1024)
+      return { text: diff.text, truncated: diff.truncated, context };
+    if (contextBudget > 1024) contextBudget = Math.floor(contextBudget / 2);
+    else if (diffBudget > 10_000) diffBudget = Math.floor(diffBudget / 2);
+    else return { text: diff.text, truncated: true, context };
+  }
+}
 function receiptsSummary(request: ReviewRequest): string {
   const acceptance = request.acceptance;
   const lines = [
@@ -159,7 +183,9 @@ function base(
   config: ReviewerConfig,
   now: number,
 ): Omit<ReviewReceipt, 'status' | 'risk' | 'categories' | 'findings' | 'limitations'> {
-  const rendered = renderContext(request.context, config.maxContextBytes);
+  // Only prompt 2 of the model reviewer puts the snapshot in front of the model.
+  const shown =
+    config.adapter === 'claude' && config.promptVersion >= 2 && request.context !== null;
   return {
     version: 1,
     kind: 'review',
@@ -168,7 +194,11 @@ function base(
     intentSha256: request.intentSha256,
     reviewerConfigSha256: reviewerConfigDigest(config),
     context: 'fresh',
-    snapshot: request.context === null ? 'none' : rendered.truncated ? 'incomplete' : 'complete',
+    snapshot: !shown
+      ? 'none'
+      : renderContext(request.context, config.maxContextBytes).truncated
+        ? 'incomplete'
+        : 'complete',
     completedAt: now,
   };
 }
@@ -291,8 +321,7 @@ export class ClaudeReviewer implements Reviewer {
   }
   async review(request: ReviewRequest, signal: AbortSignal): Promise<ReviewOutcome> {
     const now = this.options.now ?? Date.now;
-    const { text, truncated } = renderDiff(request.changes, this.config.maxDiffBytes);
-    const context = renderContext(request.context, this.config.maxContextBytes);
+    const { text, truncated, context } = fitReviewInput(request, this.config);
     const runId = randomUUID();
     const timeoutMs = this.options.timeoutMs ?? 600_000;
     let status: ReviewReceipt['status'] = 'error';

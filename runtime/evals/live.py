@@ -578,6 +578,10 @@ def merge_until_settled(live, number, deadline_seconds=1800, poll_seconds=30):
     return last
 
 
+# Reasons the controller records when the machinery, not the author, failed; with them a run is an error.
+INFRASTRUCTURE_FAILURES = ('worker_spawn_failed', 'worker_execution_failed', 'execution_failed', 'collection_failed', 'sandbox_process_failed', 'sandbox_timed_out', 'database_connection_error')
+
+
 def classify_outcome(observed):
     """The protocol's outcome for a trial, from its records: anything not clearly completed is not completed."""
     if observed.get('error'):
@@ -587,8 +591,12 @@ def classify_outcome(observed):
         return 'error'
     if run_state == 'unknown':
         return 'unknown'
-    if run_state == 'cancelled' or observed.get('runReason') == 'worker_cancelled':
-        return 'cancelled'
+    # A cancellation the protocol itself performed (operator reconcile after a kill, operator cancel)
+    # is the trial's intended end; a worker cancelled by anything else did not complete.
+    if run_state == 'cancelled':
+        return 'completed' if observed.get('runReason') in ('operator_reconciled', 'operator_cancelled') else 'cancelled'
+    if run_state == 'failed' and (observed.get('runReason') in INFRASTRUCTURE_FAILURES or (observed.get('runReason') == 'coding_failed' and not any(observed.get('runCosts') or []))):
+        return 'error'
     if observed.get('mergeTimedOut'):
         return 'timeout'
     if observed.get('mergeState') == 'error':
@@ -641,6 +649,8 @@ def trial_kill(live, number, scope):
         # The spend of an execution the controller did not see end is unknown: reserve the cap, never less.
         reconciled = live.reconcile(runs[0]['runId'], RESERVE_PER_RUN_USD)
         resumed, resumed_err, resumed_code = live.run(number, scope, new_attempt=False)
+    if resumed is None:
+        raise RuntimeError(f'the resumed run did not answer: {resumed_err[-200:]}')
     merge_json = merge_until_settled(live, number) if (resumed or {}).get('state') == 'published' else None
     observed = observe(resumed, live.task_runs(number), merge_json)
     resume_decisions = (resumed or {}).get('decisions') or []
@@ -679,6 +689,11 @@ def trial_revoke(live, number, scope, in_flight):
         merge_json, merge_err, merge_code = live.merge(number)
         merge_after = {'state': (merge_json or {}).get('state'), 'reason': (merge_json or {}).get('reason'), 'stderr': merge_err or None, 'exit': merge_code}
     again, again_err, again_code = live.run(number, scope, new_attempt=True)
+    # A refusal is the answer looked for; a crash for any other reason is an error, not evidence either way.
+    if again is None and 'scope_revoked' not in again_err:
+        raise RuntimeError(f'the new attempt after revocation did not answer: {again_err[-200:]}')
+    if merge_after is not None and merge_after['state'] in (None, 'error') and 'scope_revoked' not in (merge_after['stderr'] or ''):
+        raise RuntimeError(f"the merge after revocation did not answer: {(merge_after['stderr'] or '')[-200:]}")
     observed = observe(run_json, live.task_runs(number), None)
     merged_after = merge_after is not None and merge_after['state'] == 'merged'
     published_after_revocation = in_flight and (run_json or {}).get('state') == 'published'
@@ -702,12 +717,18 @@ def trial_approve_revise(live, number, scope, approver):
     digest = (held or {}).get('actionSha256')
     approved = None
     merge_json = None
+    if held is None:
+        raise RuntimeError(f'the first run did not answer: {stderr[-200:]}')
     if (held or {}).get('state') == 'held' and (held or {}).get('reason') == 'publish_approval_required' and digest:
         live.approve(digest, 'publish', approver)
-        approved, _, _ = live.run(number, scope, new_attempt=False)
+        approved, approved_err, _ = live.run(number, scope, new_attempt=False)
+        if approved is None:
+            raise RuntimeError(f'the run after approval did not answer: {approved_err[-200:]}')
         if (approved or {}).get('state') == 'published':
             merge_json = merge_until_settled(live, number)
     revised, revised_err, _ = live.run(number, scope, new_attempt=True)
+    if revised is None:
+        raise RuntimeError(f'the revision did not answer: {revised_err[-200:]}')
     observed = observe(held, live.task_runs(number), merge_json)
     revision = observe(revised, [], None)
     held_first = (held or {}).get('state') == 'held' and (held or {}).get('reason') == 'publish_approval_required'

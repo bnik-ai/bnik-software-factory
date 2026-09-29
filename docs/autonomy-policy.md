@@ -101,26 +101,27 @@ deployment and container definitions, infrastructure code, migrations, schema
 tools and SQL, license and notice files, plus configured `criticalPaths` and
 `verification.protectedPaths`.
 
-Content rules match added or removed lines. One exception is deliberate: in a
-test file that is both test-named (`*.test.js`, `*_test.go`, `test_*.py` and
-the like) and in a test directory (`test/`, `tests/`, `spec/`, `e2e/` and the
-like; a helper there is not test-named, and a test-named file under `src/` is
-not in a test directory), a line that only spawns a program (`child_process`,
-`execFile*`, `spawn*`, `fork`, `subprocess`) is not a code-execution primitive,
-because that is how a command-line program is tested. The exemption is decided
-per file: if any added line of that file names shell interpretation or dynamic
-code, no line of the file is exempt, so splitting a call over lines does not
-hide it. Shell interpretation and dynamic code are: a shell named as the
-program (`sh`, `bash`, `cmd`, `powershell`, …), `shell:` or `shell=` set to
-anything but false, a shell or interpreter given code on its command line
-(`-c`, `-e`, `-p`, `-s`, `--eval`, `--print`) or a bare interpreter with no
-script (fed on stdin), `exec`/`execSync`/`system`/`popen` (even as an import),
-`getoutput`, `popen` on a command string, command substitution, `eval`,
-`new Function`. The exemption knows the Node and Python spawn APIs; Go, Rust
-and Java process APIs stay critical everywhere. The classifier sees lines, not
-data flow: a flag or program held in a variable and passed later is the
-accepted residual, and the reviewer sees the whole file. The same spawn outside
-such a test file stays critical.
+Content rules match added or removed lines. One exception is deliberate,
+because running the repository's own command-line program is how it is tested:
+in a Node or Python test file that is both test-named (`*.test.js`,
+`*.spec.ts`, `test_*.py`) and in a test directory (`test/`, `tests/`, `spec/`,
+`e2e/` and the like; a helper there is not test-named, a test-named file under
+`src/` is not in a test directory), the process-spawn primitives
+(`child_process`, `execFile*`, `spawn*`, `fork`, `subprocess`) are not
+code-execution primitives when every spawn call in the file's added text runs
+the test's interpreter (`process.execPath`, `sys.executable`, `node`,
+`python3`) on a script named by a literal, a `join`/`resolve` expression or a
+variable assigned from one, and no added line names shell interpretation or
+dynamic code (a shell as the program or first list element, `shell:`/`shell=`
+set to anything but false, `exec`/`execSync`/`system` calls or imports,
+`popen` on a command string, `getoutput`, `shlex`, `NODE_OPTIONS`, `vm`,
+`worker_threads`, `Deno.run`, `Bun.spawn`, `data:` imports, command
+substitution, `eval`, `new Function`). The decision is per file, so a call split
+over lines hides nothing; arguments after the script are the program's own
+(`-c config.json` to the repository's CLI is not shell interpretation). A
+program or script computed at runtime is not allow-listed and stays critical,
+as do Ruby, Go, Rust and Java process APIs everywhere; the reviewer sees the
+whole file.
 
 **Content tripwires** run on an ordered line diff, so moved and reordered lines
 count as changes and unchanged lines elsewhere do not escalate. Authorization

@@ -274,7 +274,7 @@ export const CONTENT_RULES: readonly ContentRule[] = [
     category: 'security_auth',
     side: 'added',
     pattern:
-      /\b(child_process|execsync|spawnsync|execfile|execfilesync|execa|subprocess|os\.system|os\.popen|shell\s*[:=]\s*true|dangerouslysetinnerhtml|pickle\.loads?|exec\.command|command::new|processbuilder|process\.start|runtime\.getruntime|shell_exec|passthru|proc_open|kernel\.system|io\.popen)\b|\b(eval|exec|spawn|fork|system|popen)\s*\(|\bnew\s+function\s*\(|\bfunction\s*\(\s*["'`]|`[^`]*\$\(|\beval\b/i,
+      /\b(child_process|execsync|spawnsync|execfile|execfilesync|execa|subprocess|os\.system|os\.popen|shell\s*[:=]\s*true|dangerouslysetinnerhtml|pickle\.loads?|exec\.command|command::new|processbuilder|process\.start|runtime\.getruntime|shell_exec|passthru|proc_open|kernel\.system|io\.popen)\b|\b(eval|spawn|fork|system|popen)\s*\(|(?<![\w.$])exec\s*\(|\b(child_process|cp|childprocess|util)\.exec\s*\(|\bnew\s+function\s*\(|\bfunction\s*\(\s*["'`]|`[^`]*\$\(|\beval\b/i,
   },
   {
     code: 'transport_verification_disabled',
@@ -419,34 +419,77 @@ function isTestFile(path: string | null): boolean {
 }
 const PROSE = /\.(md|markdown|mdx|txt|rst|adoc)$/;
 /**
- * A test that spawns a program is how a CLI is tested (OSS-22 live lane, F03): in a test file (test
- * location and test name) a process-spawn primitive alone is not a critical addition. The exemption is
- * decided per file: if any added line of the file names shell interpretation or dynamic code (a
- * shell as the program, `shell:` other than false, a shell or interpreter given code on its command
- * line or a bare interpreter fed on stdin, `exec`/`execSync`/`system`/`popen` even as an import,
- * command substitution, `eval`, `new Function`), no line of that file is exempt, so splitting a call
- * over lines does not hide it. A token held in a variable and passed later is the accepted residual:
- * the reviewer sees the file, the classifier sees lines.
+ * A test that runs the repository's own script is how a CLI is tested (OSS-22 live lane, F03).
+ * In a Node or Python test file (test name and test directory) the process-spawn primitives are
+ * not critical when every spawn call in the file's added text runs the test's interpreter
+ * (`process.execPath`, `sys.executable`, `node`, `python3`) on a script named by a literal, a
+ * `join`/`resolve` expression or a variable assigned from one, and no added line names shell
+ * interpretation or dynamic code. The decision is per file, so a call split over lines does not
+ * hide anything; a program or argument computed at runtime is simply not allow-listed. Ruby, Go,
+ * Rust and Java process APIs stay critical everywhere.
  */
 const TEST_SPAWN = /\b(child_process|execfile|execfilesync|spawn|spawnsync|fork|subprocess)\b/i;
-const SHELL_OR_DYNAMIC_EXECUTION =
-  /\b(exec|execsync|system)\b|\bpopen\s*\(\s*["'`]|shell\s*[:=]\s*(?!false\b|0\b|none\b)\w|\bnew\s+function\s*\(|\bfunction\s*\(\s*["'`]|`[^`]*\$\(|\beval\b|os\.system|os\.popen|shell_exec|passthru|proc_open|kernel\.system|io\.popen|exec\.command|command::new|processbuilder|process\.start|runtime\.getruntime|dangerouslysetinnerhtml|pickle\.loads?|["'`]-(l?c|e|p|eval|s)["'`]|--(eval|print)\b|\bget(status)?output\b|create_subprocess_shell|process\.spawn\s*\(\s*["'`]|["'`/](sh|bash|dash|zsh|ksh|fish|cmd(\.exe)?|powershell|pwsh)["'`]|["'`](node|nodejs|python3?|ruby|perl|php|deno|bun)["'`]\s*(,\s*\[\s*\]|\))|["'`]-["'`]\s*["'`]/i;
+const SHELL_NAMES = String.raw`(sh|bash|dash|ash|zsh|ksh|fish|cmd(\.exe)?|powershell|pwsh)`;
+const SHELL_OR_DYNAMIC_EXECUTION = new RegExp(
+  [
+    String.raw`(?<![\w.$])(exec|execsync|system)\s*\(`,
+    String.raw`\b(child_process|cp|childprocess|util)\.(exec|execsync)\s*\(`,
+    String.raw`\{[^}\n]*\b(exec|execsync|system)\b[^}\n]*\}`,
+    String.raw`\bpopen\s*\(\s*["'\`]`,
+    String.raw`os\.popen|io\.popen|shell_exec|passthru|proc_open|kernel\.system`,
+    String.raw`\bsubprocess\.get(status)?output\b|create_subprocess_shell|\bshlex\b`,
+    String.raw`shell["']?\s*[:=]\s*(?!false\b|0\b|none\b|undefined\b)\S`,
+    String.raw`\beval\b|\bnew\s+function\s*\(|\bfunction\s*\(\s*["'\`]`,
+    String.raw`\`[^\`]*\$\(`,
+    String.raw`\bexec\.command|command::new|processbuilder|process\.start|runtime\.getruntime|dangerouslysetinnerhtml|pickle\.loads?`,
+    String.raw`\bnode_options\b|\bdata:text/javascript|\bvm\.(run|compile)\w*\s*\(|\bworker_threads\b|\bdeno\.run\b|\bbun\.spawn\b|\bprocess\.binding\b|\bimport\s*\(\s*["'\`]data:`,
+    String.raw`\b(spawn|spawnsync|execfile|execfilesync|popen|run|call|check_output|check_call)\s*\(\s*["'\`]?(\/(usr\/)?bin\/)?${SHELL_NAMES}\b`,
+    String.raw`\[\s*["'](\/(usr\/)?bin\/)?${SHELL_NAMES}["']`,
+    String.raw`\b(sh|bash|dash|ash|zsh|ksh|fish)\s+-[a-z]*c\b`,
+  ].join('|'),
+  'i',
+);
+const SPAWN_CALL =
+  /\b(execfile|execfilesync|spawn|spawnsync|fork)\s*\(|\bsubprocess\.(run|call|check_call|check_output|popen)\s*\(/gi;
+const SCRIPT_LITERAL = String.raw`["'][a-z0-9_][a-z0-9_./-]*\.(m?js|cjs|ts|py)["']`;
+const SCRIPT_EXPRESSION = String.raw`(path\.)?(join|resolve)\s*\([^()]*${SCRIPT_LITERAL}[^()]*\)|fileurltopath\s*\(\s*new\s+url\s*\([^()]*${SCRIPT_LITERAL}[^()]*\)\s*\)`;
+const SCRIPT_VARIABLE =
+  /\b(const|let|var)\s+([a-z_$][\w$]*)\s*=\s*[^;\n]*["'][^"'\n]*\.(m?js|cjs|ts|py)["']|^\s*([a-z_][\w]*)\s*=\s*[^\n]*["'][^"'\n]*\.py["']/gim;
+const INTERPRETER = String.raw`(process\.execpath|sys\.executable|["'](node|python3?)["'])`;
 const TEST_NAMED =
-  /[._-](test|spec|cy|e2e)s?\.[a-z0-9]+$|(^|\/)test_[^/]+\.py$|_test\.(go|dart)$|(^|\/)conftest\.py$|tests?\.(java|kt|cs|scala|swift)$/;
+  /[._-](test|spec|cy|e2e)s?\.[a-z0-9]+$|(^|\/)test_[^/]+\.py$|(^|\/)conftest\.py$/;
 const TEST_DIRECTORY =
   /(^|\/)(tests?|__tests__|specs?|testing|e2e|cypress|playwright|integration[-_]tests?)\//;
-/** Test name and test directory both: a test-named file under `src/` is production code to the exemption. */
+const EXEMPTIBLE_SOURCE = /\.([cm]?[jt]sx?|py)$/;
+/** Test name, test directory and a Node or Python file: a test-named file under `src/` is production code here. */
 function isNamedTestFile(path: string | null): boolean {
   if (path === null) return false;
   const lowercasePath = path.toLowerCase();
   return (
     TEST_NAMED.test(lowercasePath) &&
     TEST_DIRECTORY.test(lowercasePath) &&
-    RUNNABLE_SOURCE.test(lowercasePath)
+    EXEMPTIBLE_SOURCE.test(lowercasePath)
   );
 }
+/** Every spawn call in `text` runs the interpreter on one of the repository's scripts. */
+export function spawnsOnlyOwnScripts(text: string): boolean {
+  const variables = new Set<string>();
+  for (const match of text.matchAll(SCRIPT_VARIABLE))
+    variables.add((match[2] ?? match[4] ?? '').toLowerCase());
+  const names = [...variables].map((name) => String.raw`\b${name.replace(/[$]/g, '\\$')}\b`);
+  const script = [SCRIPT_LITERAL, SCRIPT_EXPRESSION, ...names].join('|');
+  const ownScript = new RegExp(
+    String.raw`\b(execfile|execfilesync|spawn|spawnsync)\s*\(\s*${INTERPRETER}\s*,\s*\[\s*(${script})|\bfork\s*\(\s*(${script})|\bsubprocess\.(run|call|check_call|check_output|popen)\s*\(\s*\[\s*${INTERPRETER}\s*,\s*(${script})`,
+    'gi',
+  );
+  const calls = text.match(SPAWN_CALL) ?? [];
+  const own = text.match(ownScript) ?? [];
+  return calls.length === own.length;
+}
 function testSpawnExempt(path: string | null, addedLines: string[]): boolean {
-  return isNamedTestFile(path) && !addedLines.some((line) => SHELL_OR_DYNAMIC_EXECUTION.test(line));
+  if (!isNamedTestFile(path)) return false;
+  const text = addedLines.join('\n');
+  return !SHELL_OR_DYNAMIC_EXECUTION.test(text) && spawnsOnlyOwnScripts(text);
 }
 const ASSERTION =
   /\bassert\w*|\bexpect\s*\(|\.should\b|\bt\.(is|not|equal|deepequal|true|false|truthy|falsy|throws|rejects|errorf?|fatalf?)\b|\bpytest\.raises\b|\bself\.assert\w*/i;
