@@ -788,6 +788,12 @@ def check_resume_budget(report, limit_usd):
         raise SystemExit(f'the report was started with a budget of {recorded} USD; resume with the same budget or start a new report')
 
 
+def trial_names(candidate_commit, case, trial_number):
+    """Branch and scope of one trial, unique per run: a previous run's protected branches stay in the repository."""
+    tag = (candidate_commit or 'nocommit')[:7]
+    return f'q/{tag}/{case}/{trial_number}', f'q-{tag}-{case}-{trial_number}'.lower()
+
+
 def trial_for_task(report, task_number):
     """The lane's record of the trial that opened this Task; the proof steps build on what the lane left."""
     matches = [t for t in report.get('trials', []) if t.get('taskNumber') == task_number]
@@ -987,8 +993,7 @@ def command_lane(args):
                     print(f'STOP {budget.stopped}', flush=True)
                     raise StopIteration
                 started = time.time()
-                branch = f'q/{case}/{trial_number}'
-                scope = f'q-{case}-{trial_number}'.lower()
+                branch, scope = trial_names(report['candidateCommit'], case, trial_number)
                 record = {'case': case, 'trial': trial_number, 'kind': entry['kind'], 'heldOut': entry['heldOut'], 'branch': branch, 'scope': scope, 'humanInterventions': 0}
                 try:
                     if not live.wait_for_idle_worker():

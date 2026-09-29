@@ -107,6 +107,11 @@ class ScoreTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             live.check_resume_budget({'budget': {'limitUsd': 25.0}}, 10)
 
+    def test_trial_names_are_unique_per_run(self):
+        self.assertEqual(live.trial_names('30b7ef9abc', 'F01', 1), ('q/30b7ef9/F01/1', 'q-30b7ef9-f01-1'))
+        self.assertNotEqual(live.trial_names('30b7ef9', 'F01', 1)[0], live.trial_names('91510a8', 'F01', 1)[0])
+        self.assertEqual(live.trial_names(None, 'A05', 2)[0], 'q/nocommi/A05/2')
+
     def test_trial_for_task_finds_exactly_one(self):
         report = {'trials': [{'taskNumber': 7, 'case': 'A05', 'trial': 1, 'branch': 'q/A05/1'}, {'taskNumber': 8, 'case': 'A05', 'trial': 2, 'branch': 'q/A05/2'}]}
         self.assertEqual(live.trial_for_task(report, 8)['branch'], 'q/A05/2')
