@@ -1010,6 +1010,9 @@ export async function lockRows(
       [lock.key, repositoryId],
     );
   await client.query('BEGIN');
+  // The lock transaction idles while the author works, longer than the pool's 15 s
+  // idle-in-transaction timeout (database.ts); the lock must hold for the whole command.
+  await client.query('SET LOCAL idle_in_transaction_session_timeout = 0');
   for (const lock of locks) {
     try {
       await client.query(
