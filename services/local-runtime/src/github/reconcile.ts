@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { Pool, PoolClient } from 'pg';
 import { LeasedConsumer } from '../adapters.js';
-import { type RuntimeConfig, readMergePolicy } from '../config.js';
+import { ConfigurationError, type RuntimeConfig, readMergePolicy } from '../config.js';
 import { transaction } from '../database.js';
 import { PostgresQueue, canonicalJson } from '../queue.js';
 import { GitHubFailure, type Issue } from './client.js';
@@ -34,7 +34,12 @@ export class HumanMergeGate extends LeasedConsumer {
     super(new PostgresQueue(pool, 'HumanMergeGate', config.queue));
     requireGate(config.mode === 'live' && config.mergePolicy, 'merge_policy_not_configured');
   }
-  /** This look's configuration: the merge policy as its file holds it now, else as loaded. */
+  /**
+   * This look's configuration: the merge policy as its file holds it now, else as loaded. A file
+   * that cannot be read observed nothing (retryable: the next scan looks again); a renamed-over
+   * file is gone from the container's bind mount until the service is recreated; an invalid file
+   * parks with its validation reason.
+   */
   private current(): RuntimeConfig {
     if (!this.config.mergePolicyFile) return this.config;
     try {
@@ -47,7 +52,10 @@ export class HumanMergeGate extends LeasedConsumer {
       };
     } catch (error) {
       if (error instanceof GitHubFailure) throw error;
-      throw new GitHubFailure('merge_policy_unreadable');
+      if (error instanceof ConfigurationError) throw new GitHubFailure(error.reason);
+      if ((error as { code?: unknown }).code === 'ENOENT')
+        throw new GitHubFailure('merge_policy_file_missing');
+      throw new GitHubFailure('merge_policy_unreadable', true);
     }
   }
   async track(task: number, pull: number, head: string) {
@@ -162,7 +170,6 @@ export class HumanMergeGate extends LeasedConsumer {
       );
       const pair = rows.rows[0]?.pair;
       requireGate(pair, 'pair_not_registered');
-      const config = this.current();
       const settled = await this.pool.query<{
         state: string;
         reason: string;
@@ -176,6 +183,8 @@ export class HumanMergeGate extends LeasedConsumer {
         ({ state, reason, head, evidence } = settled.rows[0]);
         cached = true;
       } else {
+        // Read after the cached check: a reconciled pull request is never re-judged by a policy read.
+        const config = this.current();
         const previous = await this.pool.query<{ foundation: Foundation }>(
           'SELECT foundation FROM factory_pr_observations WHERE repository_id=$1 AND pull_number=$2 ORDER BY id DESC LIMIT 1',
           [body.repositoryId, body.pull],

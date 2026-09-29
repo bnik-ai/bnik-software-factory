@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, beforeEach, test } from 'node:test';
 import type { Pool } from 'pg';
+import type { RuntimeConfig } from '../src/config.js';
 import type { MergePolicy } from '../src/github/merge-policy.js';
 import { HumanMergeGate, SCAN_LIMIT } from '../src/github/reconcile.js';
 import { WorkerFailure } from '../src/worker/docker.js';
@@ -456,10 +457,68 @@ test('the gate reads merge-policy.json before every look, so an edited base bran
     await gate.schedule({ includeParked: true });
     await gate.step();
     assert.equal((await gate.status())[0].state, 'awaiting_human_merge');
+    // A torn or broken file observed nothing: parked, transient, looked at again by the next scan.
     writeFileSync(file, '{');
     await gate.schedule();
     await gate.step();
-    assert.equal((await gate.status())[0].reason, 'merge_policy_unreadable');
+    const unreadable = (await gate.status())[0];
+    assert.equal(unreadable.reason, 'merge_policy_unreadable');
+    assert.equal(unreadable.evidence.transient, true);
+    write('main');
+    await gate.schedule();
+    await gate.step();
+    assert.equal((await gate.status())[0].state, 'awaiting_human_merge');
+    // A file renamed over vanishes from a bind mount: its own reason, rests like a park.
+    rmSync(file);
+    await gate.schedule();
+    await gate.step();
+    assert.equal((await gate.status())[0].reason, 'merge_policy_file_missing');
+    write('main');
+    await gate.schedule({ includeParked: true });
+    await gate.step();
+    assert.equal((await gate.status())[0].state, 'awaiting_human_merge');
+    // A reconciled pull request is never re-judged by a policy read.
+    github.merge();
+    await gate.schedule();
+    await gate.step();
+    assert.equal((await gate.status())[0].state, 'reconciled');
+    writeFileSync(file, '{');
+    await gate.queue.enqueue(randomUUID(), 'example/factory-demo', {
+      pull: 2,
+      repositoryId: github.config.repositoryId,
+      installationId: github.config.installationId,
+    });
+    assert.equal(await gate.step(), true);
+    assert.equal((await gate.status())[0].state, 'reconciled');
+  } finally {
+    await gate.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a merge policy that names another merger than the runtime parks with that reason, never a message', async () => {
+  const github = new MergeFixture();
+  const dir = mkdtempSync(join(tmpdir(), 'merge-policy-'));
+  const file = join(dir, 'merge-policy.json');
+  writeFileSync(file, JSON.stringify(github.config.mergePolicy));
+  const gate = new HumanMergeGate(
+    pool,
+    {
+      ...github.config,
+      mergePolicyFile: file,
+      autonomy: {
+        merger: { appId: '999', appSlug: 'other-app' },
+      } as unknown as RuntimeConfig['autonomy'],
+    },
+    github,
+  );
+  try {
+    await assert.rejects(
+      gate.track(1, 2, github.pull.head.sha),
+      (error: unknown) =>
+        (error as { reason?: string }).reason ===
+        'merge_policy_merger_must_match_FACTORY_MERGER_settings',
+    );
   } finally {
     await gate.close();
     rmSync(dir, { recursive: true, force: true });

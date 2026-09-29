@@ -199,6 +199,14 @@ export function readMergePolicy(
   merger?: { appId: string; appSlug: string },
 ): MergePolicy {
   const policy = parseMergePolicy(JSON.parse(readFileSync(file, 'utf8')));
+  requireMergerMatch(policy, merger);
+  return policy;
+}
+/** Automatic merge needs the policy to name the merger App the runtime was configured with. */
+export function requireMergerMatch(
+  policy: MergePolicy,
+  merger?: { appId: string; appSlug: string },
+): void {
   if (
     merger &&
     (policy.merger === undefined ||
@@ -206,7 +214,6 @@ export function readMergePolicy(
       policy.merger.appSlug !== merger.appSlug)
   )
     throw new ConfigurationError('merge_policy_merger_must_match_FACTORY_MERGER_settings');
-  return policy;
 }
 
 export function resolveConfig(env: Env = process.env): RuntimeConfig {
@@ -301,12 +308,7 @@ export function resolveConfig(env: Env = process.env): RuntimeConfig {
     // Automatic merge needs the merge policy (protections, checks, merger App) to be configured.
     if (config.autonomy?.merger) {
       if (!config.mergePolicy) throw new ConfigurationError('automerge_requires_merge_policy');
-      if (
-        config.mergePolicy.merger === undefined ||
-        String(config.mergePolicy.merger.appId) !== config.autonomy.merger.appId ||
-        config.mergePolicy.merger.appSlug !== config.autonomy.merger.appSlug
-      )
-        throw new ConfigurationError('merge_policy_merger_must_match_FACTORY_MERGER_settings');
+      requireMergerMatch(config.mergePolicy, config.autonomy.merger);
     }
   } else if (
     ['GITHUB_APP_ID', 'GITHUB_APP_PRIVATE_KEY', 'ANTHROPIC_API_KEY'].some(

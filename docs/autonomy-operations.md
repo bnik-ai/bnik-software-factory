@@ -74,7 +74,7 @@ directory (`.factory/` by default):
 | `acceptance/` | The protected acceptance bundle: `harness.json` plus test files. See below. |
 | `secrets/publisher_private_key` | Live only: the publisher App's private key. |
 | `secrets/merger_private_key` | Live only, `--automerge`: the merger App's private key. A second App, installed on the base repository only. Mounted only into the `merge` and `merge-scan` commands' container (`live-automerge-supervisor`); every other autonomy command runs without it. |
-| `merge-policy.json` | Live only: the [human merge profile](human-merge.md), read again before every look of the merge gate; with `--automerge` it also names the merger (`"merger": {"appSlug", "appId"}`), see [`runtime/merge-policy.automerge.example.json`](../runtime/merge-policy.automerge.example.json). |
+| `merge-policy.json` | Live only: the [human merge profile](human-merge.md), read again before every look of the merge gate (edit it in place, never rename over it); with `--automerge` it also names the merger (`"merger": {"appSlug", "appId"}`), see [`runtime/merge-policy.automerge.example.json`](../runtime/merge-policy.automerge.example.json). |
 | `secrets/model_key` | Live only: the model key, held by the proxy for the worker and the reviewer. |
 
 Activate the policy, then grant a scope:
