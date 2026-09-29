@@ -101,6 +101,14 @@ deployment and container definitions, infrastructure code, migrations, schema
 tools and SQL, license and notice files, plus configured `criticalPaths` and
 `verification.protectedPaths`.
 
+Content rules match added or removed lines. One exception is deliberate: in a
+test file, a line that only spawns a program (`child_process`, `execFile*`,
+`spawn*`, `fork`, `subprocess`) is not a code-execution primitive, because that
+is how a command-line program is tested. Shell interpretation (`shell: true`,
+`exec`/`execSync`, `system`, `popen`, backtick command substitution) and dynamic
+code (`eval`, `new Function`) stay critical in every file, and the same spawn
+outside a test file stays critical.
+
 **Content tripwires** run on an ordered line diff, so moved and reordered lines
 count as changes and unchanged lines elsewhere do not escalate. Authorization
 rules also look at the unchanged line on each side of a change, so a guard that
@@ -191,10 +199,15 @@ can.
 
 ### Reviewer permissions
 
-The reviewer receives the approved intent, pinned source, the actual diff and
-trusted test receipts. It does not receive the author's conversation or
-self-assessment, and it has no authoring, policy, publication or merge authority
-or credentials. Optional execution runs in a separate restricted sandbox. Fresh
+The reviewer receives the approved intent, the actual diff, trusted test receipts
+and a bounded snapshot of the candidate tree's text files taken by the trusted
+collector (generated and dependency directories left out; files that do not fit
+are listed as omitted and the snapshot is marked incomplete;
+`FACTORY_REVIEWER_MAX_CONTEXT_BYTES`, default 512 KiB, bounds what is rendered).
+The snapshot lets it examine what a change relies on or documents; a limitation
+it still reports blocks publication, as before. It does not receive the author's
+conversation or self-assessment, and it has no authoring, policy, publication or
+merge authority or credentials. Optional execution runs in a separate restricted sandbox. Fresh
 context reduces shared assumptions; it is not proof of independence or
 correctness. It is distinct from regression retesting (which may use prior
 findings) and from outside-human onboarding.

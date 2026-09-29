@@ -60,6 +60,14 @@ test('collector rebuilds the candidate tree from archive and patch, deterministi
   assert.equal(change?.newPath, 'sum.js');
   assert.equal(change?.binary, false);
   assert.match(change?.newContent ?? '', /a \+ b/);
+  // OSS-22: the snapshot the reviewer receives holds the candidate tree's text files, changed or not.
+  assert.equal(first.context.truncated, false);
+  assert.ok(
+    first.context.files.some((file) => file.path === 'sum.js' && /a \+ b/.test(file.content)),
+  );
+  assert.ok(first.context.files.length >= 2);
+  assert.ok(first.context.files.every((file) => !file.path.startsWith('node_modules/')));
+  assert.deepEqual(first.context, second.context);
   assert.match(change?.oldContent ?? '', /a - b/);
   assert.deepEqual(first.blobs, {});
   await clean(runId);
@@ -460,6 +468,7 @@ test('model reviewer runs in a sandbox that never holds the key and returns only
     intent: { title: 'Fix sum', body: 'sum must add its arguments.', kind: 'bugfix' as const },
     intentSha256: '1'.repeat(64),
     changes: collected.manifest,
+    context: collected.context,
     acceptance: null,
     dependency: null,
   };
@@ -474,6 +483,7 @@ test('model reviewer runs in a sandbox that never holds the key and returns only
         promptVersion: 1,
         maxTokens: 2048,
         maxDiffBytes: 1_000_000,
+        maxContextBytes: 512 * 1024,
       },
       timeoutMs: 120_000,
     });

@@ -4,6 +4,50 @@ import { type ChangeManifest, parseChangeManifest } from './classify.js';
 import { runSandbox } from './sandbox.js';
 import { AutonomyError, requireAutonomy, requireGitObject, requireRecord } from './schema.js';
 
+/** Text files of the candidate tree, bounded; what did not fit is listed and marked incomplete. */
+export interface ReviewContext {
+  files: { path: string; content: string }[];
+  omitted: string[];
+  truncated: boolean;
+}
+const CONTEXT_MAX_FILES = 2_000;
+const CONTEXT_MAX_OMITTED = 500;
+const CONTEXT_MAX_BYTES = 1024 * 1024;
+export function parseReviewContext(value: unknown): ReviewContext {
+  requireRecord(value, ['files', 'omitted', 'truncated'], 'collector_context_invalid');
+  const context = value as unknown as ReviewContext;
+  requireAutonomy(
+    Array.isArray(context.files) &&
+      context.files.length <= CONTEXT_MAX_FILES &&
+      Array.isArray(context.omitted) &&
+      context.omitted.length <= CONTEXT_MAX_OMITTED &&
+      typeof context.truncated === 'boolean',
+    'collector_context_invalid',
+  );
+  const seen = new Set<string>();
+  let bytes = 0;
+  for (const file of context.files) {
+    requireRecord(file, ['path', 'content'], 'collector_context_invalid');
+    requireAutonomy(
+      typeof file.path === 'string' &&
+        file.path.length > 0 &&
+        file.path.length <= 1024 &&
+        !file.path.includes('\0') &&
+        typeof file.content === 'string' &&
+        !seen.has(file.path),
+      'collector_context_invalid',
+    );
+    seen.add(file.path);
+    bytes += Buffer.byteLength(file.content);
+    requireAutonomy(bytes <= CONTEXT_MAX_BYTES, 'collector_context_too_large');
+  }
+  for (const path of context.omitted)
+    requireAutonomy(
+      typeof path === 'string' && path.length > 0 && path.length <= 1024,
+      'collector_context_invalid',
+    );
+  return { files: context.files, omitted: context.omitted, truncated: context.truncated };
+}
 export interface CollectedChange {
   /** Commit of the extracted base snapshot inside the sandbox (not the GitHub commit). */
   base: string;
@@ -14,6 +58,8 @@ export interface CollectedChange {
   manifest: ChangeManifest;
   /** Base64 bytes for binary files and symlink targets, keyed by new path. */
   blobs: Record<string, string>;
+  /** What the reviewer examines besides the diff. */
+  context: ReviewContext;
   imageId: string;
 }
 export interface CollectOptions {
@@ -57,11 +103,22 @@ export async function collectChanges(options: CollectOptions): Promise<Collected
   }
   requireRecord(
     output,
-    ['version', 'ok', 'base', 'baseTree', 'candidateTree', 'patchSha256', 'manifest', 'blobs'],
+    [
+      'version',
+      'ok',
+      'base',
+      'baseTree',
+      'candidateTree',
+      'patchSha256',
+      'manifest',
+      'blobs',
+      'context',
+    ],
     'collector_output_invalid',
   );
   requireAutonomy((output as { version: unknown }).version === 1, 'collector_output_invalid');
   const collected = output as unknown as CollectedChange;
+  const context = parseReviewContext(collected.context);
   requireGitObject(collected.base, 'collector_output_invalid');
   requireGitObject(collected.baseTree, 'collector_output_invalid');
   requireGitObject(collected.candidateTree, 'collector_output_invalid');
@@ -90,5 +147,5 @@ export async function collectChanges(options: CollectOptions): Promise<Collected
     (manifest.files.length === 0) === (collected.baseTree === collected.candidateTree),
     'collector_tree_inconsistent',
   );
-  return { ...collected, manifest, imageId };
+  return { ...collected, manifest, context, imageId };
 }

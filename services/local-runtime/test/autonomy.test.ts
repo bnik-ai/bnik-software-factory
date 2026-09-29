@@ -1938,6 +1938,59 @@ test('further dependency manifests, executable manifests and verification metada
     assert.ok(classifiedCodes(added(path, 'x\n')).includes(expected), `${path} -> ${expected}`);
 });
 
+test('reviewer: repository snapshot rendering and collector context validation (OSS-22)', async () => {
+  const { renderContext } = await import('../src/autonomy/reviewer.js');
+  const { parseReviewContext } = await import('../src/autonomy/collector.js');
+  const context = {
+    files: [
+      { path: 'cli.js', content: 'console.log("usage: cli [--json]");\n' },
+      { path: 'README.md', content: '# cli\n' },
+    ],
+    omitted: ['logo.png'],
+    truncated: false,
+  };
+  const complete = renderContext(context, 1_000_000);
+  assert.equal(complete.truncated, false);
+  assert.match(complete.text, /^Complete snapshot .* Omitted: logo\.png\./);
+  assert.ok(
+    complete.text.indexOf('=== cli.js\nconsole.log') < complete.text.indexOf('=== README.md'),
+  );
+  // The budget cuts the rendering and says so; the collector's own incompleteness carries over.
+  const cut = renderContext(context, 40);
+  assert.equal(cut.truncated, true);
+  assert.match(cut.text, /^INCOMPLETE snapshot/);
+  assert.ok(!cut.text.includes('=== README.md'));
+  assert.equal(renderContext({ ...context, truncated: true }, 1_000_000).truncated, true);
+  assert.equal(renderContext(null, 1_000_000).truncated, true);
+  // Validation: shape, uniqueness, bounds.
+  assert.deepEqual(parseReviewContext(context), context);
+  for (const broken of [
+    { files: [], omitted: [] },
+    {
+      files: [
+        { path: 'a', content: 'x' },
+        { path: 'a', content: 'y' },
+      ],
+      omitted: [],
+      truncated: false,
+    },
+    { files: [{ path: '', content: 'x' }], omitted: [], truncated: false },
+    { files: [{ path: 'a', content: 1 }], omitted: [], truncated: false },
+    { files: [], omitted: [''], truncated: false },
+    { files: [], omitted: [], truncated: 'no' },
+  ])
+    assert.throws(() => parseReviewContext(broken), /collector_context_invalid/);
+  assert.throws(
+    () =>
+      parseReviewContext({
+        files: [{ path: 'big', content: 'x'.repeat(1024 * 1024 + 1) }],
+        omitted: [],
+        truncated: false,
+      }),
+    /collector_context_too_large/,
+  );
+});
+
 test('reviewer: fixture verdicts, strict verdict parsing, diff rendering and config digest', async () => {
   const { FixtureReviewer, parseVerdict, renderDiff, reviewerConfigDigest, FIXTURE_REVIEWER } =
     await import('../src/autonomy/reviewer.js');
@@ -1956,6 +2009,7 @@ test('reviewer: fixture verdicts, strict verdict parsing, diff rendering and con
       intent: { title: 'Fix sum', body: 'Make sum add.', kind: 'change' },
       intentSha256: request.task.intentSha256,
       changes,
+      context: null,
       acceptance: null,
       dependency: null,
     });

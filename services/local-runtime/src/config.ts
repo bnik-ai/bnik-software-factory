@@ -21,6 +21,7 @@ export interface AutonomyConfig {
     promptVersion: number;
     maxTokens: number;
     maxDiffBytes: number;
+    maxContextBytes: number;
   };
   scanner: {
     adapter: 'fixture' | 'trivy';
@@ -377,9 +378,11 @@ function autonomyConfig(env: Env, mode: 'demo' | 'live'): AutonomyConfig {
     reviewer: {
       adapter: reviewerAdapter,
       model,
-      promptVersion: integer(env, 'FACTORY_REVIEWER_PROMPT_VERSION', 1, 1, 1000),
+      // Prompt 2 (OSS-22): the reviewer also receives the repository snapshot.
+      promptVersion: integer(env, 'FACTORY_REVIEWER_PROMPT_VERSION', 2, 1, 1000),
       maxTokens: integer(env, 'FACTORY_REVIEWER_MAX_TOKENS', 4096, 256, 16384),
       maxDiffBytes: integer(env, 'FACTORY_REVIEWER_MAX_DIFF_BYTES', 1_000_000, 10_000, 8_000_000),
+      maxContextBytes: integer(env, 'FACTORY_REVIEWER_MAX_CONTEXT_BYTES', 512 * 1024, 0, 4_000_000),
     },
     scanner,
     publisher,

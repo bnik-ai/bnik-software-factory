@@ -18,6 +18,65 @@ import {
 const MAX_FILES = 10_000;
 const MAX_TEXT_BYTES = 64 * 1024 * 1024;
 const MAX_FILE_BYTES = MAX_ARCHIVE_BYTES;
+// OSS-22: the reviewer sees a bounded snapshot of the candidate tree's text files, not only the
+// diff, so it can examine what a change relies on. Generated and dependency directories are not
+// context; what does not fit is listed as omitted and the snapshot marked incomplete.
+const CONTEXT_BYTES = 512 * 1024;
+const CONTEXT_FILE_BYTES = 64 * 1024;
+const CONTEXT_MAX_FILES = 2_000;
+const CONTEXT_OMITTED_LIST = 500;
+const CONTEXT_EXCLUDED =
+  /(^|\/)(\.git|node_modules|\.factory|vendor|dist|build|coverage|__pycache__|\.venv|\.cache|target)\//;
+
+async function snapshot(
+  run: (args: string[], stdin: Buffer | undefined, limit: number) => Promise<Buffer>,
+  tree: string,
+): Promise<{ files: { path: string; content: string }[]; omitted: string[]; truncated: boolean }> {
+  const listing = (await run(['ls-tree', '-r', '-z', tree], undefined, 64 * 1024 * 1024)).toString(
+    'utf8',
+  );
+  const entries: { mode: string; sha: string; path: string }[] = [];
+  for (const record of listing.split('\0')) {
+    if (record === '') continue;
+    const match = /^([0-7]{6}) (blob|commit|tree) ([0-9a-f]{40})\t([\s\S]+)$/.exec(record);
+    if (!match) fail('collector_tree_unparseable');
+    entries.push({ mode: match[1] as string, sha: match[3] as string, path: match[4] as string });
+  }
+  entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  const files: { path: string; content: string }[] = [];
+  const omitted: string[] = [];
+  const omit = (path: string) => {
+    if (omitted.length < CONTEXT_OMITTED_LIST) omitted.push(path);
+  };
+  let bytes = 0;
+  let truncated = false;
+  for (const entry of entries) {
+    if (CONTEXT_EXCLUDED.test(entry.path)) continue;
+    if (entry.mode !== '100644' && entry.mode !== '100755') {
+      omit(entry.path);
+      continue;
+    }
+    if (truncated || files.length >= CONTEXT_MAX_FILES) {
+      truncated = true;
+      omit(entry.path);
+      continue;
+    }
+    const blob = await run(['cat-file', 'blob', entry.sha], undefined, CONTEXT_FILE_BYTES + 1);
+    if (blob.length > CONTEXT_FILE_BYTES || !isText(blob)) {
+      omit(entry.path);
+      continue;
+    }
+    const content = blob.toString('utf8');
+    if (bytes + Buffer.byteLength(content) > CONTEXT_BYTES) {
+      truncated = true;
+      omit(entry.path);
+      continue;
+    }
+    bytes += Buffer.byteLength(content);
+    files.push({ path: entry.path, content });
+  }
+  return { files, omitted, truncated };
+}
 
 async function main() {
   if (process.getuid?.() !== 1000) fail('sandbox_requires_non_root_uid');
@@ -102,6 +161,7 @@ async function main() {
     if (after.bytes !== null && (binary || after.mode === '120000'))
       blobs[path] = after.bytes.toString('base64');
   }
+  const context = await snapshot(run, prepared.candidateTree);
   process.stdout.write(
     `${JSON.stringify({
       version: 1,
@@ -112,6 +172,7 @@ async function main() {
       patchSha256: sha256(input.patch),
       manifest: { complete, files },
       blobs,
+      context,
     })}\n`,
   );
 }

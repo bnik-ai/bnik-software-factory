@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import type { CodingJob, CodingOutcome } from '../worker/protocol.js';
 import type { AcceptanceBundle, AcceptanceRun } from './acceptance.js';
-import type { CollectedChange } from './collector.js';
+import type { CollectedChange, ReviewContext } from './collector.js';
 import { type ActionRequest, type Decision, actionDigest, parseRequest } from './decision.js';
 import type { DependencyVerificationRun } from './dependency.js';
 import type { ApprovalRecord } from './evidence.js';
@@ -602,6 +602,7 @@ export class AutonomyController {
               ...run.evidence,
               manifest: collected.manifest,
               blobs: collected.blobs,
+              reviewContext: collected.context,
               collectorImage: collected.imageId,
             },
           });
@@ -821,6 +822,7 @@ export class AutonomyController {
         intent: { title: task.title, body: task.body, kind: task.intentKind },
         intentSha256,
         changes: manifest,
+        context: (run.evidence.reviewContext as ReviewContext | undefined) ?? null,
         acceptance: acceptance.receipt,
         dependency: null,
       },

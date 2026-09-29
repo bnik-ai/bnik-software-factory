@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Docker } from '../worker/docker.js';
 import type { ChangeManifest, FileChange } from './classify.js';
+import type { ReviewContext } from './collector.js';
 import {
   type AcceptanceReceipt,
   type CandidateSubject,
@@ -31,6 +32,8 @@ export interface ReviewerConfig {
   maxTokens: number;
   /** Bytes of rendered diff the reviewer accepts; beyond it the review reports a limitation. */
   maxDiffBytes: number;
+  /** Bytes of repository snapshot the reviewer receives; beyond it the snapshot is incomplete. */
+  maxContextBytes: number;
 }
 export const FIXTURE_REVIEWER: ReviewerConfig = {
   adapter: 'fixture',
@@ -38,6 +41,7 @@ export const FIXTURE_REVIEWER: ReviewerConfig = {
   promptVersion: 1,
   maxTokens: 0,
   maxDiffBytes: 1_000_000,
+  maxContextBytes: 512 * 1024,
 };
 export function reviewerConfigDigest(config: ReviewerConfig): string {
   return sha256Json(config);
@@ -47,6 +51,8 @@ export interface ReviewRequest {
   intent: { title: string; body: string; kind: 'change' | 'bugfix' };
   intentSha256: string;
   changes: ChangeManifest;
+  /** The candidate tree's text files (OSS-22): what the reviewer may examine besides the diff. */
+  context: ReviewContext | null;
   acceptance: AcceptanceReceipt | null;
   dependency: DependencyReceipt | null;
 }
@@ -91,6 +97,33 @@ export function renderDiff(
     parts.push(rendered);
   }
   return { text: parts.join('\n'), truncated };
+}
+/**
+ * Deterministic rendering of the snapshot the collector took, within the reviewer's budget. An
+ * incomplete snapshot is said so up front: the reviewer lists what it then could not examine.
+ */
+export function renderContext(
+  context: ReviewContext | null,
+  maxBytes: number,
+): { text: string; truncated: boolean } {
+  if (context === null) return { text: 'No repository snapshot is available.', truncated: true };
+  const parts: string[] = [];
+  let bytes = 0;
+  let truncated = context.truncated;
+  for (const file of context.files) {
+    const rendered = `=== ${file.path}\n${file.content}\n`;
+    bytes += Buffer.byteLength(rendered);
+    if (bytes > maxBytes) {
+      truncated = true;
+      break;
+    }
+    parts.push(rendered);
+  }
+  const omitted = context.omitted.length > 0 ? ` Omitted: ${context.omitted.join(', ')}.` : '';
+  const heading = truncated
+    ? `INCOMPLETE snapshot of the candidate repository's text files.${omitted}`
+    : `Complete snapshot of the candidate repository's text files.${omitted}`;
+  return { text: `${heading}\n\n${parts.join('\n')}`, truncated };
 }
 function receiptsSummary(request: ReviewRequest): string {
   const acceptance = request.acceptance;
@@ -240,6 +273,7 @@ export class ClaudeReviewer implements Reviewer {
   async review(request: ReviewRequest, signal: AbortSignal): Promise<ReviewOutcome> {
     const now = this.options.now ?? Date.now;
     const { text, truncated } = renderDiff(request.changes, this.config.maxDiffBytes);
+    const context = renderContext(request.context, this.config.maxContextBytes);
     const runId = randomUUID();
     const timeoutMs = this.options.timeoutMs ?? 600_000;
     let status: ReviewReceipt['status'] = 'error';
@@ -270,6 +304,7 @@ export class ClaudeReviewer implements Reviewer {
               promptVersion: this.config.promptVersion,
               intent: request.intent,
               diff: text,
+              context: context.text,
               receipts: receiptsSummary(request),
             },
             timeoutMs,

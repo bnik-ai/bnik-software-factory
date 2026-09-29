@@ -204,6 +204,7 @@ function harness(scenario: Scenario) {
         base: SOURCE,
         baseTree: treeOf(BASE_FILES),
         candidateTree: treeOf(files),
+        context: { files: [], omitted: [], truncated: false },
         patchSha256: sha256(patch),
         manifest,
         blobs: {},

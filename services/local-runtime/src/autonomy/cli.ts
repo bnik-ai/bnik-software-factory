@@ -114,6 +114,7 @@ function reviewerFor(config: RuntimeConfig, autonomy: AutonomyConfig, image: str
       promptVersion: autonomy.reviewer.promptVersion,
       maxTokens: autonomy.reviewer.maxTokens,
       maxDiffBytes: autonomy.reviewer.maxDiffBytes,
+      maxContextBytes: autonomy.reviewer.maxContextBytes,
     },
   });
 }
