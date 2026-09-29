@@ -64,6 +64,8 @@ export interface ReviewReceipt {
   categories: CriticalCategory[];
   findings: ReviewFinding[];
   limitations: string[];
+  /** Whether the reviewer had the whole candidate tree's text files, part of them, or none. */
+  snapshot: 'complete' | 'incomplete' | 'none';
   completedAt: number;
 }
 export interface MergeGateObservation {
@@ -319,12 +321,17 @@ export function reviewReasons(
       'categories',
       'findings',
       'limitations',
+      'snapshot',
       'completedAt',
     ],
     'review_receipt_invalid',
   );
   const receipt = value as unknown as ReviewReceipt;
   requireAutonomy(receipt.version === 1 && receipt.kind === 'review', 'review_receipt_invalid');
+  requireAutonomy(
+    ['complete', 'incomplete', 'none'].includes(receipt.snapshot),
+    'review_receipt_invalid',
+  );
   requireRunId(receipt.runId, 'review_receipt_invalid');
   requireSubject(receipt.subject, 'review_receipt_invalid');
   requireSha256(receipt.intentSha256, 'review_receipt_invalid');

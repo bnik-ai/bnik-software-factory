@@ -200,6 +200,7 @@ export function reviewFor(
     intentSha256: request.task.intentSha256,
     reviewerConfigSha256: policy.verification.reviewerConfigSha256,
     context: 'fresh',
+    snapshot: 'complete',
     status: 'complete',
     risk: 'routine',
     categories: [],

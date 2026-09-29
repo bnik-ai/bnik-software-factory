@@ -69,8 +69,8 @@ and are read only by `./sfac`'s containers.
   approve-then-revise orchestrations mirror the deterministic lane. Spend is accounted from the
   factory's printed views (`estimatedUsd`, a conservative reservation for the reviewer's usage);
   each grant is capped at `min(3, remaining)` USD and the lane stops before an attempt when less
-  than one per-run reservation (USD 1) remains, or after three consecutive trial errors (an
-  outage, not the factory). Every trial counts: an error, timeout, unknown or cancelled outcome
+  than one per-run reservation (USD 1) remains, or after three consecutive trials that did not
+  complete (an outage, not the factory). Every trial counts: an error, timeout, unknown or cancelled outcome
   is a functional failure and a missed detection, never a pass. The report is bound to the
   commit (same clean commit and same scorer before and after) and is written after every trial.
 - `proof` records the live-proof steps into the same report: `routine` (a merged functional

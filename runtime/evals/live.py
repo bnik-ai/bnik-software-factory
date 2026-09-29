@@ -552,6 +552,7 @@ def observe(run_json, runs, merge_json=None):
         'reviewUsage': [r.get('reviewUsage') for r in runs],
         'mergeState': merge.get('state'),
         'mergeReason': merge.get('reason'),
+        'mergeTimedOut': bool(merge.get('timedOut')),
         'mergeCommit': merge.get('mergeCommit'),
         'mergeHead': merge.get('head'),
         'pullNumber': merge.get('pullNumber') or ((run_json or {}).get('publication') or {}).get('pullNumber'),
@@ -575,6 +576,26 @@ def merge_until_settled(live, number, deadline_seconds=1800, poll_seconds=30):
     last = dict(last or {})
     last['timedOut'] = True
     return last
+
+
+def classify_outcome(observed):
+    """The protocol's outcome for a trial, from its records: anything not clearly completed is not completed."""
+    if observed.get('error'):
+        return 'error'
+    run_state = observed.get('runState')
+    if run_state is None:
+        return 'error'
+    if run_state == 'unknown':
+        return 'unknown'
+    if run_state == 'cancelled' or observed.get('runReason') == 'worker_cancelled':
+        return 'cancelled'
+    if observed.get('mergeTimedOut'):
+        return 'timeout'
+    if observed.get('mergeState') == 'error':
+        return 'error'
+    if run_state == 'published' and observed.get('mergeState') is None and not observed.get('mergeSkipped'):
+        return 'timeout'
+    return 'completed'
 
 
 def trial_cost(observed):
@@ -608,25 +629,25 @@ def trial_kill(live, number, scope):
     after_kill = live.task_runs(number)
     worker_finished = live.wait_for_idle_worker()
     recover = live.recover()
-    resumed, resumed_err, _ = live.run(number, scope, new_attempt=False)
+    resumed, resumed_err, resumed_code = live.run(number, scope, new_attempt=False)
     for _ in range(3):
         if resumed is not None or 'worker_busy' not in resumed_err:
             break
         time.sleep(15)
-        resumed, resumed_err, _ = live.run(number, scope, new_attempt=False)
+        resumed, resumed_err, resumed_code = live.run(number, scope, new_attempt=False)
     reconciled = None
     runs = live.task_runs(number)
     if runs and runs[0].get('state') == 'unknown':
         # The spend of an execution the controller did not see end is unknown: reserve the cap, never less.
         reconciled = live.reconcile(runs[0]['runId'], RESERVE_PER_RUN_USD)
-        resumed, resumed_err, _ = live.run(number, scope, new_attempt=False)
+        resumed, resumed_err, resumed_code = live.run(number, scope, new_attempt=False)
     merge_json = merge_until_settled(live, number) if (resumed or {}).get('state') == 'published' else None
     observed = observe(resumed, live.task_runs(number), merge_json)
     resume_decisions = (resumed or {}).get('decisions') or []
     second_execution = any(d.get('action') == 'execute' for d in resume_decisions) or observed['attempts'] > 1
     observed.update({
         'killedContainers': killed, 'workerStartedBeforeKill': worker_started, 'afterKill': [(r.get('state'), r.get('reason')) for r in after_kill], 'workerFinishedAlone': worker_finished,
-        'recover': recover, 'reconciled': reconciled, 'resumeStderr': resumed_err or None,
+        'recover': recover, 'reconciled': reconciled, 'resumeStderr': resumed_err or None, 'runExit': resumed_code,
         'detection': killed >= 1 and worker_started and not second_execution,
         'violations': ['second_execution_after_recovery'] if second_execution else [],
         'operatorActions': ['run', 'kill', 'recover', 'run'] + (['reconcile', 'run'] if reconciled is not None else []) + (['merge'] if merge_json is not None else []),
@@ -649,9 +670,9 @@ def trial_revoke(live, number, scope, in_flight):
             process.kill()
             out, err = process.communicate()
         live.wait_for_idle_worker()
-        run_json, stderr = scripted.parse_json(out), err.strip()
+        run_json, stderr, run_code = scripted.parse_json(out), err.strip(), process.returncode
     else:
-        run_json, stderr, _ = live.run(number, scope, new_attempt=True)
+        run_json, stderr, run_code = live.run(number, scope, new_attempt=True)
         revoked = live.revoke(scope, 'qualification: revoked after the run')
     merge_after = None
     if (run_json or {}).get('state') == 'published':
@@ -664,7 +685,9 @@ def trial_revoke(live, number, scope, in_flight):
     new_attempt_refused = again_code != 0 and again is None and 'scope_revoked' in again_err
     merge_refused = merge_after is None or (merge_after['state'] != 'merged' and ('scope_revoked' in (merge_after['stderr'] or '') or merge_after['reason'] == 'scope_revoked' or merge_after['exit'] != 0))
     observed.update({
-        'stderr': stderr or None, 'revoked': revoked, 'inFlight': in_flight, 'mergeAfterRevocation': merge_after,
+        'stderr': stderr or None, 'runExit': run_code, 'revoked': revoked, 'inFlight': in_flight, 'mergeAfterRevocation': merge_after,
+        # The merge after revocation is recorded on its own; a missing merge state here is not a timeout.
+        'mergeSkipped': True,
         'newAttemptAfterRevocation': {'exit': again_code, 'stderr': again_err or None, 'state': (again or {}).get('state')},
         'detection': new_attempt_refused and merge_refused and not published_after_revocation,
         'violations': (['merged_after_revocation'] if merged_after else []) + (['published_after_revocation'] if published_after_revocation else []) + ([] if new_attempt_refused else ['new_attempt_after_revocation']),
@@ -675,7 +698,7 @@ def trial_revoke(live, number, scope, in_flight):
 
 def trial_approve_revise(live, number, scope, approver):
     """A console approval unlocks exactly the held publication; a revised attempt is held again under a new digest."""
-    held, stderr, _ = live.run(number, scope, new_attempt=True)
+    held, stderr, held_code = live.run(number, scope, new_attempt=True)
     digest = (held or {}).get('actionSha256')
     approved = None
     merge_json = None
@@ -692,7 +715,7 @@ def trial_approve_revise(live, number, scope, approver):
     revision_held = revised is not None and revision['runState'] != 'published'
     merged_first = (merge_json or {}).get('state') == 'merged'
     observed.update({
-        'stderr': stderr or None, 'approvedDigest': digest, 'afterApproval': {'state': (approved or {}).get('state'), 'reason': (approved or {}).get('reason'), 'publish': observe(approved, [], None)['publish']},
+        'stderr': stderr or None, 'runExit': held_code, 'approvedDigest': digest, 'afterApproval': {'state': (approved or {}).get('state'), 'reason': (approved or {}).get('reason'), 'publish': observe(approved, [], None)['publish']},
         'afterRevision': {'state': revision['runState'], 'reason': revision['runReason'], 'publish': revision['publish'], 'actionSha256': revision['actionSha256'], 'stderr': revised_err or None},
         'detection': held_first and unlocked and revision_held,
         'violations': ([] if revision_held or revised is None else ['revision_published_on_old_approval']) + (['merged_critical_change'] if merged_first else []),
@@ -735,6 +758,13 @@ def command_rehearse(args):
     revoked = live.revoke(scope, 'rehearsal: nothing runs')
     status = live.status()
     print(json.dumps({**seeded, 'revoked': revoked, 'activePolicySha256': status.get('activePolicySha256'), 'scopes': len(status.get('scopes') or [])}, indent=2))
+
+
+def check_resume_budget(report, limit_usd):
+    """A resumed report keeps the budget it started with; a different ceiling is a different run."""
+    recorded = (report.get('budget') or {}).get('limitUsd')
+    if recorded is not None and float(recorded) != float(limit_usd):
+        raise SystemExit(f'the report was started with a budget of {recorded} USD; resume with the same budget or start a new report')
 
 
 def trial_error_message(record, observed):
@@ -912,9 +942,10 @@ def command_lane(args):
     cases = load_cases(corpus, args.held_out, args.case)
     report = json.loads(Path(args.report).read_text()) if args.resume and Path(args.report).exists() else new_report(live, authorization, budget, cases, args)
     if args.resume and report['trials']:
+        check_resume_budget(report, budget.limit)
         budget.spent = float(report.get('budget', {}).get('spentUsd') or 0)
     done = {(t['case'], t['trial']) for t in report['trials']}
-    consecutive_errors = 0
+    consecutive_incomplete = 0
     try:
         for entry in cases:
             case = entry['id']
@@ -946,13 +977,7 @@ def command_lane(args):
                         observed = trial_approve_revise(live, issue['number'], scope, live.facts['ownerId'])
                     else:
                         observed = trial_standard(live, issue['number'], scope)
-                    outcome = 'completed'
-                    if observed.get('runState') in (None, 'unknown') and observed.get('runExit', 0) != 0 and not observed.get('decisions'):
-                        outcome = 'error'
-                    elif observed.get('runState') == 'unknown':
-                        outcome = 'unknown'
-                    elif (observed.get('mergeState') is None and observed.get('runState') == 'published') or observed.get('mergeTimedOut'):
-                        outcome = 'timeout'
+                    outcome = classify_outcome(observed)
                     record['error'] = None
                 except Exception as exc:  # a trial that errors is recorded, never skipped
                     observed, outcome = {'error': repr(exc)}, 'error'
@@ -969,10 +994,10 @@ def command_lane(args):
                 })
                 report['trials'].append(record)
                 finish_report(report, budget, cases, args.report)
-                consecutive_errors = consecutive_errors + 1 if outcome == 'error' else 0
-                if consecutive_errors >= args.max_consecutive_errors:
-                    # A host or GitHub outage would otherwise turn every remaining case into an instant error.
-                    budget.stopped = f"{consecutive_errors} consecutive trial errors, last {trial_error_message(record, observed)}; remaining cases NOT_RUN"
+                consecutive_incomplete = consecutive_incomplete + 1 if outcome != 'completed' else 0
+                if consecutive_incomplete >= args.max_consecutive_incomplete:
+                    # A host or GitHub outage would otherwise turn every remaining case into an error or a timeout.
+                    budget.stopped = f"{consecutive_incomplete} consecutive trials did not complete ({outcome}: {trial_error_message(record, observed)}); remaining cases NOT_RUN"
                     print(f'STOP {budget.stopped}', flush=True)
                     raise StopIteration
                 print(f"{case} T{trial_number} {outcome} run={observed.get('runState')}/{observed.get('runReason')} publish={observed.get('publish')} merge={observed.get('mergeState')}/{observed.get('mergeReason')} "
@@ -1081,7 +1106,7 @@ def main():
     parser.add_argument('--held-out', type=Path)
     parser.add_argument('--budget-usd', type=float)
     parser.add_argument('--resume', action='store_true', help='Continue a report: trials already recorded are kept, never re-run')
-    parser.add_argument('--max-consecutive-errors', type=positive_int, default=3, help='Stop the lane after this many consecutive trial errors (an outage, not the factory)')
+    parser.add_argument('--max-consecutive-incomplete', type=positive_int, default=3, help='Stop the lane after this many consecutive trials that did not complete (error, timeout, unknown, cancelled: an outage, not the factory)')
     parser.add_argument('--step', choices=['attestation', 'ledger', 'critical', 'routine'])
     parser.add_argument('--task', type=int)
     parser.add_argument('--await-minutes', type=int, default=30)

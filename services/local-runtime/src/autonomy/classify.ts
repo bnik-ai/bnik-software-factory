@@ -1,4 +1,10 @@
-import { SECRET_MATERIAL_CONTENT, SECRET_MATERIAL_PATH } from '../worker/secrets.js';
+import {
+  SECRET_MATERIAL_CONTENT,
+  SECRET_MATERIAL_PATH,
+  isEnvironmentDump,
+} from '../worker/secrets.js';
+
+export { isEnvironmentDump } from '../worker/secrets.js';
 import type { AutonomyPolicy, CriticalCategory } from './policy.js';
 import { pathWithin, requireAutonomy, requireRecord, requireRepositoryPath } from './schema.js';
 
@@ -413,24 +419,34 @@ function isTestFile(path: string | null): boolean {
 }
 const PROSE = /\.(md|markdown|mdx|txt|rst|adoc)$/;
 /**
- * A test that spawns a program is how a CLI is tested (OSS-22 live lane, F03): in a test-named file
- * a process-spawn primitive alone is not a critical addition. Shell interpretation (a shell or an
- * interpreter given code on its command line, `shell: true`, `exec`/`execSync`/`system`/`popen`,
- * command substitution) and dynamic code stay critical everywhere; a line that also names them is
- * not exempt, and helpers under a test directory are not test-named.
+ * A test that spawns a program is how a CLI is tested (OSS-22 live lane, F03): in a test file (test
+ * location and test name) a process-spawn primitive alone is not a critical addition. The exemption is
+ * decided per file: if any added line of the file names shell interpretation or dynamic code (a
+ * shell as the program, `shell:` other than false, a shell or interpreter given code on its command
+ * line or a bare interpreter fed on stdin, `exec`/`execSync`/`system`/`popen` even as an import,
+ * command substitution, `eval`, `new Function`), no line of that file is exempt, so splitting a call
+ * over lines does not hide it. A token held in a variable and passed later is the accepted residual:
+ * the reviewer sees the file, the classifier sees lines.
  */
 const TEST_SPAWN = /\b(child_process|execfile|execfilesync|spawn|spawnsync|fork|subprocess)\b/i;
 const SHELL_OR_DYNAMIC_EXECUTION =
-  /\b(exec|execsync|system|popen)\b|shell\s*[:=]\s*true|\bnew\s+function\s*\(|\bfunction\s*\(\s*["'`]|`[^`]*\$\(|\beval\b|os\.system|os\.popen|shell_exec|passthru|proc_open|kernel\.system|io\.popen|exec\.command|command::new|processbuilder|process\.start|runtime\.getruntime|dangerouslysetinnerhtml|pickle\.loads?|["'`]-(l?c|e|p|eval)["'`]|--eval\b|\bget(status)?output\b|create_subprocess_shell|process\.spawn\s*\(\s*["'`]/i;
+  /\b(exec|execsync|system)\b|\bpopen\s*\(\s*["'`]|shell\s*[:=]\s*(?!false\b|0\b|none\b)\w|\bnew\s+function\s*\(|\bfunction\s*\(\s*["'`]|`[^`]*\$\(|\beval\b|os\.system|os\.popen|shell_exec|passthru|proc_open|kernel\.system|io\.popen|exec\.command|command::new|processbuilder|process\.start|runtime\.getruntime|dangerouslysetinnerhtml|pickle\.loads?|["'`]-(l?c|e|p|eval|s)["'`]|--(eval|print)\b|\bget(status)?output\b|create_subprocess_shell|process\.spawn\s*\(\s*["'`]|["'`/](sh|bash|dash|zsh|ksh|fish|cmd(\.exe)?|powershell|pwsh)["'`]|["'`](node|nodejs|python3?|ruby|perl|php|deno|bun)["'`]\s*(,\s*\[\s*\]|\))|["'`]-["'`]\s*["'`]/i;
 const TEST_NAMED =
   /[._-](test|spec|cy|e2e)s?\.[a-z0-9]+$|(^|\/)test_[^/]+\.py$|_test\.(go|dart)$|(^|\/)conftest\.py$|tests?\.(java|kt|cs|scala|swift)$/;
-function isTestNamed(path: string | null): boolean {
+const TEST_DIRECTORY =
+  /(^|\/)(tests?|__tests__|specs?|testing|e2e|cypress|playwright|integration[-_]tests?)\//;
+/** Test name and test directory both: a test-named file under `src/` is production code to the exemption. */
+function isNamedTestFile(path: string | null): boolean {
   if (path === null) return false;
   const lowercasePath = path.toLowerCase();
-  return TEST_NAMED.test(lowercasePath) && RUNNABLE_SOURCE.test(lowercasePath);
+  return (
+    TEST_NAMED.test(lowercasePath) &&
+    TEST_DIRECTORY.test(lowercasePath) &&
+    RUNNABLE_SOURCE.test(lowercasePath)
+  );
 }
-function isTestSpawn(line: string): boolean {
-  return TEST_SPAWN.test(line) && !SHELL_OR_DYNAMIC_EXECUTION.test(line);
+function testSpawnExempt(path: string | null, addedLines: string[]): boolean {
+  return isNamedTestFile(path) && !addedLines.some((line) => SHELL_OR_DYNAMIC_EXECUTION.test(line));
 }
 const ASSERTION =
   /\bassert\w*|\bexpect\s*\(|\.should\b|\bt\.(is|not|equal|deepequal|true|false|truthy|falsy|throws|rejects|errorf?|fatalf?)\b|\bpytest\.raises\b|\bself\.assert\w*/i;
@@ -631,21 +647,6 @@ function exceedsWithoutSplitting(
 }
 
 const DOCUMENTATION = /\.(md|markdown|mdx|rst|adoc)$/;
-const ENVIRONMENT_LINE = /^(export\s+|declare\s+-x\s+)?[A-Za-z_][A-Za-z0-9_]*=/;
-/** Variables every process environment carries; a configuration file names none of them. */
-const ENVIRONMENT_IDENTITY =
-  /^(export\s+|declare\s+-x\s+)?(PATH|HOME|PWD|OLDPWD|HOSTNAME|SHLVL|_|TERM|USER|LOGNAME|SHELL|LANG|LC_ALL|TMPDIR)=/;
-/**
- * The shape of `env` output: at least five non-empty lines, four in five of them `NAME=value`,
- * and at least two of the variables a process always has. A settings file with five keys is not.
- */
-export function isEnvironmentDump(content: string): boolean {
-  const lines = content.split(/\r?\n/).filter((line) => line.trim().length > 0);
-  if (lines.length < 5) return false;
-  const assignments = lines.filter((line) => ENVIRONMENT_LINE.test(line)).length;
-  const identity = lines.filter((line) => ENVIRONMENT_IDENTITY.test(line)).length;
-  return assignments * 5 >= lines.length * 4 && identity >= 2;
-}
 export function classifyChanges(policy: AutonomyPolicy, manifest: ChangeManifest): Classification {
   const reasons = new Map<string, Reason>();
   const addReason = (code: string, category: ReasonCategory, path?: string) => {
@@ -723,6 +724,7 @@ export function classifyChanges(policy: AutonomyPolicy, manifest: ChangeManifest
     const removedLines = inspectable(removed);
     const contextLines = inspectable(context);
     const isProse = PROSE.test(displayPath.toLowerCase());
+    const spawnExempt = testSpawnExempt(change.newPath, addedLines);
     for (const rule of CONTENT_RULES) {
       if (rule.testFilesOnly && !(oldIsTest || newIsTest)) continue;
       if (rule.skipProse && isProse) continue;
@@ -736,11 +738,7 @@ export function classifyChanges(policy: AutonomyPolicy, manifest: ChangeManifest
           (line) =>
             rule.pattern.test(line) &&
             (rule.requires === undefined || rule.requires.test(line)) &&
-            !(
-              rule.code === 'code_execution_primitive' &&
-              isTestNamed(change.newPath) &&
-              isTestSpawn(line)
-            ),
+            !(rule.code === 'code_execution_primitive' && spawnExempt && TEST_SPAWN.test(line)),
         )
       )
         addReason(rule.code, rule.category, displayPath);

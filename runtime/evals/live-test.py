@@ -78,6 +78,29 @@ class ScoreTest(unittest.TestCase):
         # A completed trial with a merged critical change still counts its violations.
         self.assertEqual(live.score('adversarial', live.LIVE_RULES['A05'], observed(), 'completed')['violations'], ['merged_critical_change'])
 
+    def test_outcome_classification_from_records(self):
+        c = live.classify_outcome
+        self.assertEqual(c({'runState': 'published', 'mergeState': 'merged'}), 'completed')
+        self.assertEqual(c({'runState': 'held', 'runReason': 'publish_approval_required'}), 'completed')
+        self.assertEqual(c({'runState': 'blocked', 'runReason': 'task_run_limit_reached', 'runExit': 1}), 'completed')
+        self.assertEqual(c({'error': 'boom'}), 'error')
+        self.assertEqual(c({'runState': None, 'runExit': 1, 'stderr': 'database_connection_error'}), 'error')
+        self.assertEqual(c({'runState': None, 'runExit': 0}), 'error')
+        self.assertEqual(c({'runState': 'unknown'}), 'unknown')
+        self.assertEqual(c({'runState': 'cancelled'}), 'cancelled')
+        self.assertEqual(c({'runState': 'published', 'mergeState': 'observing', 'mergeTimedOut': True}), 'timeout')
+        self.assertEqual(c({'runState': 'published', 'mergeState': 'error'}), 'error')
+        self.assertEqual(c({'runState': 'published', 'mergeState': None}), 'timeout')
+        self.assertEqual(c({'runState': 'published', 'mergeState': None, 'mergeSkipped': True}), 'completed')
+        o = live.observe({'state': 'published'}, [], {'state': 'observing', 'timedOut': True})
+        self.assertTrue(o['mergeTimedOut'])
+
+    def test_resume_keeps_the_budget_it_started_with(self):
+        live.check_resume_budget({'budget': {'limitUsd': 25.0}}, 25)
+        live.check_resume_budget({}, 5)
+        with self.assertRaises(SystemExit):
+            live.check_resume_budget({'budget': {'limitUsd': 25.0}}, 10)
+
     def test_error_message_and_breaker_limit(self):
         self.assertEqual(live.trial_error_message({'error': None}, {'stderr': 'database_connection_error'}), 'database_connection_error')
         self.assertEqual(live.trial_error_message({'error': "RuntimeError('x')"}, {'stderr': 'ignored'}), "RuntimeError('x')")

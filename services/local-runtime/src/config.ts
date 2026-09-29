@@ -161,10 +161,11 @@ function reviewerSettings(
     promptVersion: integer(env, 'FACTORY_REVIEWER_PROMPT_VERSION', 2, 1, 1000),
     maxTokens: integer(env, 'FACTORY_REVIEWER_MAX_TOKENS', 4096, 256, 16384),
     maxDiffBytes: integer(env, 'FACTORY_REVIEWER_MAX_DIFF_BYTES', 1_000_000, 10_000, 8_000_000),
+    // 640 KiB: the collector's 512 KiB of content plus headings and the omitted list.
     maxContextBytes: integer(
       env,
       'FACTORY_REVIEWER_MAX_CONTEXT_BYTES',
-      512 * 1024,
+      640 * 1024,
       1024,
       4_000_000,
     ),

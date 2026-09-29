@@ -636,7 +636,15 @@ async function main() {
           ).rows[0]?.started === true,
       },
       collect: (archive, patch, signal) =>
-        collectChanges({ docker, image, runId: randomUUID(), archive, patch, signal }),
+        collectChanges({
+          docker,
+          image,
+          runId: randomUUID(),
+          archive,
+          patch,
+          protectedPaths: policy.verification.protectedPaths,
+          signal,
+        }),
       acceptance: (input) =>
         runAcceptance({
           docker,

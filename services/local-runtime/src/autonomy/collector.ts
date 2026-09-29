@@ -81,6 +81,8 @@ export interface CollectOptions {
   runId: string;
   archive: Buffer;
   patch: string;
+  /** The policy's protected verification assets: never part of the reviewer's snapshot. */
+  protectedPaths?: string[];
   signal: AbortSignal;
   timeoutMs?: number;
 }
@@ -97,11 +99,22 @@ export async function collectChanges(options: CollectOptions): Promise<Collected
     image: options.image,
     runId: options.runId,
     entry: 'src/autonomy/sandbox/collector.ts',
-    input: { archive: options.archive.toString('base64'), patch: options.patch },
+    input: {
+      archive: options.archive.toString('base64'),
+      patch: options.patch,
+      protectedPaths: options.protectedPaths ?? [],
+    },
     timeoutMs: options.timeoutMs ?? 300_000,
     signal: options.signal,
     outputLimit: 192 * 1024 * 1024,
   });
+  return { ...parseCollectorOutput(output, options.patch), imageId };
+}
+/** Validates the sandbox's output before anything trusts it; pure, so a stale image is a unit test. */
+export function parseCollectorOutput(
+  output: unknown,
+  patch: string,
+): Omit<CollectedChange, 'imageId'> {
   requireAutonomy(
     output !== null && typeof output === 'object' && !Array.isArray(output),
     'collector_output_invalid',
@@ -114,6 +127,12 @@ export async function collectChanges(options: CollectOptions): Promise<Collected
       typeof reason === 'string' && /^[a-z_]{1,64}$/.test(reason) ? reason : 'collector_failed',
     );
   }
+  // Version 2 carries the reviewer's snapshot; a pinned older worker image is refused by name.
+  const version = (output as { version: unknown }).version;
+  requireAutonomy(
+    version === 2,
+    version === 1 ? 'collector_image_outdated' : 'collector_output_invalid',
+  );
   requireRecord(
     output,
     [
@@ -129,13 +148,12 @@ export async function collectChanges(options: CollectOptions): Promise<Collected
     ],
     'collector_output_invalid',
   );
-  requireAutonomy((output as { version: unknown }).version === 1, 'collector_output_invalid');
   const collected = output as unknown as CollectedChange;
   const context = parseReviewContext(collected.context);
   requireGitObject(collected.base, 'collector_output_invalid');
   requireGitObject(collected.baseTree, 'collector_output_invalid');
   requireGitObject(collected.candidateTree, 'collector_output_invalid');
-  requireAutonomy(collected.patchSha256 === sha256(options.patch), 'collector_patch_mismatch');
+  requireAutonomy(collected.patchSha256 === sha256(patch), 'collector_patch_mismatch');
   const manifest = parseChangeManifest(collected.manifest);
   requireAutonomy(
     collected.blobs !== null &&
@@ -160,5 +178,5 @@ export async function collectChanges(options: CollectOptions): Promise<Collected
     (manifest.files.length === 0) === (collected.baseTree === collected.candidateTree),
     'collector_tree_inconsistent',
   );
-  return { ...collected, manifest, context, imageId };
+  return { ...collected, manifest, context };
 }

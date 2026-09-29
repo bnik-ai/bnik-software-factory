@@ -1,5 +1,10 @@
 import { MAX_ARCHIVE_BYTES, sha256 } from '../../worker/protocol.js';
-import { SECRET_MATERIAL_CONTENT, SECRET_MATERIAL_PATH } from '../../worker/secrets.js';
+import { SNAPSHOT_EXCLUDED_DIRECTORIES } from '../../worker/review-snapshot.js';
+import {
+  SECRET_MATERIAL_CONTENT,
+  SECRET_MATERIAL_PATH,
+  isEnvironmentDump,
+} from '../../worker/secrets.js';
 import {
   GIT_MODES,
   fail,
@@ -29,8 +34,11 @@ const CONTEXT_BYTES = 512 * 1024;
 const CONTEXT_FILE_BYTES = 64 * 1024;
 const CONTEXT_MAX_FILES = 2_000;
 const CONTEXT_OMITTED_LIST = 500;
-const CONTEXT_EXCLUDED =
-  /(^|\/)(\.git|node_modules|\.factory|vendor|dist|build|coverage|__pycache__|\.venv|\.cache|target)\//;
+const CONTEXT_EXCLUDED = new RegExp(
+  `(^|/)(${SNAPSHOT_EXCLUDED_DIRECTORIES.map((name) => name.replace(/\./g, '\\.')).join('|')})/`,
+);
+const withinAny = (path: string, prefixes: string[]) =>
+  prefixes.some((prefix) => path === prefix || path.startsWith(`${prefix.replace(/\/+$/, '')}/`));
 export interface Snapshot {
   files: { path: string; content: string }[];
   omitted: string[];
@@ -60,6 +68,7 @@ async function snapshot(
   run: (args: string[], stdin: Buffer | undefined, limit: number) => Promise<Buffer>,
   tree: string,
   changedPaths: string[],
+  protectedPaths: string[],
 ): Promise<Snapshot> {
   const listing = (
     await run(['ls-tree', '-r', '-l', '-z', tree], undefined, 64 * 1024 * 1024)
@@ -87,6 +96,11 @@ async function snapshot(
   let truncated = false;
   for (const entry of relevanceOrder(entries, changedPaths)) {
     if (CONTEXT_EXCLUDED.test(entry.path)) continue;
+    // The policy's protected verification assets are not context for the model.
+    if (withinAny(entry.path, protectedPaths)) {
+      omit(entry.path);
+      continue;
+    }
     if (entry.mode !== '100644' && entry.mode !== '100755') {
       omit(entry.path);
       continue;
@@ -110,7 +124,7 @@ async function snapshot(
       continue;
     }
     const content = blob.toString('utf8');
-    if (SECRET_MATERIAL_CONTENT.test(content)) {
+    if (SECRET_MATERIAL_CONTENT.test(content) || isEnvironmentDump(content)) {
       omit(entry.path);
       continue;
     }
@@ -127,8 +141,17 @@ async function snapshot(
 
 async function main() {
   if (process.getuid?.() !== 1000) fail('sandbox_requires_non_root_uid');
-  const input = await readInput<{ archive: string; patch: string }>(MAX_ARCHIVE_BYTES * 3);
+  const input = await readInput<{ archive: string; patch: string; protectedPaths?: unknown }>(
+    MAX_ARCHIVE_BYTES * 3,
+  );
   if (typeof input.archive !== 'string' || typeof input.patch !== 'string')
+    fail('collector_input_invalid');
+  const protectedPaths = input.protectedPaths ?? [];
+  if (
+    !Array.isArray(protectedPaths) ||
+    protectedPaths.length > 64 ||
+    !protectedPaths.every((path) => typeof path === 'string' && path.length <= 512)
+  )
     fail('collector_input_invalid');
   const archive = Buffer.from(input.archive, 'base64');
   const env = isolateEnvironment();
@@ -214,10 +237,11 @@ async function main() {
     (files as { newPath: string | null; oldPath: string | null }[]).map(
       (file) => file.newPath ?? file.oldPath ?? '',
     ),
+    protectedPaths as string[],
   );
   process.stdout.write(
     `${JSON.stringify({
-      version: 1,
+      version: 2,
       ok: true,
       base: prepared.base,
       baseTree: prepared.baseTree,

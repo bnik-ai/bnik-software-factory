@@ -80,15 +80,17 @@ test('collector rebuilds the candidate tree from archive and patch, deterministi
       '.env': 'TOKEN=not-a-real-secret\n',
       'notes/key.txt':
         '-----BEGIN RSA ' + 'PRIVATE KEY-----\nsynthetic\n-----END RSA ' + 'PRIVATE KEY-----\n',
+      'acceptance/suite.test.mjs': 'protected\n',
       'zz/last.js': 'module.exports = 2;\n',
     }),
     patch,
+    protectedPaths: ['acceptance'],
     signal: signal(),
   });
   const paths = wide.context.files.map((file) => file.path);
   assert.equal(paths[0], 'sum.js', "the changed file's directory comes first");
   assert.ok(paths.includes('lib/helper.js') && paths.includes('zz/last.js'));
-  for (const omitted of ['docs/big.txt', '.env', 'notes/key.txt']) {
+  for (const omitted of ['docs/big.txt', '.env', 'notes/key.txt', 'acceptance/suite.test.mjs']) {
     assert.ok(!paths.includes(omitted), omitted);
     assert.ok(wide.context.omitted.includes(omitted), omitted);
   }
@@ -509,7 +511,7 @@ test('model reviewer runs in a sandbox that never holds the key and returns only
         promptVersion: 1,
         maxTokens: 2048,
         maxDiffBytes: 1_000_000,
-        maxContextBytes: 512 * 1024,
+        maxContextBytes: 640 * 1024,
       },
       timeoutMs: 120_000,
     });

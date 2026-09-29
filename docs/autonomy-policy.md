@@ -102,15 +102,25 @@ tools and SQL, license and notice files, plus configured `criticalPaths` and
 `verification.protectedPaths`.
 
 Content rules match added or removed lines. One exception is deliberate: in a
-test-named file (`*.test.js`, `*_test.go`, `test_*.py` and the like; a helper
-under a test directory does not count), a line that only spawns a program
-(`child_process`, `execFile*`, `spawn*`, `fork`, `subprocess`) is not a
-code-execution primitive, because that is how a command-line program is tested.
-A line that also names shell interpretation or dynamic code stays critical in
-every file: `shell: true`, `exec`/`execSync`/`system`/`popen` (even as an
-import), a shell or interpreter given code on its command line (`-c`, `-e`,
-`--eval`), `getoutput`, command substitution, `eval`, `new Function`. The same
-spawn outside a test-named file stays critical.
+test file that is both test-named (`*.test.js`, `*_test.go`, `test_*.py` and
+the like) and in a test directory (`test/`, `tests/`, `spec/`, `e2e/` and the
+like; a helper there is not test-named, and a test-named file under `src/` is
+not in a test directory), a line that only spawns a program (`child_process`,
+`execFile*`, `spawn*`, `fork`, `subprocess`) is not a code-execution primitive,
+because that is how a command-line program is tested. The exemption is decided
+per file: if any added line of that file names shell interpretation or dynamic
+code, no line of the file is exempt, so splitting a call over lines does not
+hide it. Shell interpretation and dynamic code are: a shell named as the
+program (`sh`, `bash`, `cmd`, `powershell`, …), `shell:` or `shell=` set to
+anything but false, a shell or interpreter given code on its command line
+(`-c`, `-e`, `-p`, `-s`, `--eval`, `--print`) or a bare interpreter with no
+script (fed on stdin), `exec`/`execSync`/`system`/`popen` (even as an import),
+`getoutput`, `popen` on a command string, command substitution, `eval`,
+`new Function`. The exemption knows the Node and Python spawn APIs; Go, Rust
+and Java process APIs stay critical everywhere. The classifier sees lines, not
+data flow: a flag or program held in a variable and passed later is the
+accepted residual, and the reviewer sees the whole file. The same spawn outside
+such a test file stays critical.
 
 **Content tripwires** run on an ordered line diff, so moved and reordered lines
 count as changes and unchanged lines elsewhere do not escalate. Authorization
@@ -204,13 +214,16 @@ can.
 
 The reviewer receives the approved intent, the actual diff, trusted test receipts
 and a bounded snapshot of the candidate tree's text files taken by the trusted
-collector: at most 512 KiB in all and 64 KiB per file, at most 2000 files, files
-in a changed file's directory first; generated and dependency directories and
-the protected verification assets are left out; secret-shaped paths and secret
-material are never sent; what does not fit is listed as omitted (up to 500
-names, the rest counted) and the snapshot is marked incomplete.
-`FACTORY_REVIEWER_MAX_CONTEXT_BYTES` (default 512 KiB, at least 1 KiB; with the
-diff budget at most 3.5 MB, the sandbox's input limit) bounds what is rendered.
+collector: at most 512 KiB of content and 64 KiB per file, at most 2000 files,
+files in a changed file's directory first; directories named `.git`,
+`node_modules`, `.factory`, `vendor`, `dist`, `build`, `coverage`,
+`__pycache__`, `.venv`, `.cache` or `target` at any depth and the policy's
+protected paths are never included (the snapshot's heading says so); secret-
+shaped paths and secret material are never sent; what does not fit is listed as
+omitted (up to 500 names, the rest counted) and the snapshot is marked
+incomplete. `FACTORY_REVIEWER_MAX_CONTEXT_BYTES` (default 640 KiB, at least
+1 KiB, charged for headings and the omitted list as well; with the diff budget
+at most 3.5 MB, the sandbox's input limit) bounds what is rendered.
 The snapshot lets the reviewer examine what a change relies on or documents; a
 limitation it still reports blocks publication, as before. The repository's
 text files therefore reach the model, and like the diff they are untrusted data

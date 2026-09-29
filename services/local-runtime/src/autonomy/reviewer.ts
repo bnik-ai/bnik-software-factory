@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Docker } from '../worker/docker.js';
+import { SNAPSHOT_EXCLUSION_RULE } from '../worker/review-snapshot.js';
 import type { ChangeManifest, FileChange } from './classify.js';
 import type { ReviewContext } from './collector.js';
 import {
@@ -41,7 +42,7 @@ export const FIXTURE_REVIEWER: ReviewerConfig = {
   promptVersion: 1,
   maxTokens: 0,
   maxDiffBytes: 1_000_000,
-  maxContextBytes: 512 * 1024,
+  maxContextBytes: 640 * 1024,
 };
 export function reviewerConfigDigest(config: ReviewerConfig): string {
   return sha256Json(config);
@@ -109,28 +110,38 @@ export function renderContext(
   // A change collected before snapshots existed has none; the diff is still complete.
   if (context === null)
     return { text: 'No repository snapshot was taken for this change.', truncated: false };
+  // Everything rendered is charged against the budget, the review sandbox's input is bounded.
+  let omittedList = context.omitted.join(', ');
+  let omittedCount = context.omittedCount;
+  if (omittedList.length > OMITTED_LIST_BYTES) {
+    const kept = context.omitted.slice(0, Math.max(1, Math.floor(context.omitted.length / 2)));
+    while (kept.length > 1 && kept.join(', ').length > OMITTED_LIST_BYTES) kept.pop();
+    omittedList = kept.join(', ');
+    omittedCount = context.omittedCount;
+    context = { ...context, omitted: kept };
+  }
+  const more = omittedCount - context.omitted.length;
+  const omitted =
+    context.omitted.length > 0
+      ? ` Omitted: ${omittedList}${more > 0 ? ` and ${more} more` : ''}.`
+      : '';
   const parts: string[] = [];
-  let bytes = 0;
+  let bytes = Buffer.byteLength(omitted) + Buffer.byteLength(SNAPSHOT_EXCLUSION_RULE) + 96;
   let truncated = context.truncated;
   for (const file of context.files) {
-    // The budget counts file content, as the collector's does; headers are not charged.
-    bytes += Buffer.byteLength(file.content);
+    const rendered = `=== ${file.path}\n${file.content}\n`;
+    bytes += Buffer.byteLength(rendered) + 1;
     if (bytes > maxBytes) {
       truncated = true;
       break;
     }
-    parts.push(`=== ${file.path}\n${file.content}\n`);
+    parts.push(rendered);
   }
-  const more = context.omittedCount - context.omitted.length;
-  const omitted =
-    context.omitted.length > 0
-      ? ` Omitted: ${context.omitted.join(', ')}${more > 0 ? ` and ${more} more` : ''}.`
-      : '';
-  const heading = truncated
-    ? `INCOMPLETE snapshot of the candidate repository's text files.${omitted}`
-    : `Complete snapshot of the candidate repository's text files.${omitted}`;
+  const heading = `${truncated ? 'INCOMPLETE' : 'Complete'} snapshot of the candidate repository's text files (${SNAPSHOT_EXCLUSION_RULE}).${omitted}`;
   return { text: `${heading}\n\n${parts.join('\n')}`, truncated };
 }
+/** The omitted list is bounded too; beyond it the count says how many more. */
+const OMITTED_LIST_BYTES = 64 * 1024;
 function receiptsSummary(request: ReviewRequest): string {
   const acceptance = request.acceptance;
   const lines = [
@@ -148,6 +159,7 @@ function base(
   config: ReviewerConfig,
   now: number,
 ): Omit<ReviewReceipt, 'status' | 'risk' | 'categories' | 'findings' | 'limitations'> {
+  const rendered = renderContext(request.context, config.maxContextBytes);
   return {
     version: 1,
     kind: 'review',
@@ -156,6 +168,7 @@ function base(
     intentSha256: request.intentSha256,
     reviewerConfigSha256: reviewerConfigDigest(config),
     context: 'fresh',
+    snapshot: request.context === null ? 'none' : rendered.truncated ? 'incomplete' : 'complete',
     completedAt: now,
   };
 }
