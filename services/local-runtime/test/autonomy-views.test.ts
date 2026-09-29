@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { commandFailureReason, costView } from '../src/autonomy/views.js';
+import { ConfigurationError } from '../src/config.js';
 
 test('costView exposes the SDK estimate and the reviewer usage from the run evidence', () => {
   const view = costView({
@@ -36,10 +37,18 @@ test('commandFailureReason names refusals and configuration errors, never arbitr
   assert.equal(commandFailureReason({ reason: 'scope_revoked' }), 'scope_revoked');
   assert.equal(
     commandFailureReason(
-      new Error('base_publication_requires_FACTORY_PUBLICATION_SECRETLESS_CI_attested'),
+      new ConfigurationError(
+        'base_publication_requires_FACTORY_PUBLICATION_SECRETLESS_CI_attested',
+      ),
     ),
     'base_publication_requires_FACTORY_PUBLICATION_SECRETLESS_CI_attested',
   );
+  // A plain Error's message is never printed, even when it is a single token.
+  assert.equal(
+    commandFailureReason(new Error('ghs_abcdefghijklmnopqrstuvwxyz0123456789ab')),
+    'autonomy_command_failed',
+  );
+  assert.equal(commandFailureReason(new Error('worker_busy')), 'autonomy_command_failed');
   assert.equal(
     commandFailureReason(new Error('connect ECONNREFUSED 127.0.0.1:5432')),
     'autonomy_command_failed',

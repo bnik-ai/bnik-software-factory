@@ -27,15 +27,15 @@ export function costView(run: { evidence: Record<string, unknown> }): {
 }
 
 /**
- * What the autonomy CLI prints when a command fails: the reason of an AutonomyError or a GitHub
- * failure, a configuration refusal that names itself as one token (for example
+ * What the autonomy CLI prints when a command fails: the `reason` of an AutonomyError, a GitHub
+ * failure or a ConfigurationError (for example
  * base_publication_requires_FACTORY_PUBLICATION_SECRETLESS_CI_attested), otherwise a generic
- * word, so no arbitrary message reaches the operator's log.
+ * word. A message is never printed, so no library text or token reaches the operator's log.
  */
 export function commandFailureReason(error: unknown): string {
   const reason =
     error && typeof error === 'object' ? (error as { reason?: unknown }).reason : undefined;
-  if (typeof reason === 'string' && /^[A-Za-z0-9_:-]{1,128}$/.test(reason)) return reason;
-  const message = error instanceof Error ? error.message : '';
-  return /^[A-Za-z0-9_]{1,128}$/.test(message) ? message : 'autonomy_command_failed';
+  return typeof reason === 'string' && /^[A-Za-z0-9_:-]{1,128}$/.test(reason)
+    ? reason
+    : 'autonomy_command_failed';
 }

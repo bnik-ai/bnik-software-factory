@@ -518,6 +518,23 @@ test('failed acceptance sends the change to repair; a failed worker run fails th
   assert.equal(Number(reservation.settled_microusd), 0);
 });
 
+test('a failed coding attempt records what it cost (OSS-22 live lane: a max-turns failure spent)', async () => {
+  await admin.query(
+    'TRUNCATE factory_autonomy_runs,factory_autonomy_reservations,factory_autonomy_decisions,factory_autonomy_scopes CASCADE',
+  );
+  const spent = harness({ patch: '{}', outcomeOk: false, costUsd: 0.05 });
+  await grant(spent.ledger);
+  const failed = await spent.controller.process(7, 'goal-1', signal());
+  assert.equal(failed.run.state, 'failed');
+  assert.equal(failed.run.reason, 'coding_failed');
+  assert.equal(failed.run.evidence.estimatedUsd, 0.05);
+  const reservation = (
+    await admin.query('SELECT state,settled_microusd FROM factory_autonomy_reservations')
+  ).rows[0];
+  assert.equal(reservation.state, 'settled');
+  assert.equal(Number(reservation.settled_microusd), 50_000);
+});
+
 test('an uncertain execution outcome keeps its reservation and stops; scope revocation and pause block admission', async () => {
   const lost = harness({ patch: '{}', failExecutions: { times: 1, reason: 'worker_lease_lost' } });
   await grant(lost.ledger);

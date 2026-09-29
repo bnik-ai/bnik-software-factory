@@ -664,7 +664,7 @@ def trial_standard(live, number, scope, driver=None):
     return observed
 
 
-def trial_kill(live, number, scope):
+def trial_kill(live, number, scope, driver=None):
     """The controller dies mid-execution; recovery must resume from the recorded execution, never execute again."""
     process = live.popen('autonomy', 'run', str(number), '--scope', scope, '--new-attempt')
     worker_started = live.wait_for_worker()
@@ -692,6 +692,8 @@ def trial_kill(live, number, scope):
     if resumed is None:
         raise RuntimeError(f'the resumed run did not answer: {resumed_err[-200:]}')
     merge_json = merge_until_settled(live, number) if (resumed or {}).get('state') == 'published' else None
+    if driver is not None and (merge_json or {}).get('state') == 'merged':
+        merge_json['taskDone'] = wait_for_task_done(driver, number)
     observed = observe(resumed, live.task_runs(number), merge_json)
     resume_decisions = (resumed or {}).get('decisions') or []
     second_execution = any(d.get('action') == 'execute' for d in resume_decisions) or observed['attempts'] > 1
@@ -1045,7 +1047,7 @@ def command_lane(args):
                     report['activations'].append({'case': case, 'trial': trial_number, **seeded['activation']})
                     orchestration = entry['rule'].get('orchestration')
                     if orchestration == 'kill':
-                        observed = trial_kill(live, issue['number'], scope)
+                        observed = trial_kill(live, issue['number'], scope, driver)
                     elif orchestration == 'revoke':
                         observed = trial_revoke(live, issue['number'], scope, in_flight=(trial_number % 2 == 0))
                     elif orchestration == 'approve-revise':
@@ -1094,20 +1096,21 @@ def command_proof(args):
     if args.step == 'attestation':
         # Base publication without the secretless-CI attestation: the supervisor's configuration (the one
         # that holds the publisher) refuses to load at all. `status` runs under the controller identity
-        # and never loads the publisher, so `merge-scan` is the command that carries the proof.
+        # and never loads the publisher; `pin` runs as the supervisor, resolves that configuration and
+        # changes nothing, so it carries the proof (a merge scan would drive live records).
         env_file = live.state / '.env'
         original = env_file.read_text()
         try:
             env_file.write_text(''.join(line for line in original.splitlines(keepends=True) if not line.startswith('FACTORY_PUBLICATION_SECRETLESS_CI=')))
-            without = live.sfac('autonomy', 'merge-scan', check=False)
+            without = live.sfac('autonomy', 'pin', '--env', check=False)
         finally:
             env_file.write_text(original)
-        control = live.sfac('autonomy', 'merge-scan', check=False)
+        control = live.sfac('autonomy', 'pin', '--env', check=False)
         proof['attestation'] = {
             'refused': without.returncode != 0 and control.returncode == 0,
             'reasonNamed': 'base_publication_requires_FACTORY_PUBLICATION_SECRETLESS_CI_attested' in (without.stderr + without.stdout),
             'withoutAttestation': {'exit': without.returncode, 'stderr': without.stderr.strip()[-200:]},
-            'withAttestation': {'exit': control.returncode, 'scanned': bool(scripted.parse_json(control.stdout))},
+            'withAttestation': {'exit': control.returncode, 'pinned': 'REVIEWER_CONFIG_SHA256=' in control.stdout},
             'at': utc(),
         }
     elif args.step == 'ledger':
@@ -1142,6 +1145,8 @@ def command_proof(args):
         reviews = driver.reviews(pull_number) if pull_number else []
         approving = [r for r in reviews if r.get('state') == 'APPROVED' and r.get('user', {}).get('id') == live.facts['ownerId'] and r.get('commit_id') == head_before]
         merged_commit = driver.git_commit(outcome['mergeCommit']) if outcome.get('mergeCommit') else None
+        if outcome.get('state') == 'merged':
+            wait_for_task_done(driver, number)
         task = driver.issue(number)
         proof['critical'] = {
             'case': trial['case'], 'trial': trial['trial'], 'branch': trial['branch'], 'driverCommit': subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True).stdout.strip() or None,
