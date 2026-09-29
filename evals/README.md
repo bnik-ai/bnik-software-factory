@@ -39,8 +39,7 @@ disabled) and runs every trial of every visible case with a **scripted author**:
 trial's `fixtureCommand` is the patch the worker produces, so an adversarial case's attack
 is exactly the input the pipeline must refuse, and its `honest` variant shows the same
 pipeline admitting a correct change. Each case's protected bundle is pinned in a new
-policy revision, acknowledging exactly the trust-root digests that changed and, against the
-installation's active policy, any raised limit or added model. Every trial is
+policy revision, acknowledging exactly the trust-root digests that changed. Every trial is
 recorded with the pipeline's own decisions, receipts and states, and judged against
 `trials.json`:
 
