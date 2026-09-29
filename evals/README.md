@@ -5,9 +5,9 @@ contracts behave as specified. They do not show that the configured agent
 completes representative work reliably or respects boundaries under pressure.
 This directory freezes how that is measured before any qualification run.
 
-**Status: protocol and corpus frozen; fixtures and the deterministic lane exist; no
-model-lane run has happened.** Every model-lane result is NOT_RUN until an explicitly
-authorized, budgeted run records it. Nothing here authorizes spending.
+**Status: protocol and corpus frozen; fixtures and the deterministic lane exist; the
+model-lane runs that have happened are recorded in `evals/qualification/`.** Every
+model-lane result is NOT_RUN until an explicitly authorized, budgeted run records it. Nothing here authorizes spending.
 
 | File | Purpose |
 | --- | --- |

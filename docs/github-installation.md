@@ -9,7 +9,7 @@ Do not mix its `runtime/` state with the launcher's `.factory/` state.
 This candidate supports one explicitly configured GitHub.com repository. Start with
 a disposable repository containing synthetic data. Live intake records events and
 human activation receipts; it never automatically invokes a model. In the default human-gated mode, PR publication is an explicit operator step in the
-[end-to-end walkthrough](end-to-end-pilot.md); the opt-in, not yet live-verified [bounded-autonomy controller](autonomy-operations.md) publishes under an activated policy instead. The optional [human merge profile](human-merge.md)
+[end-to-end walkthrough](end-to-end-pilot.md); the opt-in [bounded-autonomy controller](autonomy-operations.md), live-qualified as recorded in [`evals/qualification/`](../evals/qualification/), publishes under an activated policy instead. The optional [human merge profile](human-merge.md)
 adds protected review, CI verification and Task reconciliation for explicitly paired PRs.
 
 ## Register a dedicated App

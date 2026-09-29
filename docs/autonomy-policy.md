@@ -7,7 +7,7 @@ in demo mode, `FACTORY_AUTONOMY=bounded`), and no live pull request has been pub
 under them yet. The supported workflow remains human-gated: explicit activation,
 operator publication, native human review and human merge. Automatic merge exists as a
 further opt-in (`FACTORY_AUTOMERGE=enabled`, see [operations](autonomy-operations.md#merging))
-and is likewise not live-verified.
+and its live qualification is recorded in [`evals/qualification/`](../evals/qualification/) (see [live qualification](live-qualification.md)).
 
 The policy decides, for one proposed consequential action, whether the factory
 may proceed without a human. Routine work inside configured scope proceeds once

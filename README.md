@@ -58,7 +58,7 @@ This is not an autonomous development or deployment service.
 | Inspect usage, cancel work and prune content | [Run controls](docs/run-controls.md) |
 | Recover failures and back up the database | [Recovery](docs/recovery.md) and [local runtime](docs/local-runtime.md) |
 | Contribute or maintain a release | [Contributing](CONTRIBUTING.md), [maintainer guide](docs/maintaining.md), [CI](docs/contributor-ci.md) |
-| Understand or operate bounded autonomy (opt-in, not live-verified) | [Autonomy policy](docs/autonomy-policy.md), [autonomy operations](docs/autonomy-operations.md), [agent qualification](evals/README.md) and [live qualification](docs/live-qualification.md) |
+| Understand or operate bounded autonomy (opt-in; live qualification recorded in `evals/qualification/`) | [Autonomy policy](docs/autonomy-policy.md), [autonomy operations](docs/autonomy-operations.md), [agent qualification](evals/README.md) and [live qualification](docs/live-qualification.md) |
 | Report a vulnerability | [Security policy](SECURITY.md) |
 | Review changes and limitations | [Release notes](CHANGELOG.md) |
 

@@ -1,6 +1,6 @@
 # Operating bounded autonomy
 
-**Status: implemented, not the default, and not yet live-verified.** The controller,
+**Status: implemented, not the default; live-qualified as recorded in [`evals/qualification/`](../evals/qualification/)** (a routine change executed, published and squash-merged by the merger App with no human step; critical changes held at publication or merge; a controller killed mid-execution recovered with no second execution; a revoked scope refusing publication, merge and new attempts; base publication refused without the secretless-CI attestation; the native-review unlock of a critical merge is recorded when the owner performs it). The controller,
 trusted runners and publisher exist and pass synthetic contracts (fixture executor,
 real sandboxes, PostgreSQL, a Git-hashing fixture host). No pull request has been
 published to a real repository under this mode yet; OSS-22 covers that proof. The

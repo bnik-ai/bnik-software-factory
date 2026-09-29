@@ -50,8 +50,8 @@ the local runtime does not publish worker output or automatically invoke the
 experimental AI ReviewAgent, and AI output never satisfies a required human approval.
 The opt-in bounded-autonomy controller (`FACTORY_EXECUTION=bounded`, see
 [operating bounded autonomy](docs/autonomy-operations.md)) publishes pull requests for
-routine changes under an activated policy; it passes synthetic contracts but is not yet
-live-verified and is outside the supported workflow. Source snapshots come from the
+routine changes under an activated policy; it passes synthetic contracts, its live
+qualification is recorded in `evals/qualification/`, and it stays outside the supported workflow. Source snapshots come from the
 pinned default branch; revision prompts must describe the complete intended result.
 
 ## Experimental and unsupported
@@ -62,7 +62,7 @@ references. The fixture validator/router demo does not establish their live supp
 Multi-tenant hosting, arbitrary outbound worker networking, submodules, LFS
 hydration, symlink-dependent sources and automatic dependency installation inside the
 worker are unsupported. Automatic merge exists only as a further opt-in of bounded
-autonomy (`FACTORY_AUTOMERGE=enabled`) and is not live-verified: the agent-quality
+autonomy (`FACTORY_AUTOMERGE=enabled`); its live qualification is recorded in `evals/qualification/`: the agent-quality
 protocol's model lane and the live proof have not run (see
 [live qualification](docs/live-qualification.md) and the [roadmap](docs/roadmap.md)).
 
