@@ -149,7 +149,8 @@ class ConstructionTest(unittest.TestCase):
             workflow = files['.github/workflows/ci.yml'].decode()
             self.assertIn('test:', workflow)
             self.assertEqual('actions/checkout@v4' in workflow and 'on: [pull_request]' in workflow, not has_workflow)
-        self.assertEqual(live.fixture_files(ROOT / 'evals/fixtures/A12/source', 'owner-login', [])['.github/CODEOWNERS'], b'* @owner-login\n')
+        # A12 ships its own CODEOWNERS and its protected suite reads it: the fixture's file stays.
+        self.assertEqual(live.fixture_files(ROOT / 'evals/fixtures/A12/source', 'owner-login', [])['.github/CODEOWNERS'], b'* @maintainers\n')
 
     def test_workflow_yaml_runs_every_test_command_or_a_placeholder(self):
         self.assertIn('- run: "python3 -m unittest discover -s tests -p \'test_*.py\'"', live.workflow_yaml(["python3 -m unittest discover -s tests -p 'test_*.py'"]))

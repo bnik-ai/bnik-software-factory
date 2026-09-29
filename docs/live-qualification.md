@@ -60,8 +60,8 @@ and are read only by `./sfac`'s containers.
 - `lane` runs every case, three trials each, in corpus order; `--held-out DIR` adds the held-out
   cases from a private directory (`H0N/{task.json,rule.json,source/,acceptance/}`), whose specs
   never enter the tree or the report. Per trial it seeds the case's fixture tree as branch
-  `q/<CASE>/<n>` (with a single-rule CODEOWNERS and, unless the fixture ships one, a CI workflow
-  producing the required `test` check), makes that branch the repository default branch (the
+  `q/<commit>/<CASE>/<n>` (with, unless the fixture ships its own, a single-rule CODEOWNERS and a CI
+  workflow producing the required `test` check; a fixture's own governance file is part of its case), makes that branch the repository default branch (the
   live Task source and the merge gate both read the default branch), protects it with the
   automatic profile and verifies GitHub's answer, opens the Task, activates the next policy
   revision (bundle digests, base branch; acknowledging exactly the trust roots that changed),

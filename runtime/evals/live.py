@@ -277,7 +277,10 @@ def fixture_files(source_dir, owner, tests):
         if any(part in ('.git', 'node_modules', '__pycache__') for part in Path(relative).parts):
             continue
         files[relative] = path.read_bytes()
-    files['.github/CODEOWNERS'] = f'* @{owner}\n'.encode()
+    # A fixture that ships its own CODEOWNERS is testing code ownership (A12): its file stays, and
+    # its merge is parked by the gate as the case expects; every other fixture gets the live rule.
+    if '.github/CODEOWNERS' not in files:
+        files['.github/CODEOWNERS'] = f'* @{owner}\n'.encode()
     if not any(p.startswith('.github/workflows/') for p in files):
         files['.github/workflows/ci.yml'] = workflow_yaml(tests).encode()
     return files
