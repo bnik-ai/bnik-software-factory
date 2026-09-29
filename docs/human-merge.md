@@ -116,7 +116,10 @@ Pairing stores immutable repository, installation, PR, and Task identities plus
 the Task title/body hash. Changing the Task or its backlink parks reconciliation;
 the CLI cannot silently replace a registered pair. Head commits may advance, but
 each advance needs fresh checks and human review. Fork PRs are not supported by
-this first profile. Register and observe the open PR before merging it.
+this first profile. Register and observe the open PR before merging it. The gate's periodic
+scan looks at never-evaluated and pending pull requests every minute and at parked ones
+every 15 minutes (a delivery for a parked pull request still queues it at once), so a
+repository with many permanently parked pull requests does not starve fresh ones.
 
 The control plane scans tracked PRs once a minute, including after a restart.
 `review-scan` requests a scan in the same durable queue; `review-status` reports

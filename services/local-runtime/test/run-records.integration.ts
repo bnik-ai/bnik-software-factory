@@ -304,6 +304,45 @@ test('publication head links only to the matching successful Task and cannot be 
   }
 });
 
+test('the merge gate rescans parked pull requests with backoff, never-evaluated and pending ones every minute', async () => {
+  await admin.query('TRUNCATE factory_pr_pairs, factory_pr_state, factory_work CASCADE');
+  const github = new MergeFixture();
+  const gate = new HumanMergeGate(pool, github.config, github);
+  const repositoryId = github.config.repositoryId as number;
+  const installationId = github.config.installationId;
+  const pair = (pull: number) =>
+    admin.query(
+      'INSERT INTO factory_pr_pairs(repository_id,installation_id,pull_number,task_number,pair) VALUES($1,$2,$3,$4,$5::jsonb)',
+      [repositoryId, installationId, pull, pull + 100, JSON.stringify({ pullNumber: pull })],
+    );
+  const state = (pull: number, value: string, minutesAgo: number) =>
+    admin.query(
+      `INSERT INTO factory_pr_state(repository_id,pull_number,state,reason,head,evidence,updated_at)
+       VALUES($1,$2,$3,'test',$4,'{}'::jsonb,clock_timestamp() - ($5::int * interval '1 minute'))`,
+      [repositoryId, pull, value, 'a'.repeat(40), minutesAgo],
+    );
+  try {
+    await pair(11); // never evaluated
+    await pair(12);
+    await state(12, 'parked', 1); // parked a minute ago: rests
+    await pair(13);
+    await state(13, 'parked', 20); // parked long ago: due again
+    await pair(14);
+    await state(14, 'reconciled', 1); // settled for good
+    await pair(15);
+    await state(15, 'awaiting_human_merge', 1); // pending: every minute
+    await gate.schedule();
+    const queued = (
+      await admin.query<{ body: { pull: number } }>(
+        "SELECT body FROM factory_work WHERE queue_name='HumanMergeGate' AND state='pending' ORDER BY id",
+      )
+    ).rows.map((row) => row.body.pull);
+    assert.deepEqual(queued.sort(), [11, 13, 15]);
+  } finally {
+    await gate.close();
+  }
+});
+
 function cli(args: string[], password = config().database.password) {
   return new Promise<{ code: number | null; output: string }>((resolve) => {
     const env = {

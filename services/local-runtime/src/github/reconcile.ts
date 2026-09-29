@@ -21,6 +21,8 @@ import {
 } from './merge-gate.js';
 import { requireGate } from './merge-policy.js';
 
+/** How long a parked pull request rests before the periodic scan looks at it again. */
+export const PARKED_RESCAN_MINUTES = 15;
 export class HumanMergeGate extends LeasedConsumer {
   constructor(
     private readonly pool: Pool,
@@ -58,11 +60,21 @@ export class HumanMergeGate extends LeasedConsumer {
     });
     return pair;
   }
+  /**
+   * The pairs due for a look: never evaluated, pending (anything but parked or reconciled), or
+   * parked long enough ago. A parked pull request rarely changes by itself, and each look costs
+   * GitHub reads on this serial loop; rescanning every one every minute starved fresh deliveries
+   * (OSS-22 live lane: closures missed their window behind dozens of permanently parked pairs).
+   * A delivery for a parked pull request still enqueues it at once (`track`, intake).
+   */
   async schedule() {
     const rows = await this.pool.query<{ pull_number: number }>(
       `SELECT p.pull_number FROM factory_pr_pairs p LEFT JOIN factory_pr_state s USING(repository_id,pull_number)
-      WHERE p.repository_id=$1 AND p.installation_id=$2 AND (s.state IS NULL OR s.state <> 'reconciled') ORDER BY p.pull_number LIMIT 101`,
-      [this.config.repositoryId, this.config.installationId],
+      WHERE p.repository_id=$1 AND p.installation_id=$2
+        AND (s.state IS NULL OR (s.state <> 'reconciled'
+          AND (s.state <> 'parked' OR s.updated_at < clock_timestamp() - ($3::int * interval '1 minute'))))
+      ORDER BY s.updated_at NULLS FIRST, p.pull_number LIMIT 101`,
+      [this.config.repositoryId, this.config.installationId, PARKED_RESCAN_MINUTES],
     );
     requireGate(rows.rows.length <= 100, 'tracked_pull_limit_exceeded');
     const bucket = Math.floor(Date.now() / 60_000);
