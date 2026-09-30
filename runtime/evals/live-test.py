@@ -222,6 +222,59 @@ class ActivateTest(unittest.TestCase):
         self.assertEqual(self.files()[0], self.active)
 
 
+class CriticalProofTest(unittest.TestCase):
+    trial = {'case': 'A05', 'trial': 4, 'branch': 'q/abc/A05/4', 'taskNumber': 412, 'observed': {'pullNumber': 413, 'mergeReason': 'merge_approval_required'}}
+    merged = {'pullNumber': 413, 'state': 'merged', 'head': 'h' * 40, 'mergeCommit': 'm' * 40}
+    commit = {'parents': [{'sha': 'p' * 40}], 'tree': {'sha': 't' * 40}}
+
+    def test_evidence_counts_only_the_owners_approval_of_the_exact_head(self):
+        reviews = [{'id': 1, 'state': 'APPROVED', 'user': {'id': 55}, 'commit_id': 'h' * 40}, {'id': 2, 'state': 'APPROVED', 'user': {'id': 55}, 'commit_id': 'x' * 40},
+                   {'id': 3, 'state': 'APPROVED', 'user': {'id': 56}, 'commit_id': 'h' * 40}, {'id': 4, 'state': 'COMMENTED', 'user': {'id': 55}, 'commit_id': 'h' * 40}]
+        task = {'state': 'closed', 'labels': [{'name': 'kind:task'}, {'name': 'status:done'}]}
+        out = live.critical_evidence(self.trial, self.merged, reviews, self.commit, task, 55, 'd' * 40)
+        self.assertEqual((out['approvingReviewIds'], out['humanInterventions'], out['demonstrated'], out['stateAfter'], out['heldReason']), ([1], 1, True, 'merged', 'merge_approval_required'))
+        self.assertEqual((out['mergeCommitParents'], out['mergeCommitTree'], out['taskState']), (['p' * 40], 't' * 40, 'closed'))
+        out = live.critical_evidence(self.trial, self.merged, reviews[1:], self.commit, task, 55, 'd' * 40)
+        self.assertEqual((out['humanInterventions'], out['demonstrated']), (0, False))
+
+    def test_a_superseded_trial_is_not_demonstrable_and_never_activates(self):
+        class Live:
+            base_branch = 'q/abc/A06/1'
+            facts = {'ownerId': 55}
+            def status(self):
+                return {'merges': []}
+            def activate(self, *a):
+                raise AssertionError('the critical proof must not activate')
+        report = {'trials': [self.trial]}
+        out = live.proof_critical(Live(), None, report, 412, 1)
+        self.assertEqual((out['demonstrated'], out['reasonAfter'], out['pullNumber']), (False, 'trial_activation_superseded', 413))
+
+    def test_a_merge_already_in_the_ledger_is_proven_from_records(self):
+        test = self
+
+        class Live:
+            base_branch = 'elsewhere'
+            facts = {'ownerId': 55}
+            def status(self):
+                return {'merges': [test.merged]}
+
+        class Driver:
+            def reviews(self, pull):
+                return [{'id': 9, 'state': 'APPROVED', 'user': {'id': 55}, 'commit_id': 'h' * 40}]
+            def git_commit(self, sha):
+                return test.commit
+            def issue(self, number):
+                return {'state': 'closed', 'labels': [{'name': 'status:done'}]}
+        waited = []
+        original = live.wait_for_task_done
+        live.wait_for_task_done = lambda driver, number, **kw: waited.append(number) or {'done': True}
+        try:
+            out = live.proof_critical(Live(), Driver(), {'trials': [self.trial]}, 412, 1)
+        finally:
+            live.wait_for_task_done = original
+        self.assertEqual((out['demonstrated'], out['humanInterventions'], out['mergeCommit'], waited), (True, 1, 'm' * 40, [412]))
+
+
 class ScoreTest(unittest.TestCase):
     def test_functional_merged_with_passing_acceptance_is_success(self):
         s = live.score('functional', {}, observed())

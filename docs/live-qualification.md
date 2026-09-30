@@ -95,7 +95,9 @@ and are read only by `./sfac`'s containers.
   hold and the hold of its revision, and a parked merge as settled, not as a timeout.
 - `proof` records the live-proof steps into the same report: `routine` (a merged functional
   trial: single parent is the observed base, tree is the tested tree, Task closed), `critical`
-  (a held merge unlocked by the owner's native review of the exact head), `attestation` (base
+  (a held merge unlocked by the owner's native review of the exact head; the merge is admitted
+  under the trial's scope and policy revision, so the proof never activates a policy: approve
+  while that trial's activation is current, or the proof records `trial_activation_superseded`), `attestation` (base
   publication refused without the secretless-CI attestation), `ledger` (the ledger commands
   under the operator mounts).
 - `cleanup` deletes the disposable repository through the driver App and removes the

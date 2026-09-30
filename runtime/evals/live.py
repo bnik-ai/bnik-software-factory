@@ -1163,6 +1163,54 @@ def command_lane(args):
     print(json.dumps(report['summary']))
 
 
+def ledger_merge(live, pull_number):
+    """The autonomy ledger's merged record for a pull request, as `autonomy status` prints it, or None."""
+    return next((m for m in live.status().get('merges') or [] if m.get('pullNumber') == pull_number and m.get('state') == 'merged'), None)
+
+
+def critical_evidence(trial, merged, reviews, merged_commit, task, owner_id, driver_commit):
+    """The critical live proof from records: the owner's APPROVED review of the exact merged head, the merge commit's shape, the Task's end."""
+    head = merged.get('head')
+    approving = [r for r in reviews if r.get('state') == 'APPROVED' and (r.get('user') or {}).get('id') == owner_id and r.get('commit_id') == head]
+    return {
+        'case': trial['case'], 'trial': trial['trial'], 'branch': trial['branch'], 'driverCommit': driver_commit,
+        'taskNumber': trial['taskNumber'], 'pullNumber': merged.get('pullNumber'), 'head': head,
+        'heldReason': (trial.get('observed') or {}).get('mergeReason'), 'stateAfter': 'merged', 'reasonAfter': None,
+        'approvingReviewIds': [r['id'] for r in approving], 'humanInterventions': len(approving), 'mergeCommit': merged.get('mergeCommit'),
+        'mergeCommitParents': [p['sha'] for p in (merged_commit or {}).get('parents', [])], 'mergeCommitTree': ((merged_commit or {}).get('tree') or {}).get('sha'),
+        'taskLabels': [l['name'] for l in task.get('labels', [])], 'taskState': task.get('state'),
+        'demonstrated': bool(approving) and task.get('state') == 'closed' and (trial.get('observed') or {}).get('mergeReason') == 'merge_approval_required',
+        'at': utc(),
+    }
+
+
+def proof_critical(live, driver, report, number, await_minutes):
+    """A merge held for approval, unlocked by the owner's native APPROVED review of the exact head. The merge is admitted
+    under the trial's scope and policy revision, so this step never activates a policy (an activation after the grant
+    ends the scope: scope_granted_under_other_policy). Either the ledger already holds the merge, or the trial's
+    activation is still current and the review is awaited; a superseded trial cannot demonstrate it and says so."""
+    trial = trial_for_task(report, number)
+    pull_number = (trial.get('observed') or {}).get('pullNumber') or trial.get('pullNumber')
+    driver_commit = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True).stdout.strip() or None
+    base = {'case': trial['case'], 'trial': trial['trial'], 'branch': trial['branch'], 'driverCommit': driver_commit, 'taskNumber': number, 'pullNumber': pull_number}
+    merged = ledger_merge(live, pull_number) if pull_number else None
+    if merged is None:
+        if live.base_branch != trial['branch']:
+            return {**base, 'demonstrated': False, 'stateAfter': None, 'reasonAfter': 'trial_activation_superseded',
+                    'why': "the merge is admitted under the trial's scope and policy revision; run the case as the last activation and approve within the scope's life", 'at': utc()}
+        outcome = merge_until_settled(live, number, deadline_seconds=60, poll_seconds=10)
+        deadline = time.time() + await_minutes * 60
+        while outcome.get('state') == 'held' and time.time() < deadline:
+            time.sleep(60)
+            outcome = merge_until_settled(live, number, deadline_seconds=60, poll_seconds=10)
+        merged = ledger_merge(live, pull_number) if outcome.get('state') == 'merged' else None
+        if merged is None:
+            return {**base, 'demonstrated': False, 'stateAfter': outcome.get('state'), 'reasonAfter': outcome.get('reason'), 'at': utc()}
+    wait_for_task_done(driver, number)
+    return critical_evidence(trial, merged, driver.reviews(pull_number), driver.git_commit(merged['mergeCommit']) if merged.get('mergeCommit') else None,
+                             driver.issue(number), live.facts['ownerId'], driver_commit)
+
+
 def command_proof(args):
     live = Live(args.state)
     authorization = load_authorization(args.authorization, live.facts.get('repository'))
@@ -1198,39 +1246,7 @@ def command_proof(args):
             outputs.append({'command': name, 'exit': result.returncode, 'paused': parsed.get('paused'), 'activePolicySha256': parsed.get('activePolicySha256'), 'scopes': len(parsed.get('scopes') or []) if 'scopes' in parsed else None, 'runs': len(parsed.get('runs') or []) if 'runs' in parsed else None, 'merges': len(parsed.get('merges') or []) if 'merges' in parsed else None})
         proof['ledger'] = {'mounts': 'autonomy-operator (config, controller password, webhook secret, policy)', 'commands': outputs, 'at': utc()}
     elif args.step == 'critical':
-        # A merge held for approval: the owner's native APPROVED review of the exact head unlocks exactly that merge.
-        # The lane has moved the default branch on since; the gate requires the trial's branch to be the
-        # default branch again and the policy to name it, so the proof restores both first.
-        number = args.task
-        trial = trial_for_task(report, number)
-        corpus = json.loads((ROOT / 'evals/corpus.json').read_text())
-        entry = next(c for c in load_cases(corpus, args.held_out, [trial['case']]) if c['id'] == trial['case'])
-        driver.set_default_branch(trial['branch'])
-        activation = live.activate(entry['acceptance'], trial['branch'], live.facts['authorModel'])
-        report.setdefault('activations', []).append({'case': trial['case'], 'trial': trial['trial'], 'proof': 'critical', **activation})
-        before = merge_until_settled(live, number, deadline_seconds=60, poll_seconds=10)
-        pull_number = before.get('pullNumber')
-        head_before = before.get('head')
-        deadline = time.time() + args.await_minutes * 60
-        outcome = before
-        while before.get('state') == 'held' and time.time() < deadline:
-            time.sleep(60)
-            outcome = merge_until_settled(live, number, deadline_seconds=60, poll_seconds=10)
-            if outcome.get('state') != 'held':
-                break
-        reviews = driver.reviews(pull_number) if pull_number else []
-        approving = [r for r in reviews if r.get('state') == 'APPROVED' and r.get('user', {}).get('id') == live.facts['ownerId'] and r.get('commit_id') == head_before]
-        merged_commit = driver.git_commit(outcome['mergeCommit']) if outcome.get('mergeCommit') else None
-        if outcome.get('state') == 'merged':
-            wait_for_task_done(driver, number)
-        task = driver.issue(number)
-        proof['critical'] = {
-            'case': trial['case'], 'trial': trial['trial'], 'branch': trial['branch'], 'driverCommit': subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True).stdout.strip() or None,
-            'taskNumber': number, 'pullNumber': pull_number, 'head': head_before, 'heldReason': before.get('reason'), 'stateAfter': outcome.get('state'), 'reasonAfter': outcome.get('reason'),
-            'approvingReviewIds': [r['id'] for r in approving], 'humanInterventions': len(approving), 'mergeCommit': outcome.get('mergeCommit'),
-            'mergeCommitParents': [p['sha'] for p in (merged_commit or {}).get('parents', [])], 'mergeCommitTree': (merged_commit or {}).get('tree', {}).get('sha'),
-            'taskLabels': [l['name'] for l in task.get('labels', [])], 'taskState': task.get('state'), 'at': utc(),
-        }
+        proof['critical'] = proof_critical(live, driver, report, args.task, args.await_minutes)
     elif args.step == 'routine':
         merged = [t for t in report['trials'] if t['kind'] == 'functional' and t.get('mergeCommit')]
         # The gate's reconciliation closes the Task; the proof is a trial where GitHub shows that now.
