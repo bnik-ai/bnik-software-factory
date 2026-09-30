@@ -82,7 +82,7 @@ and are read only by `./sfac`'s containers.
   before any decision, `github_connection_failed` or `github_request_failed`, is re-invoked until
   the record settles, at most ten times and within the deadline, and the record counts the
   retries; any other failure settles). Kill/recover, revocation and
-  approve-then-revise orchestrations mirror the deterministic lane. Spend is accounted from the
+  approve-then-revise orchestrations mirror the deterministic lane's steps. Spend is accounted from the
   factory's printed views (`estimatedUsd`, a conservative reservation for the reviewer's usage);
   each grant is capped at `min(3, remaining)` USD and the lane stops before an attempt when less
   than one per-run reservation (USD 1) remains, or after three consecutive trials that did not
@@ -94,12 +94,14 @@ and are read only by `./sfac`'s containers.
   commit (same clean commit and same scorer before and after) and is written after every trial.
 - A fixture that ships its own multi-rule CODEOWNERS (A12) keeps it, so its merge is parked by
   the gate's CODEOWNERS check rather than held for approval: the lane records A12's publication
-  hold and the hold of its revision, and a parked merge as settled, not as a timeout.
+  hold, what its revised attempt met, and a parked merge as settled, not as a timeout.
 - `proof` records the live-proof steps into the same report: `routine` (a merged functional
   trial: single parent is the observed base, tree is the tested tree, Task closed), `critical`
   (a held merge unlocked by the owner's native review of the exact head; the merge is admitted
   under the trial's scope and policy revision, so the proof never activates a policy: approve
-  while that trial's activation is current, or the proof records `trial_activation_superseded`), `attestation` (base
+  while that trial's activation is current, or the proof records `trial_activation_superseded`), `revision` (on
+  another held critical trial, under the same rule: the owner approves the held head, the driver pushes a new
+  commit onto the pull request's branch, and `merge` must end the record `blocked` on the moved head), `attestation` (base
   publication refused without the secretless-CI attestation), `ledger` (the ledger commands
   under the operator mounts).
 - `cleanup` deletes the disposable repository through the driver App and removes the
@@ -158,9 +160,27 @@ independently of the model lane's statistics:
   pull request, observed, admitted and squash-merged by the merger App; the merge commit's
   single parent is the observed base and its tree is the tested tree; the Task closes
   `status:done` through the merge gate.
-- **Critical, native review:** a Task touching a critical path is held at publication or at
-  merge; a configured approver's `APPROVED` review of the exact head unlocks exactly that
-  action; a revised head is held again; a dismissed review unlocks nothing.
+- **Critical, native review:** a Task touching a critical path is held at merge; a
+  configured approver's `APPROVED` review of the exact head, once dismissed, unlocks nothing,
+  and a fresh one unlocks exactly that merge (`live.py proof --step critical`). Once the merge
+  is held for approval, the step prompts each click and waits for it: the owner approves the
+  head, then dismisses that review when told; with no newer approval on GitHub the step calls
+  `merge` once, and only a hold for approval passes; then the owner approves again. An approval
+  given before that call, or a merge while a newer approval exists, makes the check
+  inconclusive, never a pass. Nobody runs `merge` or `merge-scan` while a proof step waits: a
+  scan could merge on the first approval before it is dismissed.
+- **An approved head that moves never merges:** on a second held critical trial, the owner
+  approves the held head, the driver pushes a new commit onto the pull request's branch and
+  waits until GitHub shows it, and `merge` must end the record `blocked` (`pull_head_changed`)
+  with no merge on GitHub or in the ledger (`live.py proof --step revision`). The record is
+  bound to the head it published, so this refusal comes before any approval is read; only a
+  new attempt, with its own record and an approval of its own head, goes on. The owner does
+  not approve the new head. That the factory ignores an older head's approval on its own is
+  not observable live, because the required protection dismisses stale approvals on every
+  push; the merge contracts cover it. The model lane's approve-then-revise case (A12) shows the publication
+  side: an approval admits its exact action once, so a revised attempt that reproduces the
+  approved action is refused (`approval_already_used`), as on every A12 trial of the
+  `039c43a` run; the deterministic lane's A12 shows a revised tree held again under a new digest.
 
 Also demonstrate, and record: a controller killed mid-execution and recovered with no second
 execution; a scope revoked while work is in flight refusing publication and merge; a

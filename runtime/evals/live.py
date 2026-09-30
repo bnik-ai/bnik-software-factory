@@ -16,7 +16,7 @@ record it is given.
     python3 runtime/evals/live.py lane    --state DIR --staging DIR --authorization FILE --report PATH
                                           [--case ID ...] [--trials N] [--held-out DIR] [--budget-usd X]
     python3 runtime/evals/live.py proof   --state DIR --staging DIR --authorization FILE --report PATH
-                                          --step attestation|ledger|critical [--task N] [--await-minutes M]
+                                          --step attestation|ledger|routine|critical|revision [--task N] [--await-minutes M]
     python3 runtime/evals/live.py cleanup --state DIR --staging DIR --authorization FILE [--delete-repository]
 
 Identities: the intake, publisher and merger Apps are the installation's (their keys move into
@@ -286,8 +286,45 @@ class Driver:
     def git_commit(self, sha):
         return self.call('GET', f'/git/commits/{sha}')
 
+    def pages(self, path):
+        """Every item of a listing, 100 per page, until a short page."""
+        items, page = [], 1
+        while True:
+            batch = self.call('GET', f'{path}?per_page=100&page={page}') or []
+            items.extend(batch)
+            if len(batch) < 100:
+                return items
+            page += 1
+
     def reviews(self, number):
-        return self.call('GET', f'/pulls/{number}/reviews')
+        return self.pages(f'/pulls/{number}/reviews')
+
+    def issue_events(self, number):
+        return self.pages(f'/issues/{number}/events')
+
+    def push_revision(self, branch, parent, path, content, message, attempts=4, pause=5):
+        """A commit on `parent` that adds `path`, fast-forwarded onto `branch` (never forced); returns its sha. Each write
+        is repeated on a transient failure: blobs and trees are content-addressed and the ref update names its sha, so a
+        repeat is harmless; a repeated commit leaves only an unreferenced object."""
+        def write(method, path_, body=None):
+            for attempt in range(attempts):
+                try:
+                    return self.call(method, path_, body)
+                except Exception as error:
+                    if not transient_github_failure(error) or attempt == attempts - 1:
+                        raise
+                    time.sleep(pause)
+        base_tree = write('GET', f'/git/commits/{parent}')['tree']['sha']
+        blob = write('POST', '/git/blobs', {'content': base64.b64encode(content).decode(), 'encoding': 'base64'})
+        tree = write('POST', '/git/trees', {'base_tree': base_tree, 'tree': [{'path': path, 'mode': '100644', 'type': 'blob', 'sha': blob['sha']}]})
+        commit = write('POST', '/git/commits', {'message': message, 'tree': tree['sha'], 'parents': [parent]})
+        try:
+            write('PATCH', f'/git/refs/heads/{branch}', {'sha': commit['sha'], 'force': False})
+        except GitHubError:
+            # A repeated update after a lost response may be refused although the first one landed.
+            if ((write('GET', f'/git/ref/heads/{branch}') or {}).get('object') or {}).get('sha') != commit['sha']:
+                raise
+        return commit['sha']
 
     def delete_repository(self):
         return self.call('DELETE', '')
@@ -740,7 +777,11 @@ def wait_for_task_done(driver, number, timeout_seconds=300, poll_seconds=10):
     deadline = time.time() + timeout_seconds
     labels = []
     while True:
-        labels = [label['name'] for label in driver.issue(number).get('labels', [])]
+        try:
+            labels = [label['name'] for label in driver.issue(number).get('labels', [])]
+        except Exception as error:  # a transient read is a poll without an answer
+            if not transient_github_failure(error):
+                raise
         if 'status:done' in labels:
             return {'done': True, 'labels': labels}
         if time.time() >= deadline:
@@ -857,7 +898,8 @@ def trial_revoke(live, number, scope, in_flight):
 
 
 def trial_approve_revise(live, number, scope, approver):
-    """A console approval unlocks exactly the held publication; a revised attempt is held again under a new digest."""
+    """A console approval unlocks exactly the held publication; the revised attempt is not published on it: refused
+    (`approval_already_used`, ledger.ts) when it reproduces the approved action, otherwise held under a new digest."""
     held, stderr, held_code = live.run(number, scope, new_attempt=True)
     digest = (held or {}).get('actionSha256')
     approved = None
@@ -1193,10 +1235,133 @@ def ledger_merge(live, pull_number):
     return next((m for m in live.status().get('merges') or [] if m.get('pullNumber') == pull_number and m.get('state') == 'merged'), None)
 
 
-def critical_evidence(trial, merged, reviews, merged_commit, task, owner_id, driver_commit, decisions=None):
+TRANSIENT_GITHUB_STATUSES = (429, 500, 502, 503, 504)
+# The hold a merge without a current approval must stay in (merge-controller.ts); anything else is inconclusive.
+APPROVAL_HOLD_REASONS = ('merge_approval_required', 'approval_required')
+# A merge asked for after the approved head moved: the record is bound to the head it published (evidence.ts
+# mergeGateReasons, before any approval is read), so it ends blocked; `blocked` is terminal (merges.ts). The same
+# reason after an `allow` decision (the pre-merge head check, merge-controller.ts) came after approvals were read.
+REVISION_REFUSALS = (('blocked', 'pull_head_changed'),)
+
+
+def transient_github_failure(error):
+    """A read that may succeed on the next poll: GitHub's rate limit or a server error, or the connection."""
+    if isinstance(error, GitHubError):
+        return error.status in TRANSIENT_GITHUB_STATUSES or (error.status == 403 and 'rate limit' in error.body.lower())
+    return isinstance(error, (urllib.error.URLError, TimeoutError, ConnectionError))
+
+
+def read_until(read, deadline, poll_seconds):
+    """`read()`, retried on a transient GitHub failure until the deadline; None when it never answered."""
+    while True:
+        try:
+            return read()
+        except Exception as error:
+            if not transient_github_failure(error) or time.time() >= deadline:
+                if transient_github_failure(error):
+                    return None
+                raise
+        time.sleep(poll_seconds)
+
+
+def await_review(driver, pull_number, deadline, poll_seconds, predicate):
+    """The first review of the pull request that satisfies `predicate`, polled from GitHub until the deadline, or None;
+    a transient read failure is a poll without an answer."""
+    while True:
+        reviews = read_until(lambda: driver.reviews(pull_number), deadline, poll_seconds) or []
+        found = next((r for r in reviews if predicate(r)), None)
+        if found is not None or time.time() >= deadline:
+            return found
+        time.sleep(poll_seconds)
+
+
+def owner_review_of(owner_id, head, states, known=()):
+    """A review by the owner of exactly `head`, in one of `states`, not among the `known` review ids."""
+    return lambda r: (r.get('id') not in known and r.get('state') in states and (r.get('user') or {}).get('id') == owner_id
+                      and r.get('commit_id') == head)
+
+
+def dismissed_approval(driver, pull_number, review_id):
+    """GitHub's own record that this review was an approval when it was dismissed (the `review_dismissed` issue event)."""
+    return any(e.get('event') == 'review_dismissed' and str((e.get('dismissed_review') or {}).get('review_id')) == str(review_id)
+               and str((e.get('dismissed_review') or {}).get('state') or '').lower() == 'approved'
+               for e in driver.issue_events(pull_number))
+
+
+def dismissal_check(live, driver, number, pull_number, head, owner_id, deadline, poll_seconds=20, say=None):
+    """A dismissed approval unlocks nothing. Handshake: the owner approves the exact head (a review that did not exist
+    when the check began), the driver says it saw it, the owner dismisses it; with no newer approval on GitHub the
+    driver calls `merge` once and the hold must stand, strictly `held` for approval. A review seen only as DISMISSED
+    counts when GitHub's dismissal event says it was an approval. A newer approval before the call, a merge while a
+    newer approval exists or cannot be ruled out, or any other outcome, is inconclusive, never a pass; a hold passes
+    even if an approval arrived during the call, since the call counted none. Nothing else may call `merge` or
+    `merge-scan` meanwhile."""
+    say = say or (lambda message: sys.stderr.write(message + '\n'))
+    known = {r.get('id') for r in read_until(lambda: driver.reviews(pull_number), deadline, poll_seconds) or []}
+    say(f'critical proof: approve pull request #{pull_number} at {head[:12]} now (do not dismiss it until asked)')
+    ignored = set(known)
+    while True:
+        review = await_review(driver, pull_number, deadline, poll_seconds, owner_review_of(owner_id, head, ('APPROVED', 'DISMISSED'), ignored))
+        if review is None:
+            return {'shown': False, 'why': 'owner_approval_not_seen'}
+        if review['state'] == 'APPROVED' or read_until(lambda: dismissed_approval(driver, pull_number, review['id']), deadline, poll_seconds):
+            break
+        ignored.add(review['id'])  # a dismissed review that was not an approval proves nothing
+    approval_id = review['id']
+    if review['state'] == 'APPROVED':
+        say(f'critical proof: approval {approval_id} seen; dismiss that review now')
+        dismissed = await_review(driver, pull_number, deadline, poll_seconds, lambda r: r.get('id') == approval_id and r.get('state') == 'DISMISSED')
+        if dismissed is None:
+            return {'shown': False, 'why': 'review_not_dismissed', 'reviewId': approval_id}
+    newer = owner_review_of(owner_id, head, ('APPROVED',), known | {approval_id})
+    before = read_until(lambda: driver.reviews(pull_number), deadline, poll_seconds)
+    if before is None or any(newer(r) for r in before):
+        return {'shown': False, 'why': 'reviews_unreadable' if before is None else 'approved_again_before_merge_call', 'reviewId': approval_id}
+    after = merge_until_settled(live, number, deadline_seconds=60, poll_seconds=10)
+    later = read_until(lambda: driver.reviews(pull_number), deadline, poll_seconds)
+    held = after.get('state') == 'held' and after.get('reason') in APPROVAL_HOLD_REASONS
+    record = {'reviewId': approval_id, 'stateAfter': after.get('state'), 'reasonAfter': after.get('reason')}
+    if held:
+        say(f'critical proof: the dismissed review left the merge held ({after.get("reason")}); approve pull request #{pull_number} again')
+        return {'shown': True, **record, 'unlocksNothing': True, 'mergedOnDismissedReview': False}
+    if after.get('state') == 'merged' and later is not None and not any(newer(r) for r in later):
+        return {'shown': True, **record, 'unlocksNothing': False, 'mergedOnDismissedReview': True}
+    if after.get('state') == 'merged':
+        why = 'reviews_unreadable' if later is None else 'approved_again_during_merge_call'
+    else:
+        why = 'merge_outcome_not_an_approval_hold'
+    return {'shown': False, 'why': why, **record}
+
+
+def merged_evidence(trial, merged, driver, number, pull_number, owner_id, driver_commit, decisions, dismissal):
+    """`critical_evidence` for a merge that happened, after the gate closed the Task; a read that fails for good is
+    recorded (with the dismissal check it followed) instead of raised, so a one-time proof is never lost."""
+    try:
+        wait_for_task_done(driver, number)
+        return critical_evidence(trial, merged, *evidence_reads(driver, number, pull_number, merged), owner_id, driver_commit, decisions, dismissal)
+    except Exception as error:
+        return {'case': trial['case'], 'trial': trial['trial'], 'branch': trial['branch'], 'driverCommit': driver_commit, 'taskNumber': number,
+                'pullNumber': pull_number, 'head': merged.get('head'), 'mergeCommit': merged.get('mergeCommit'), 'stateAfter': 'merged',
+                'mergeDecisions': decisions, 'dismissal': dismissal, 'demonstrated': False, 'why': 'evidence_unreadable',
+                'error': repr(error)[:300], 'at': utc()}
+
+
+def evidence_reads(driver, number, pull_number, merged, seconds=300, poll_seconds=20):
+    """The reviews, merge commit and Task the critical evidence is read from, each retried on a transient failure for
+    `seconds`; one that never answers is None (reviews: []) and the evidence cannot be demonstrated from it."""
+    deadline = time.time() + seconds
+    reviews = read_until(lambda: driver.reviews(pull_number), deadline, poll_seconds)
+    commit = read_until(lambda: driver.git_commit(merged['mergeCommit']), deadline, poll_seconds) if merged.get('mergeCommit') else None
+    task = read_until(lambda: driver.issue(number), deadline, poll_seconds)
+    return reviews if reviews is not None else [], commit, task or {}
+
+
+def critical_evidence(trial, merged, reviews, merged_commit, task, owner_id, driver_commit, decisions=None, dismissal=None):
     """The critical live proof from records: the owner's APPROVED review of the exact merged head, the merge commit's shape, the Task's end."""
     head = merged.get('head')
-    approving = [r for r in reviews if r.get('state') == 'APPROVED' and (r.get('user') or {}).get('id') == owner_id and r.get('commit_id') == head]
+    dismissed_id = (dismissal or {}).get('reviewId') or 0
+    approving = [r for r in reviews if r.get('state') == 'APPROVED' and (r.get('user') or {}).get('id') == owner_id and r.get('commit_id') == head
+                 and r.get('id', 0) > dismissed_id]
     return {
         'case': trial['case'], 'trial': trial['trial'], 'branch': trial['branch'], 'driverCommit': driver_commit,
         'taskNumber': trial['taskNumber'], 'pullNumber': merged.get('pullNumber'), 'head': head,
@@ -1206,13 +1371,16 @@ def critical_evidence(trial, merged, reviews, merged_commit, task, owner_id, dri
         'taskLabels': [l['name'] for l in task.get('labels', [])], 'taskState': task.get('state'),
         # The merge command's own decisions for the call that merged, when this proof made that call.
         'mergeDecisions': decisions,
-        'demonstrated': bool(approving) and task.get('state') == 'closed' and (trial.get('observed') or {}).get('mergeReason') == 'merge_approval_required',
+        'dismissal': dismissal,
+        'demonstrated': (bool(approving) and task.get('state') == 'closed' and (trial.get('observed') or {}).get('mergeReason') == 'merge_approval_required'
+                         and bool(dismissal and dismissal.get('shown') and dismissal.get('unlocksNothing'))),
         'at': utc(),
     }
 
 
 def proof_critical(live, driver, report, number, await_minutes):
-    """A merge held for approval, unlocked by the owner's native APPROVED review of the exact head. The merge is admitted
+    """A merge held for approval, unlocked by the owner's native APPROVED review of the exact head, after a dismissed
+    approval of that head was shown to unlock nothing (`dismissal_check`). The merge is admitted
     under the trial's scope and policy revision, so this step never activates a policy (an activation after the grant
     ends the scope: scope_granted_under_other_policy). Either the ledger already holds the merge, or the trial's
     activation is still current and the review is awaited; a superseded trial cannot demonstrate it and says so."""
@@ -1225,22 +1393,119 @@ def proof_critical(live, driver, report, number, await_minutes):
         if live.base_branch != trial['branch']:
             return {**base, 'demonstrated': False, 'stateAfter': None, 'reasonAfter': 'trial_activation_superseded',
                     'why': "the merge is admitted under the trial's scope and policy revision; run the case as the last activation and approve within the scope's life", 'at': utc()}
-        # Held, admitted (a recheck pending) and observing (CI or the gate pending) are all still on the way.
+        # Held, admitted (a recheck pending) and observing (CI or the gate pending) are all still on the way; the owner
+        # is prompted only once the merge is held for approval.
         outcome = merge_until_settled(live, number, deadline_seconds=60, poll_seconds=10)
+        ready_by = time.time() + await_minutes * 60
+        while outcome.get('state') in ('admitted', 'observing') and not outcome.get('parked') and time.time() < ready_by:
+            time.sleep(60)
+            outcome = merge_until_settled(live, number, deadline_seconds=60, poll_seconds=10)
         deadline = time.time() + await_minutes * 60
+        pull_number = pull_number or outcome.get('pullNumber')
+        dismissal = None
+        if outcome.get('state') == 'held' and outcome.get('reason') in APPROVAL_HOLD_REASONS and outcome.get('head'):
+            dismissal = dismissal_check(live, driver, number, pull_number, outcome['head'], live.facts['ownerId'], deadline)
+            if not dismissal.get('shown') or dismissal.get('mergedOnDismissedReview'):
+                # A merge during the check is recorded with its evidence either way; it demonstrates nothing.
+                merged = ledger_merge(live, pull_number) if dismissal.get('stateAfter') == 'merged' else None
+                if merged is None:
+                    return {**base, 'pullNumber': pull_number, 'demonstrated': False, 'dismissal': dismissal,
+                            'stateAfter': dismissal.get('stateAfter', outcome.get('state')), 'reasonAfter': dismissal.get('reasonAfter', outcome.get('reason')), 'at': utc()}
+                return merged_evidence(trial, merged, driver, number, pull_number, live.facts['ownerId'], driver_commit, None, dismissal)
+            outcome = merge_until_settled(live, number, deadline_seconds=60, poll_seconds=10)
         while outcome.get('state') in ('held', 'admitted', 'observing') and time.time() < deadline:
             time.sleep(60)
             outcome = merge_until_settled(live, number, deadline_seconds=60, poll_seconds=10)
         pull_number = pull_number or outcome.get('pullNumber')
         merged = ledger_merge(live, pull_number) if outcome.get('state') == 'merged' else None
         if merged is None:
-            return {**base, 'pullNumber': pull_number, 'demonstrated': False, 'stateAfter': outcome.get('state'), 'reasonAfter': outcome.get('reason'), 'at': utc()}
+            return {**base, 'pullNumber': pull_number, 'demonstrated': False, 'dismissal': dismissal, 'stateAfter': outcome.get('state'), 'reasonAfter': outcome.get('reason'), 'at': utc()}
         decisions = outcome.get('decisions') or []
     else:
-        decisions = None
-    wait_for_task_done(driver, number)
-    return critical_evidence(trial, merged, driver.reviews(pull_number), driver.git_commit(merged['mergeCommit']) if merged.get('mergeCommit') else None,
-                             driver.issue(number), live.facts['ownerId'], driver_commit, decisions)
+        # The merge this step already made and recorded (its evidence failed then): the dismissal check it recorded
+        # for this Task and pull request still stands; any other merge shows no dismissal check.
+        prior = (report.get('liveProof') or {}).get('critical') or {}
+        same = prior.get('taskNumber') == number and prior.get('pullNumber') == pull_number and prior.get('mergeCommit') == merged.get('mergeCommit')
+        decisions, dismissal = (prior.get('mergeDecisions'), prior.get('dismissal')) if same else (None, None)
+    return merged_evidence(trial, merged, driver, number, pull_number, live.facts['ownerId'], driver_commit, decisions, dismissal)
+
+
+def revision_check(live, driver, number, pull_number, head, owner_id, deadline, poll_seconds=20, say=None):
+    """A head that moves after its approval never merges: the merge record is bound to the head it published, so a moved
+    head ends it `blocked` before any approval is read (REVISION_REFUSALS). Handshake: the owner approves the exact held
+    head; the driver pushes a commit onto the pull request's branch, waits until GitHub shows it as the head, and calls
+    `merge` once; it must end strictly blocked on the moved head, with no merge on GitHub or in the ledger. An approval
+    of the new head makes the check inconclusive. That the factory ignores an older head's approval on its own is not
+    observable here (the required protection dismisses stale approvals on push); autonomy-merge.test.ts covers it.
+    Nothing else may call `merge` or `merge-scan` meanwhile."""
+    say = say or (lambda message: sys.stderr.write(message + '\n'))
+    read = lambda what: read_until(what, deadline, poll_seconds)
+    known = {r.get('id') for r in read(lambda: driver.reviews(pull_number)) or []}
+    say(f'revision proof: approve pull request #{pull_number} at {head[:12]} now; the driver then pushes a new head (do not approve that one)')
+    approval = await_review(driver, pull_number, deadline, poll_seconds, owner_review_of(owner_id, head, ('APPROVED',), known))
+    if approval is None:
+        return {'demonstrated': False, 'why': 'owner_approval_not_seen'}
+    pull = read(lambda: driver.pull(pull_number))
+    if pull is None or (pull.get('head') or {}).get('sha') != head or pull.get('merged') or pull.get('state') != 'open':
+        return {'demonstrated': False, 'why': 'pull_request_moved_before_revision', 'reviewId': approval['id']}
+    branch = pull['head']['ref']
+    try:
+        revised = driver.push_revision(branch, head, 'revision-after-approval.txt', b'A change pushed after the previous head was approved.\n',
+                                       'Revise after approval (qualification revision proof)')
+    except Exception as error:  # the report is still written; a rerun on this trial starts from what GitHub shows
+        return {'demonstrated': False, 'why': 'revision_push_failed', 'error': repr(error)[:300], 'reviewId': approval['id'], 'approvedHead': head, 'branch': branch}
+    say(f'revision proof: approval {approval["id"]} seen; pushed {revised[:12]} onto {branch}; calling merge')
+    moved = None
+    while True:
+        moved = read(lambda: driver.pull(pull_number))
+        if (moved and (moved.get('head') or {}).get('sha') == revised) or time.time() >= deadline:
+            break
+        time.sleep(poll_seconds)
+    record = {'reviewId': approval['id'], 'approvedHead': head, 'revisedHead': revised, 'branch': branch}
+    if not moved or (moved.get('head') or {}).get('sha') != revised:
+        return {'demonstrated': False, 'why': 'revised_head_not_seen', **record}
+    after = merge_until_settled(live, number, deadline_seconds=60, poll_seconds=10)
+    final = read(lambda: driver.pull(pull_number))
+    reviews = read(lambda: driver.reviews(pull_number))
+    ledger = ledger_merge(live, pull_number)
+    record.update({
+        'stateAfter': after.get('state'), 'reasonAfter': after.get('reason'), 'pullMerged': None if final is None else bool(final.get('merged')),
+        'ledgerMerged': ledger is not None, 'approvalStateAfterPush': next((r.get('state') for r in reviews or [] if r.get('id') == approval['id']), None),
+        'revisedHeadApprovals': [r['id'] for r in reviews or [] if owner_review_of(owner_id, revised, ('APPROVED',))(r)],
+    })
+    if final is None or reviews is None:
+        return {'demonstrated': False, 'why': 'pull_request_unreadable', **record}
+    if record['revisedHeadApprovals']:
+        return {'demonstrated': False, 'why': 'revised_head_approved', **record}
+    merged = record['pullMerged'] or record['ledgerMerged'] or after.get('state') == 'merged'
+    refused = ((after.get('state'), after.get('reason')) in REVISION_REFUSALS
+               and not any(d.get('outcome') == 'allow' for d in after.get('decisions') or []))
+    return {'demonstrated': refused and not merged, **({} if refused and not merged else {'why': 'merged_on_a_superseded_approval' if merged else 'merge_outcome_not_a_refusal'}), **record}
+
+
+def proof_revision(live, driver, report, number, await_minutes):
+    """The revision proof (`revision_check`) on a held critical trial. Like the critical proof it runs under the trial's
+    scope and policy revision and never activates a policy, so it needs that trial's activation to be the current one."""
+    trial = trial_for_task(report, number)
+    pull_number = (trial.get('observed') or {}).get('pullNumber') or trial.get('pullNumber')
+    driver_commit = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True).stdout.strip() or None
+    base = {'case': trial['case'], 'trial': trial['trial'], 'branch': trial['branch'], 'driverCommit': driver_commit, 'taskNumber': number, 'pullNumber': pull_number}
+    if pull_number and ledger_merge(live, pull_number):
+        return {**base, 'demonstrated': False, 'why': 'already_merged', 'at': utc()}
+    if live.base_branch != trial['branch']:
+        return {**base, 'demonstrated': False, 'why': 'trial_activation_superseded', 'at': utc()}
+    ready_by = time.time() + await_minutes * 60
+    outcome = merge_until_settled(live, number, deadline_seconds=60, poll_seconds=10)
+    while outcome.get('state') in ('admitted', 'observing') and not outcome.get('parked') and time.time() < ready_by:
+        time.sleep(60)
+        outcome = merge_until_settled(live, number, deadline_seconds=60, poll_seconds=10)
+    deadline = time.time() + await_minutes * 60
+    pull_number = pull_number or outcome.get('pullNumber')
+    held = {'heldState': outcome.get('state'), 'heldReason': outcome.get('reason')}
+    if not (outcome.get('state') == 'held' and outcome.get('reason') in APPROVAL_HOLD_REASONS and outcome.get('head') and pull_number):
+        return {**base, 'pullNumber': pull_number, **held, 'demonstrated': False, 'why': 'trial_not_held_for_approval', 'at': utc()}
+    check = revision_check(live, driver, number, pull_number, outcome['head'], live.facts['ownerId'], deadline)
+    return {**base, 'pullNumber': pull_number, **held, **check, 'at': utc()}
 
 
 def command_proof(args):
@@ -1279,6 +1544,8 @@ def command_proof(args):
         proof['ledger'] = {'mounts': 'autonomy-operator (config, controller password, webhook secret, policy)', 'commands': outputs, 'at': utc()}
     elif args.step == 'critical':
         proof['critical'] = proof_critical(live, driver, report, args.task, args.await_minutes)
+    elif args.step == 'revision':
+        proof['revision'] = proof_revision(live, driver, report, args.task, args.await_minutes)
     elif args.step == 'routine':
         merged = [t for t in report['trials'] if t['kind'] == 'functional' and t.get('mergeCommit')]
         # The gate's reconciliation closes the Task; the proof is a trial where GitHub shows that now.
@@ -1331,7 +1598,7 @@ def main():
     parser.add_argument('--budget-usd', type=float)
     parser.add_argument('--resume', action='store_true', help='Continue a report: trials already recorded are kept, never re-run')
     parser.add_argument('--max-consecutive-incomplete', type=positive_int, default=3, help='Stop the lane after this many consecutive trials that did not complete (error, timeout, unknown, cancelled: an outage, not the factory)')
-    parser.add_argument('--step', choices=['attestation', 'ledger', 'critical', 'routine'])
+    parser.add_argument('--step', choices=['attestation', 'ledger', 'critical', 'revision', 'routine'])
     parser.add_argument('--task', type=int)
     parser.add_argument('--await-minutes', type=int, default=30)
     parser.add_argument('--delete-repository', action='store_true')
@@ -1362,8 +1629,8 @@ def main():
         require_toolchain()
         if not (args.state and args.report and args.step):
             parser.error('proof requires --state, --report and --step')
-        if args.step == 'critical' and not args.task:
-            parser.error('proof --step critical requires --task')
+        if args.step in ('critical', 'revision') and not args.task:
+            parser.error(f'proof --step {args.step} requires --task')
         command_proof(args)
     elif args.command == 'cleanup':
         if not args.state:

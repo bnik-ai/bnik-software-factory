@@ -253,11 +253,18 @@ class CriticalProofTest(unittest.TestCase):
         reviews = [{'id': 1, 'state': 'APPROVED', 'user': {'id': 55}, 'commit_id': 'h' * 40}, {'id': 2, 'state': 'APPROVED', 'user': {'id': 55}, 'commit_id': 'x' * 40},
                    {'id': 3, 'state': 'APPROVED', 'user': {'id': 56}, 'commit_id': 'h' * 40}, {'id': 4, 'state': 'COMMENTED', 'user': {'id': 55}, 'commit_id': 'h' * 40}]
         task = {'state': 'closed', 'labels': [{'name': 'kind:task'}, {'name': 'status:done'}]}
-        out = live.critical_evidence(self.trial, self.merged, reviews, self.commit, task, 55, 'd' * 40)
+        shown = {'shown': True, 'reviewId': 0, 'stateAfter': 'held', 'unlocksNothing': True}
+        out = live.critical_evidence(self.trial, self.merged, reviews, self.commit, task, 55, 'd' * 40, dismissal=shown)
         self.assertEqual((out['approvingReviewIds'], out['humanInterventions'], out['demonstrated'], out['stateAfter'], out['heldReason']), ([1], 1, True, 'merged', 'merge_approval_required'))
+        # Without the dismissed-review check shown, the proof is not demonstrated.
+        self.assertFalse(live.critical_evidence(self.trial, self.merged, reviews, self.commit, task, 55, 'd' * 40)['demonstrated'])
+        self.assertFalse(live.critical_evidence(self.trial, self.merged, reviews, self.commit, task, 55, 'd' * 40, dismissal={**shown, 'unlocksNothing': False})['demonstrated'])
         self.assertEqual((out['mergeCommitParents'], out['mergeCommitTree'], out['taskState']), (['p' * 40], 't' * 40, 'closed'))
         out = live.critical_evidence(self.trial, self.merged, reviews[1:], self.commit, task, 55, 'd' * 40)
         self.assertEqual((out['humanInterventions'], out['demonstrated']), (0, False))
+        # Only an approval newer than the dismissed review unlocks the merge the proof records.
+        out = live.critical_evidence(self.trial, self.merged, reviews, self.commit, task, 55, 'd' * 40, dismissal={**shown, 'reviewId': 1})
+        self.assertEqual((out['approvingReviewIds'], out['demonstrated']), ([], False))
 
     def test_a_superseded_trial_is_not_demonstrable_and_never_activates(self):
         class Live:
@@ -303,7 +310,8 @@ class CriticalProofTest(unittest.TestCase):
             out = live.proof_critical(Live(), Driver(), {'trials': [self.trial]}, 412, 30)
         finally:
             live.merge_until_settled, live.wait_for_task_done, live.time = originals
-        self.assertEqual((out['demonstrated'], out['humanInterventions'], out['mergeDecisions'], answers), (True, 1, [{'action': 'merge', 'outcome': 'allow'}], []))
+        # No head in the held answer: the dismissal check cannot bind to a head, so the proof is not demonstrated.
+        self.assertEqual((out['demonstrated'], out['dismissal'], out['humanInterventions'], out['mergeDecisions'], answers), (False, None, 1, [{'action': 'merge', 'outcome': 'allow'}], []))
 
     def test_the_awaiting_path_records_an_expired_scope_as_the_outcome(self):
         class Live:
@@ -318,6 +326,168 @@ class CriticalProofTest(unittest.TestCase):
         finally:
             live.merge_until_settled, live.time = originals
         self.assertEqual((out['demonstrated'], out['stateAfter'], out['reasonAfter'], out['pullNumber']), (False, 'error', 'scope_expired', 413))
+
+    def dismissal_run(self, reviews_script, answers, events=(), await_minutes=30, wait=None, report=None, ledger_merges=()):
+        """Runs the awaiting path against scripted GitHub reviews (one list per read, the last repeating) and merge
+        answers; returns (record, the number of review reads made before each merge call)."""
+        test = self
+        ledger = {'merges': list(ledger_merges)}
+        calls = []
+        reads = [0]
+
+        class Live:
+            base_branch = 'q/abc/A05/4' if not ledger_merges else 'elsewhere'
+            facts = {'ownerId': 55}
+            def status(self):
+                return ledger
+
+        class Driver:
+            def reviews(self, pull):
+                reads[0] += 1
+                step = reviews_script[0] if len(reviews_script) == 1 else reviews_script.pop(0)
+                if isinstance(step, Exception):
+                    raise step
+                return step
+            def issue_events(self, pull):
+                return list(events)
+            def git_commit(self, sha):
+                return test.commit
+            def issue(self, number):
+                return {'state': 'closed', 'labels': [{'name': 'status:done'}]}
+
+        def fake_merge_until_settled(live_, number, **kw):
+            calls.append(reads[0])
+            out = dict(answers[0] if len(answers) == 1 else answers.pop(0))
+            if out['state'] == 'merged':
+                ledger['merges'].append(test.merged)
+            return out
+        originals = (live.merge_until_settled, live.wait_for_task_done, live.time)
+        live.merge_until_settled, live.wait_for_task_done, live.time = fake_merge_until_settled, wait or (lambda d, n, **kw: {'done': True}), Clock(step=1.0)
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                out = live.proof_critical(Live(), Driver(), report or {'trials': [self.trial]}, 412, await_minutes)
+        finally:
+            live.merge_until_settled, live.wait_for_task_done, live.time = originals
+        return out, calls
+
+    def review(self, rid, state, user=55, head='h' * 40):
+        return {'id': rid, 'state': state, 'user': {'id': user}, 'commit_id': head}
+
+    held = {'state': 'held', 'reason': 'merge_approval_required', 'head': 'h' * 40}
+    merged_answer = {'state': 'merged', 'pullNumber': 413, 'head': 'h' * 40, 'mergeCommit': 'm' * 40, 'decisions': [{'action': 'merge', 'outcome': 'allow'}]}
+
+    def test_a_dismissed_approval_unlocks_nothing_and_a_fresh_one_merges(self):
+        # Reads: before the prompt, two polls for the approval (another user's and a comment do not count), two for the
+        # dismissal, one just before the merge call, one after it; the fresh approval follows.
+        script = [[], [self.review(1, 'COMMENTED'), self.review(9, 'APPROVED', user=56)], [self.review(1, 'APPROVED')], [self.review(1, 'APPROVED')],
+                  [self.review(1, 'DISMISSED')], [self.review(1, 'DISMISSED')], [self.review(1, 'DISMISSED')], [self.review(1, 'DISMISSED'), self.review(2, 'APPROVED')]]
+        out, calls = self.dismissal_run(script, [dict(self.held), dict(self.held), dict(self.merged_answer)])
+        # One merge call before any review, one only after the dismissal and the pre-call read, one after the fresh approval.
+        self.assertEqual(calls[:2], [0, 6])
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(out['dismissal'], {'shown': True, 'reviewId': 1, 'stateAfter': 'held', 'reasonAfter': 'merge_approval_required', 'unlocksNothing': True, 'mergedOnDismissedReview': False})
+        self.assertEqual((out['demonstrated'], out['approvingReviewIds'], out['stateAfter']), (True, [2], 'merged'))
+
+    def test_an_approval_that_existed_before_the_check_is_not_the_one_dismissed(self):
+        script = [[self.review(1, 'DISMISSED')], [self.review(1, 'DISMISSED'), self.review(2, 'APPROVED')], [self.review(1, 'DISMISSED'), self.review(2, 'DISMISSED')]]
+        # A pre-existing dismissed review is known before the prompt; it is never taken as this check's approval.
+        out, _ = self.dismissal_run(script, [dict(self.held), dict(self.held), dict(self.held)], events=[
+            {'event': 'review_dismissed', 'dismissed_review': {'review_id': '1', 'state': 'approved'}}])
+        self.assertEqual((out['dismissal']['shown'], out['dismissal']['reviewId']), (True, 2))
+
+    def test_a_review_seen_only_as_dismissed_counts_when_github_says_it_was_an_approval(self):
+        script = [[], [self.review(1, 'DISMISSED')]]
+        events = [{'event': 'review_dismissed', 'dismissed_review': {'review_id': '1', 'state': 'approved'}}]
+        out, calls = self.dismissal_run(script, [dict(self.held), dict(self.held)], events=events)
+        # The check's merge call follows the read before the prompt, the poll that saw the dismissed review and the pre-call read.
+        self.assertEqual((out['dismissal']['shown'], out['dismissal']['unlocksNothing'], calls[:2]), (True, True, [0, 3]))
+        # A dismissed request for changes is not an approval: the check keeps waiting and never calls merge.
+        out, calls = self.dismissal_run([[], [self.review(1, 'DISMISSED')]], [dict(self.held)],
+                                        events=[{'event': 'review_dismissed', 'dismissed_review': {'review_id': 1, 'state': 'changes_requested'}}])
+        self.assertEqual((out['dismissal'], len(calls)), ({'shown': False, 'why': 'owner_approval_not_seen'}, 1))
+
+    def test_only_the_dismissal_event_of_this_review_as_an_approval_counts(self):
+        dismissed = [[], [self.review(1, 'DISMISSED')]]
+        for events in ([{'event': 'review_dismissed', 'dismissed_review': {'review_id': '9', 'state': 'approved'}},
+                        {'event': 'review_dismissed', 'dismissed_review': {'review_id': '1', 'state': 'changes_requested'}}],
+                       [{'event': 'review_requested', 'dismissed_review': {'review_id': '1', 'state': 'approved'}}]):
+            out, calls = self.dismissal_run([list(x) for x in dismissed], [dict(self.held)], events=events)
+            self.assertEqual((out['dismissal'], len(calls)), ({'shown': False, 'why': 'owner_approval_not_seen'}, 1), events)
+
+    def test_reviews_that_never_answer_end_the_check_at_the_deadline(self):
+        out, calls = self.dismissal_run([[], live.GitHubError(502, '/pulls/413/reviews', 'bad gateway')], [dict(self.held)])
+        self.assertEqual((out['dismissal'], len(calls)), ({'shown': False, 'why': 'owner_approval_not_seen'}, 1))
+
+    def test_the_owner_is_prompted_only_once_the_merge_is_held(self):
+        observing = {'state': 'observing', 'reason': 'required_ci_missing_failed_or_pending', 'timedOut': True}
+        script = [[], [self.review(1, 'APPROVED')], [self.review(1, 'DISMISSED')]]
+        out, calls = self.dismissal_run(script, [observing, dict(observing), dict(self.held), dict(self.held)])
+        # Three merge calls before any review is read: two while CI is pending, one that finds the hold.
+        self.assertEqual((out['dismissal']['shown'], calls[:3]), (True, [0, 0, 0]))
+
+    def test_a_merge_with_reviews_unreadable_afterwards_is_inconclusive(self):
+        script = [[], [self.review(1, 'APPROVED')], [self.review(1, 'DISMISSED')], [self.review(1, 'DISMISSED')], live.GitHubError(503, '/pulls/413/reviews', 'unavailable')]
+        out, _ = self.dismissal_run(script, [dict(self.held), dict(self.merged_answer)])
+        self.assertEqual((out['demonstrated'], out['dismissal']['why'], out['mergeCommit']), (False, 'reviews_unreadable', 'm' * 40))
+
+    def test_an_approval_again_before_the_merge_call_is_inconclusive_and_calls_nothing(self):
+        script = [[], [self.review(1, 'APPROVED')], [self.review(1, 'DISMISSED')], [self.review(1, 'DISMISSED'), self.review(2, 'APPROVED')]]
+        out, calls = self.dismissal_run(script, [dict(self.held)])
+        self.assertEqual((out['demonstrated'], out['dismissal']['why'], len(calls)), (False, 'approved_again_before_merge_call', 1))
+
+    def test_an_approval_again_during_the_merge_call_is_inconclusive_and_the_merge_is_recorded(self):
+        script = [[], [self.review(1, 'APPROVED')], [self.review(1, 'DISMISSED')], [self.review(1, 'DISMISSED')], [self.review(1, 'DISMISSED'), self.review(2, 'APPROVED')]]
+        out, _ = self.dismissal_run(script, [dict(self.held), dict(self.merged_answer)])
+        self.assertEqual((out['demonstrated'], out['dismissal']['shown'], out['dismissal']['why'], out['mergeCommit']), (False, False, 'approved_again_during_merge_call', 'm' * 40))
+
+    def test_a_merge_on_a_dismissed_approval_is_recorded_as_a_failed_proof(self):
+        merged = {'state': 'merged', 'pullNumber': 413, 'head': 'h' * 40, 'mergeCommit': 'm' * 40}
+        out, _ = self.dismissal_run([[], [self.review(1, 'APPROVED')], [self.review(1, 'DISMISSED')]], [dict(self.held), merged])
+        self.assertEqual((out['demonstrated'], out['dismissal']['unlocksNothing'], out['dismissal']['mergedOnDismissedReview'], out['mergeCommit']), (False, False, True, 'm' * 40))
+
+    def test_only_a_hold_for_approval_shows_the_dismissal_unlocks_nothing(self):
+        script = [[], [self.review(1, 'APPROVED')], [self.review(1, 'DISMISSED')]]
+        for after in ({'state': 'observing', 'reason': 'required_ci_missing_failed_or_pending', 'timedOut': True}, {'state': 'blocked', 'reason': 'pull_head_changed'},
+                      {'state': 'held', 'reason': 'approval_already_used'}, {'state': 'error', 'reason': 'exit 1'}):
+            out, _ = self.dismissal_run([list(x) for x in script], [dict(self.held), after, after, after])
+            self.assertEqual((out['demonstrated'], out['dismissal']['shown'], out['dismissal']['why'], out['stateAfter']), (False, False, 'merge_outcome_not_an_approval_hold', after['state']), after)
+
+    def test_transient_review_reads_are_polls_without_an_answer(self):
+        script = [[], live.GitHubError(502, '/pulls/413/reviews', 'bad gateway'), live.GitHubError(403, '/pulls/413/reviews', 'API rate limit exceeded'),
+                  [self.review(1, 'APPROVED')], ConnectionResetError(), [self.review(1, 'DISMISSED')]]
+        out, _ = self.dismissal_run(script, [dict(self.held), dict(self.held)])
+        self.assertEqual((out['dismissal']['shown'], out['dismissal']['unlocksNothing']), (True, True))
+        with self.assertRaises(live.GitHubError):
+            self.dismissal_run([[], live.GitHubError(404, '/pulls/413/reviews', 'not found')], [dict(self.held)])
+
+    def test_a_failure_reading_the_evidence_after_the_merge_is_recorded_with_the_dismissal(self):
+        script = [[], [self.review(1, 'APPROVED')], [self.review(1, 'DISMISSED')]]
+        def failing_wait(driver, number, **kw):
+            raise live.GitHubError(404, '/issues/412', 'not found')
+        out, _ = self.dismissal_run(script, [dict(self.held), dict(self.held), dict(self.merged_answer)], wait=failing_wait)
+        self.assertEqual((out['demonstrated'], out['why'], out['dismissal']['shown'], out['mergeCommit']), (False, 'evidence_unreadable', True, 'm' * 40))
+        self.assertIn('not found', out['error'])
+
+    def test_a_rerun_after_the_merge_keeps_the_dismissal_this_step_recorded(self):
+        recorded = {'shown': True, 'reviewId': 1, 'stateAfter': 'held', 'reasonAfter': 'merge_approval_required', 'unlocksNothing': True, 'mergedOnDismissedReview': False}
+        prior = {'taskNumber': 412, 'pullNumber': 413, 'mergeCommit': 'm' * 40, 'dismissal': recorded, 'mergeDecisions': [{'action': 'merge', 'outcome': 'allow'}]}
+        script = [[self.review(1, 'DISMISSED'), self.review(2, 'APPROVED')]]
+        out, calls = self.dismissal_run(script, [dict(self.held)], report={'trials': [self.trial], 'liveProof': {'critical': prior}}, ledger_merges=[self.merged])
+        self.assertEqual((out['demonstrated'], out['dismissal'], out['mergeDecisions'], calls), (True, recorded, prior['mergeDecisions'], []))
+        other = {**prior, 'mergeCommit': 'n' * 40}
+        out, _ = self.dismissal_run(script, [dict(self.held)], report={'trials': [self.trial], 'liveProof': {'critical': other}}, ledger_merges=[self.merged])
+        self.assertEqual((out['demonstrated'], out['dismissal']), (False, None))
+
+    def test_the_owner_gets_the_whole_wait_once_the_merge_is_held(self):
+        observing = {'state': 'observing', 'reason': 'required_ci_missing_failed_or_pending', 'timedOut': True}
+        script = [[]] * 8 + [[self.review(1, 'APPROVED')], [self.review(1, 'DISMISSED')]]
+        # CI takes most of a one-minute wait; the owner's approval comes several polls after the hold.
+        out, _ = self.dismissal_run([list(x) for x in script], [observing] * 55 + [dict(self.held), dict(self.held)], await_minutes=1)
+        self.assertEqual(out['dismissal']['shown'], True)
+
+    def test_no_approval_within_the_deadline_is_not_demonstrated(self):
+        out, calls = self.dismissal_run([[]], [dict(self.held)])
+        self.assertEqual((out['demonstrated'], out['dismissal'], len(calls)), (False, {'shown': False, 'why': 'owner_approval_not_seen'}, 1))
 
     def test_a_merge_already_in_the_ledger_is_proven_from_records(self):
         test = self
@@ -342,7 +512,266 @@ class CriticalProofTest(unittest.TestCase):
             out = live.proof_critical(Live(), Driver(), {'trials': [self.trial]}, 412, 1)
         finally:
             live.wait_for_task_done = original
-        self.assertEqual((out['demonstrated'], out['humanInterventions'], out['mergeCommit'], waited), (True, 1, 'm' * 40, [412]))
+        # A merge the proof did not make shows no dismissal check: recorded, not demonstrated.
+        self.assertEqual((out['demonstrated'], out['dismissal'], out['humanInterventions'], out['mergeCommit'], waited), (False, None, 1, 'm' * 40, [412]))
+
+
+class EvidenceReadTest(unittest.TestCase):
+    def test_the_task_wait_treats_a_transient_failure_as_a_poll(self):
+        answers = [live.GitHubError(502, '/issues/1', 'bad gateway'), {'labels': [{'name': 'status:done'}]}]
+        class Driver:
+            def issue(self, number):
+                answer = answers.pop(0)
+                if isinstance(answer, Exception):
+                    raise answer
+                return answer
+        original = live.time
+        live.time = Clock(step=1.0)
+        try:
+            self.assertEqual(live.wait_for_task_done(Driver(), 1)['done'], True)
+            answers[:] = [live.GitHubError(404, '/issues/1', 'not found')]
+            with self.assertRaises(live.GitHubError):
+                live.wait_for_task_done(Driver(), 1)
+        finally:
+            live.time = original
+
+    def test_each_evidence_read_is_retried(self):
+        failures = {'reviews': 1, 'git_commit': 1, 'issue': 1}
+        class Driver:
+            def fail_once(self, name, value):
+                if failures[name]:
+                    failures[name] -= 1
+                    raise live.GitHubError(503, name, 'unavailable')
+                return value
+            def reviews(self, pull):
+                return self.fail_once('reviews', [{'id': 1}])
+            def git_commit(self, sha):
+                return self.fail_once('git_commit', {'tree': {'sha': 't'}})
+            def issue(self, number):
+                return self.fail_once('issue', {'state': 'closed'})
+        original = live.time
+        live.time = Clock(step=1.0)
+        try:
+            reviews, commit, task = live.evidence_reads(Driver(), 1, 2, {'mergeCommit': 'm' * 40})
+        finally:
+            live.time = original
+        self.assertEqual((reviews, commit, task), ([{'id': 1}], {'tree': {'sha': 't'}}, {'state': 'closed'}))
+
+
+class DriverPagesTest(unittest.TestCase):
+    def test_reviews_and_events_read_every_page(self):
+        asked = []
+        driver = live.Driver(None, 'o/r')
+        pages = {1: [{'id': n} for n in range(100)], 2: [{'id': 100}]}
+        driver.call = lambda method, path, body=None, **kw: asked.append(path) or pages[int(path.rsplit('=', 1)[1])]
+        self.assertEqual(len(driver.reviews(413)), 101)
+        self.assertEqual(asked, ['/pulls/413/reviews?per_page=100&page=1', '/pulls/413/reviews?per_page=100&page=2'])
+        asked.clear()
+        pages = {1: []}
+        self.assertEqual((driver.issue_events(413), asked), ([], ['/issues/413/events?per_page=100&page=1']))
+
+    def test_a_revision_is_a_fast_forward_on_the_approved_head(self):
+        sent = []
+        answers = {'/git/commits/' + 'h' * 40: {'tree': {'sha': 't' * 40}}, '/git/blobs': {'sha': 'b' * 40}, '/git/trees': {'sha': 'u' * 40}, '/git/commits': {'sha': 'r' * 40}}
+        driver = live.Driver(None, 'o/r')
+        driver.call = lambda method, path, body=None, **kw: sent.append((method, path, body)) or answers.get(path)
+        self.assertEqual(driver.push_revision('factory/x', 'h' * 40, 'f.txt', b'x', 'm'), 'r' * 40)
+        self.assertEqual(sent[2][2], {'base_tree': 't' * 40, 'tree': [{'path': 'f.txt', 'mode': '100644', 'type': 'blob', 'sha': 'b' * 40}]})
+        self.assertEqual(sent[3][2]['parents'], ['h' * 40])
+        self.assertEqual(sent[4], ('PATCH', '/git/refs/heads/factory/x', {'sha': 'r' * 40, 'force': False}))
+        failures = [live.GitHubError(502, '/git/blobs', 'bad gateway')]
+        def flaky(method, path, body=None, **kw):
+            sent.append((method, path, body))
+            if path == '/git/blobs' and failures:
+                raise failures.pop()
+            return answers.get(path)
+        sent.clear()
+        driver.call = flaky
+        original = live.time
+        live.time = Clock()
+        try:
+            self.assertEqual(driver.push_revision('factory/x', 'h' * 40, 'f.txt', b'x', 'm'), 'r' * 40)
+            self.assertEqual([p for _, p, _ in sent].count('/git/blobs'), 2)
+            # A refused ref update stands unless the ref already points at the new commit (a lost first response).
+            refs = {'/git/ref/heads/factory/x': {'object': {'sha': 'e' * 40}}}
+            driver.call = lambda method, path, body=None, **kw: (_ for _ in ()).throw(live.GitHubError(422, path, 'not a fast forward')) if method == 'PATCH' else {**answers, **refs}.get(path)
+            with self.assertRaises(live.GitHubError):
+                driver.push_revision('factory/x', 'h' * 40, 'f.txt', b'x', 'm')
+            refs['/git/ref/heads/factory/x'] = {'object': {'sha': 'r' * 40}}
+            self.assertEqual(driver.push_revision('factory/x', 'h' * 40, 'f.txt', b'x', 'm'), 'r' * 40)
+            # A permanent failure is not repeated; a transient one is repeated up to the limit, then raised.
+            for status, calls_expected in ((404, 1), (502, 4)):
+                blob_calls = []
+                def failing(method, path, body=None, status=status, **kw):
+                    if path == '/git/blobs':
+                        blob_calls.append(path)
+                        raise live.GitHubError(status, path, 'x')
+                    return answers.get(path)
+                driver.call = failing
+                with self.assertRaises(live.GitHubError):
+                    driver.push_revision('factory/x', 'h' * 40, 'f.txt', b'x', 'm')
+                self.assertEqual(len(blob_calls), calls_expected, status)
+        finally:
+            live.time = original
+
+
+class RevisionProofTest(unittest.TestCase):
+    trial = {'case': 'A05', 'trial': 5, 'branch': 'q/abc/A05/5', 'taskNumber': 420, 'observed': {'pullNumber': 421, 'mergeReason': 'merge_approval_required'}}
+    head, revised = 'h' * 40, 'r' * 40
+    held = {'state': 'held', 'reason': 'merge_approval_required', 'head': 'h' * 40}
+
+    def review(self, rid, state, head='h' * 40, user=55):
+        return {'id': rid, 'state': state, 'user': {'id': user}, 'commit_id': head}
+
+    def run_proof(self, reviews_script, answers, base_branch='q/abc/A05/5', merged_on_github=False, head_moves=True, ledger_merges=(), lag=0,
+                  ledger_after_push=(), pull_fails_after_merge=False, moved_early=False, push_error=None, pull_before_push=None, reviews_fail_after_merge=False):
+        test = self
+        events = []
+
+        class Live:
+            facts = {'ownerId': 55}
+            def status(self):
+                pushed = any(isinstance(e, tuple) for e in events)
+                return {'merges': list(ledger_merges) + (list(ledger_after_push) if pushed else [])}
+        Live.base_branch = base_branch
+
+        class Driver:
+            head = test.head
+            lagging = 0
+            def reviews(self, pull):
+                events.append('reviews')
+                if reviews_fail_after_merge and events.count('merge') >= 2:
+                    raise live.GitHubError(502, '/pulls/421/reviews', 'bad gateway')
+                return reviews_script[0] if len(reviews_script) == 1 else reviews_script.pop(0)
+            def pull(self, number):
+                events.append('pull')
+                if pull_before_push is not None and not any(isinstance(e, tuple) for e in events):
+                    if isinstance(pull_before_push, Exception):
+                        raise pull_before_push
+                    return pull_before_push
+                if pull_fails_after_merge and events.count('merge') >= 2:
+                    raise live.GitHubError(502, '/pulls/421', 'bad gateway')
+                if moved_early:
+                    return {'state': 'open', 'merged': False, 'head': {'sha': 'x' * 40, 'ref': 'factory/a05-5'}}
+                shown = test.head if self.lagging > 0 else self.head
+                self.lagging -= 1
+                return {'state': 'open', 'merged': merged_on_github and shown == test.revised, 'head': {'sha': shown, 'ref': 'factory/a05-5'}}
+            def push_revision(self, branch, parent, path, content, message):
+                events.append(('push', branch, parent))
+                if push_error is not None:
+                    raise push_error
+                if head_moves:
+                    self.head, self.lagging = test.revised, lag
+                return test.revised
+
+        def fake_merge_until_settled(live_, number, **kw):
+            events.append('merge')
+            return dict(answers[0] if len(answers) == 1 else answers.pop(0))
+        originals = (live.merge_until_settled, live.time)
+        live.merge_until_settled, live.time = fake_merge_until_settled, Clock(step=1.0)
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                out = live.proof_revision(Live(), Driver(), {'trials': [self.trial]}, 420, 30)
+        finally:
+            live.merge_until_settled, live.time = originals
+        return out, events
+
+    def test_an_approval_of_the_previous_head_does_not_merge_a_revision(self):
+        script = [[], [], [self.review(1, 'APPROVED')], [self.review(1, 'DISMISSED')]]
+        out, events = self.run_proof(script, [dict(self.held), {'state': 'blocked', 'reason': 'pull_head_changed'}])
+        self.assertEqual((out['demonstrated'], out['stateAfter'], out['reasonAfter'], out['approvalStateAfterPush'], out['pullMerged'], out['ledgerMerged'], out['revisedHead']),
+                         (True, 'blocked', 'pull_head_changed', 'DISMISSED', False, False, self.revised))
+        # Order: the hold, the approval seen, the push on the approved head, GitHub showing the new head, then one merge call.
+        push = events.index(('push', 'factory/a05-5', self.head))
+        self.assertEqual(events[0], 'merge')
+        self.assertLess(events.index('reviews', 2), push)
+        self.assertEqual(events[push + 1:push + 3], ['pull', 'merge'])
+        self.assertEqual(events.count('merge'), 2)
+
+    def test_merge_waits_until_github_shows_the_revised_head(self):
+        out, events = self.run_proof([[], [self.review(1, 'APPROVED')]], [dict(self.held), {'state': 'blocked', 'reason': 'pull_head_changed'}], lag=2)
+        push = [i for i, e in enumerate(events) if isinstance(e, tuple)][0]
+        self.assertEqual((out['demonstrated'], events[push + 1:push + 5]), (True, ['pull', 'pull', 'pull', 'merge']))
+
+    def test_an_approval_from_before_the_prompt_is_not_the_one_the_revision_follows(self):
+        script = [[self.review(1, 'APPROVED')], [self.review(1, 'APPROVED')], [self.review(1, 'APPROVED'), self.review(2, 'APPROVED')]]
+        out, _ = self.run_proof(script, [dict(self.held), {'state': 'blocked', 'reason': 'pull_head_changed'}])
+        self.assertEqual((out['demonstrated'], out['reviewId']), (True, 2))
+
+    def test_only_the_head_bound_block_before_any_allow_passes(self):
+        script = [[], [self.review(1, 'APPROVED')]]
+        for after in ({'state': 'blocked', 'reason': 'task_changed_since_publication'}, {'state': 'blocked', 'reason': 'pre_merge_recheck_failed:pull_head_changed'},
+                      {'state': 'blocked', 'reason': 'github_merge_head_changed'},
+                      {'state': 'blocked', 'reason': 'pull_head_changed', 'decisions': [{'action': 'merge', 'outcome': 'allow'}]}):
+            out, _ = self.run_proof([list(x) for x in script], [dict(self.held), after])
+            self.assertEqual((out['demonstrated'], out['why']), (False, 'merge_outcome_not_a_refusal'), after)
+        out, _ = self.run_proof([list(x) for x in script], [dict(self.held), {'state': 'blocked', 'reason': 'pull_head_changed', 'decisions': [{'action': 'merge', 'outcome': 'block'}]}])
+        self.assertTrue(out['demonstrated'])
+
+    def test_an_unreadable_merged_or_closed_pull_request_is_never_revised(self):
+        script = [[], [self.review(1, 'APPROVED')]]
+        for before in (live.GitHubError(502, '/pulls/421', 'bad gateway'), {'state': 'open', 'merged': True, 'head': {'sha': self.head, 'ref': 'factory/a05-5'}},
+                       {'state': 'closed', 'merged': False, 'head': {'sha': self.head, 'ref': 'factory/a05-5'}}):
+            out, events = self.run_proof([list(x) for x in script], [dict(self.held)], pull_before_push=before)
+            self.assertEqual((out['demonstrated'], out['why'], any(isinstance(e, tuple) for e in events)), (False, 'pull_request_moved_before_revision', False), before)
+        out, _ = self.run_proof([list(x) for x in script], [dict(self.held), {'state': 'blocked', 'reason': 'pull_head_changed'}], reviews_fail_after_merge=True)
+        self.assertEqual((out['demonstrated'], out['why']), (False, 'pull_request_unreadable'))
+
+    def test_a_hold_after_the_move_is_not_the_head_bound_refusal(self):
+        # The record is bound to its head before any approval is read; a hold would mean the move went unseen.
+        out, _ = self.run_proof([[], [self.review(1, 'APPROVED')]], [dict(self.held), {'state': 'held', 'reason': 'approval_required'}])
+        self.assertEqual((out['demonstrated'], out['why']), (False, 'merge_outcome_not_a_refusal'))
+
+    def test_a_refusal_with_a_merge_on_github_or_in_the_ledger_is_not_demonstrated(self):
+        blocked = {'state': 'blocked', 'reason': 'pull_head_changed'}
+        script = [[], [self.review(1, 'APPROVED')]]
+        out, _ = self.run_proof([list(x) for x in script], [dict(self.held), blocked], merged_on_github=True)
+        self.assertEqual((out['demonstrated'], out['why'], out['pullMerged']), (False, 'merged_on_a_superseded_approval', True))
+        out, _ = self.run_proof([list(x) for x in script], [dict(self.held), blocked], ledger_after_push=[{'pullNumber': 421, 'state': 'merged'}])
+        self.assertEqual((out['demonstrated'], out['why'], out['ledgerMerged']), (False, 'merged_on_a_superseded_approval', True))
+        out, _ = self.run_proof([list(x) for x in script], [dict(self.held), blocked], pull_fails_after_merge=True)
+        self.assertEqual((out['demonstrated'], out['why'], out['pullMerged']), (False, 'pull_request_unreadable', None))
+
+    def test_a_moved_pull_request_or_a_failed_push_calls_no_merge(self):
+        script = [[], [self.review(1, 'APPROVED')]]
+        out, events = self.run_proof([list(x) for x in script], [dict(self.held)], moved_early=True)
+        self.assertEqual((out['demonstrated'], out['why'], events.count('merge'), any(isinstance(e, tuple) for e in events)), (False, 'pull_request_moved_before_revision', 1, False))
+        out, events = self.run_proof([list(x) for x in script], [dict(self.held)], push_error=live.GitHubError(422, '/git/refs', 'not a fast forward'))
+        self.assertEqual((out['demonstrated'], out['why'], events.count('merge')), (False, 'revision_push_failed', 1))
+        self.assertIn('not a fast forward', out['error'])
+
+    def test_the_owner_is_prompted_only_once_the_trial_is_held(self):
+        observing = {'state': 'observing', 'reason': 'required_ci_missing_failed_or_pending', 'timedOut': True}
+        out, events = self.run_proof([[], [self.review(1, 'APPROVED')]], [observing, dict(observing), dict(self.held), {'state': 'blocked', 'reason': 'pull_head_changed'}])
+        self.assertEqual((out['demonstrated'], events[:3]), (True, ['merge', 'merge', 'merge']))
+
+    def test_a_merge_or_another_outcome_is_not_demonstrated(self):
+        script = [[], [self.review(1, 'APPROVED')]]
+        out, _ = self.run_proof([list(x) for x in script], [dict(self.held), {'state': 'merged', 'mergeCommit': 'm' * 40}], merged_on_github=True)
+        self.assertEqual((out['demonstrated'], out['why'], out['pullMerged']), (False, 'merged_on_a_superseded_approval', True))
+        for after in ({'state': 'observing', 'reason': 'required_ci_missing_failed_or_pending'}, {'state': 'held', 'reason': 'approval_already_used'}, {'state': 'error', 'reason': 'exit 1'}):
+            out, _ = self.run_proof([list(x) for x in script], [dict(self.held), after])
+            self.assertEqual((out['demonstrated'], out['why']), (False, 'merge_outcome_not_a_refusal'), after)
+
+    def test_an_approved_revision_or_an_unmoved_head_is_inconclusive(self):
+        script = [[], [self.review(1, 'APPROVED')], [self.review(1, 'DISMISSED'), self.review(2, 'APPROVED', head='r' * 40)]]
+        out, _ = self.run_proof(script, [dict(self.held), {'state': 'blocked', 'reason': 'pull_head_changed'}])
+        self.assertEqual((out['demonstrated'], out['why'], out['revisedHeadApprovals']), (False, 'revised_head_approved', [2]))
+        out, events = self.run_proof([[], [self.review(1, 'APPROVED')]], [dict(self.held)], head_moves=False)
+        self.assertEqual((out['demonstrated'], out['why'], events.count('merge')), (False, 'revised_head_not_seen', 1))
+
+    def test_it_needs_the_current_activation_a_hold_and_an_unmerged_pull_request(self):
+        out, events = self.run_proof([[]], [], base_branch='q/abc/A06/1')
+        self.assertEqual((out['demonstrated'], out['why'], events), (False, 'trial_activation_superseded', []))
+        out, events = self.run_proof([[]], [], ledger_merges=[{'pullNumber': 421, 'state': 'merged'}])
+        self.assertEqual((out['demonstrated'], out['why'], events), (False, 'already_merged', []))
+        out, events = self.run_proof([[]], [{'state': 'observing', 'reason': 'branch_protection_not_verified', 'parked': True}])
+        self.assertEqual((out['demonstrated'], out['why'], events), (False, 'trial_not_held_for_approval', ['merge']))
+        out, events = self.run_proof([[]], [{'state': 'observing', 'reason': 'required_ci_missing_failed_or_pending', 'timedOut': True}])
+        self.assertEqual((out['demonstrated'], out['why'], 'reviews' in events), (False, 'trial_not_held_for_approval', False))
+        out, events = self.run_proof([[]], [dict(self.held)])
+        self.assertEqual((out['demonstrated'], out['why']), (False, 'owner_approval_not_seen'))
+        self.assertNotIn('push', [e[0] if isinstance(e, tuple) else e for e in events])
 
 
 class ScoreTest(unittest.TestCase):
