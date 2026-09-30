@@ -114,7 +114,8 @@ printf 'synthetic-app-canary\n' > "$SFAC_STATE_DIR/secrets/app_private_key"
 printf 'synthetic-model-canary\n' > "$SFAC_STATE_DIR/secrets/model_key"
 printf 'synthetic-publisher-canary\n' > "$SFAC_STATE_DIR/secrets/publisher_private_key"
 printf 'synthetic-merger-canary\n' > "$SFAC_STATE_DIR/secrets/merger_private_key"
-printf '{}\n' > "$SFAC_STATE_DIR/merge-policy.json"
+mkdir -p "$SFAC_STATE_DIR/merge-policy"
+printf '{}\n' > "$SFAC_STATE_DIR/merge-policy/merge-policy.json"
 export FACTORY_STATE_DIR="$SFAC_STATE_DIR"
 export FACTORY_OPERATOR_IMAGE="$project-operator:development"
 export FACTORY_LOCAL_IMAGE="$project-local:development"
@@ -122,6 +123,18 @@ export FACTORY_WORKER_IMAGE="$project-worker:development"
 for role in operator probe database-operator demo-operator github-operator supervisor demo-supervisor live-supervisor autonomy-operator demo-autonomy-supervisor live-autonomy-supervisor live-automerge-supervisor; do
   docker compose --project-directory "$root/runtime" --env-file "$SFAC_STATE_DIR/.env" -p "$project" -f "$root/runtime/compose.yaml" -f "$root/runtime/compose.operator.yaml" -f "$root/runtime/compose.operator-review.yaml" run --rm --no-deps -T --entrypoint node "$role" /app/runtime/operator/assert-boundary.mjs "$role"
 done
+# The long-running runtime mounts the policy directory: an edit that replaces the file (rename over
+# it, as an editor's atomic save does) reaches the running container. A file mount would keep the old inode.
+review_runtime=$(docker compose --project-directory "$root/runtime" --env-file "$SFAC_STATE_DIR/.env" -p "$project" -f "$root/runtime/compose.yaml" -f "$root/runtime/compose.operator.yaml" -f "$root/runtime/compose.review.yaml" run -d --no-deps --entrypoint node runtime -e 'setTimeout(() => {}, 120000)')
+printf '{"replaced":true}\n' > "$SFAC_STATE_DIR/merge-policy/merge-policy.json.next"
+mv "$SFAC_STATE_DIR/merge-policy/merge-policy.json.next" "$SFAC_STATE_DIR/merge-policy/merge-policy.json"
+docker exec "$review_runtime" node -e 'if (!require("fs").readFileSync("/run/config/merge-policy.json", "utf8").includes("replaced")) process.exit(1)'
+docker rm -f "$review_runtime" >/dev/null
+# A policy in the state root is the retired layout: refused, never silently ignored.
+printf '{}\n' > "$SFAC_STATE_DIR/merge-policy.json"
+if ./sfac ps 2> "$SFAC_STATE_DIR/artifacts/policy-refusal.txt"; then echo 'A merge policy in the state root was accepted' >&2; exit 1; fi
+grep -q 'the review services mount the merge-policy/ directory' "$SFAC_STATE_DIR/artifacts/policy-refusal.txt"
+rm "$SFAC_STATE_DIR/merge-policy.json"
 ./sfac down --volumes
 ./sfac clean-images
 for component in operator local worker; do

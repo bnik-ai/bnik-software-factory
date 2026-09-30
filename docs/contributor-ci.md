@@ -7,7 +7,9 @@ check as a required native repository protection when provisioning the public re
 There are no path filters that silently omit a required check.
 
 Five services run locked installs, tests, Biome lint and TypeScript checks. Script
-contracts and generated diagrams are checked too. Docker integration starts disposable
+contracts and generated diagrams are checked too, and so are the native CLIs' and the live
+qualification driver's host-side contracts (`runtime/cli-test.py`,
+`runtime/evals/live-test.py`; no Docker, network or model). Docker integration starts disposable
 PostgreSQL and exercises durability, recovery and isolated worker contracts with a
 synthetic model provider. It does not call a paid model. Installs use
 `npm ci --ignore-scripts --no-audit --no-fund`; npm lifecycle scripts are not trusted.

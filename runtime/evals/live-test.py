@@ -2,6 +2,7 @@
 """Unit checks of the live driver's judgement and construction helpers; no network, no Docker, no model."""
 import base64
 import contextlib
+import importlib.util
 import io
 import json
 import os
@@ -114,6 +115,18 @@ def valid_policy(revision=1, base_branch='main', **execution):
     return policy
 
 
+class MergePolicyFileTest(unittest.TestCase):
+    def test_the_policy_is_replaced_atomically_in_its_own_private_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            live.write_merge_policy(tmp, '{"a": 1}\n')
+            target = live.merge_policy_path(tmp)
+            inode = target.stat().st_ino
+            live.write_merge_policy(tmp, '{"a": 2}\n')
+            self.assertEqual((target.read_text(), sorted(p.name for p in target.parent.iterdir())), ('{"a": 2}\n', ['merge-policy.json']))
+            self.assertNotEqual(target.stat().st_ino, inode)
+            self.assertEqual((target.stat().st_mode & 0o777, target.parent.stat().st_mode & 0o777), (0o600, 0o700))
+
+
 class ActivationPlanTest(unittest.TestCase):
     def test_plan_is_the_runtime_comparators_answer(self):
         active = valid_policy(1, maxTurns=10)
@@ -137,7 +150,7 @@ class ActivateTest(unittest.TestCase):
         state = Path(self.tmp.name)
         self.active = valid_policy(3, maxTurns=10)
         (state / 'live.json').write_text(json.dumps({'repository': 'example/repo', 'repositoryId': 1, 'ownerId': 55, 'apps': {'intake': {'installationId': 2}}}))
-        (state / 'merge-policy.json').write_text(json.dumps({'baseBranch': 'main'}))
+        live.write_merge_policy(state, json.dumps({'baseBranch': 'main'}))
         (state / 'autonomy-policy.json').write_text(json.dumps(self.active, indent=2) + '\n')
         self.original_containers = live.Live.labelled_containers
         live.Live.labelled_containers = lambda self: []
@@ -167,7 +180,7 @@ class ActivateTest(unittest.TestCase):
 
     def files(self):
         state = Path(self.tmp.name)
-        return json.loads((state / 'autonomy-policy.json').read_text()), json.loads((state / 'merge-policy.json').read_text())
+        return json.loads((state / 'autonomy-policy.json').read_text()), json.loads(live.merge_policy_path(state).read_text())
 
     def test_accepted_activation_acknowledges_the_plan_and_advances_the_files(self):
         out = self.driver.activate(self.bundle, 'q/t', 'claude-sonnet-5')
@@ -212,7 +225,7 @@ class ActivateTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'activate exited 1'), contextlib.redirect_stderr(io.StringIO()):
             self.driver.activate(self.bundle, 'main', 'claude-sonnet-5')
         self.assertFalse((state / 'autonomy-policy.json').exists())
-        self.assertEqual(json.loads((state / 'merge-policy.json').read_text())['baseBranch'], 'main')
+        self.assertEqual(json.loads(live.merge_policy_path(state).read_text())['baseBranch'], 'main')
 
     def test_a_policy_file_that_drifted_from_the_ledger_stops_before_activating(self):
         self.ledger = 'f' * 64
@@ -540,6 +553,8 @@ class ConstructionTest(unittest.TestCase):
     def test_trial_cost_sums_attempts_and_reviews(self):
         self.assertEqual(live.trial_cost({'runCosts': [0.1, None, 0.25], 'reviewUsage': [{'input_tokens': 100, 'output_tokens': 10}, None]}), (0.35, round(100 * 3e-6 + 10 * 15e-6, 6)))
 
+    # The live job's host has `cryptography` (require_signing); contributor CI does not install it.
+    @unittest.skipUnless(importlib.util.find_spec('cryptography'), 'cryptography is a live-job host prerequisite, not a CI one')
     def test_app_jwt_is_rs256_with_github_claims(self):
         from cryptography.hazmat.primitives import serialization
         from cryptography.hazmat.primitives.asymmetric import rsa

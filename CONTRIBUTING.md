@@ -33,6 +33,8 @@ for service in agents github-app orchestrator validator local-runtime; do
 done
 node --test scripts/*.test.mjs
 node scripts/gen-architecture-diagrams.mjs --check
+python3 runtime/cli-test.py
+python3 runtime/evals/live-test.py
 ```
 
 Installs download locked packages under their own terms and skip lifecycle scripts.

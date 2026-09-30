@@ -44,9 +44,17 @@ if [ "$command" = init ]; then
   exec docker run --rm --init --user "$(id -u):$(id -g)" --network none --read-only --tmpfs /tmp:size=128m --memory 512m --memory-swap 512m --pids-limit 128 --cpus 1 --log-driver none --cap-drop ALL --security-opt no-new-privileges --mount "type=bind,src=$state,dst=/state" -e FACTORY_STATE_DIR=/state "$FACTORY_OPERATOR_IMAGE" init "$@"
 fi
 [ -f "$state/.env" ] || { echo "Initialization is incomplete; finish ./sfac init first" >&2; exit 2; }
+# The review services mount merge-policy/ (a directory, so edits that replace the file reach the
+# running control plane); a policy in the state root is the retired layout and is refused.
+if [ -e "$state/merge-policy.json" ] || [ -L "$state/merge-policy.json" ]; then
+  echo "Move $state/merge-policy.json to $state/merge-policy/merge-policy.json: the review services mount the merge-policy/ directory." >&2; exit 2
+fi
+if [ -e "$state/merge-policy" ] && [ ! -f "$state/merge-policy/merge-policy.json" ]; then
+  echo "$state/merge-policy holds no regular file merge-policy.json; add it or remove the directory." >&2; exit 2
+fi
 compose() {
   if grep -qx 'FACTORY_MODE=live' "$state/.env"; then
-    if [ -f "$state/merge-policy.json" ]; then
+    if [ -f "$state/merge-policy/merge-policy.json" ]; then
       docker compose --project-directory "$root/runtime" --env-file "$state/.env" -p "$project" -f "$root/runtime/compose.yaml" -f "$root/runtime/compose.operator.yaml" -f "$root/runtime/compose.live.yaml" -f "$root/runtime/compose.review.yaml" -f "$root/runtime/compose.operator-review.yaml" "$@"
     else
       docker compose --project-directory "$root/runtime" --env-file "$state/.env" -p "$project" -f "$root/runtime/compose.yaml" -f "$root/runtime/compose.operator.yaml" -f "$root/runtime/compose.live.yaml" "$@"

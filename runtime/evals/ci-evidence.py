@@ -39,6 +39,9 @@ def main():
             suites.append(('unit ' + service, ['npm', 'test'], cwd))
     for path in sorted((ROOT / 'scripts').glob('*.test.mjs')):
         suites.append((f'scripts {path.name}', ['node', '--test', str(path)], ROOT))
+    # Host-side contracts of the native CLIs and the live driver (no Docker, no network, no model).
+    for script in ('runtime/cli-test.py', 'runtime/evals/live-test.py'):
+        suites.append((script, ['python3', script], ROOT))
     if args.with_containers:
         for script in ('runtime/test.py', 'runtime/worker/test.py', 'runtime/operator/restrictive-test.py'):
             suites.append((script, ['python3', script], ROOT))

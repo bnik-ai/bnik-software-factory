@@ -131,7 +131,7 @@ if bounded:
     print(
         "Bounded autonomy selected. Provide autonomy-policy.json and the acceptance/ bundle directory in the state directory, run ./sfac autonomy activate, then grant a scope."
         + (" Provide secrets/publisher_private_key for the publisher App." if a.mode == "live" else "")
-        + (" Provide secrets/merger_private_key for the merger App and add `merger` to merge-policy.json." if a.automerge else "")
+        + (" Provide secrets/merger_private_key for the merger App and add `merger` to merge-policy/merge-policy.json." if a.automerge else "")
     )
 if a.mode == "live":
     print(

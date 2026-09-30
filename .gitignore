@@ -35,7 +35,8 @@ Thumbs.db
 .idea/
 *.swp
 
-# Operator-owned human merge policy
+# Operator-owned human merge policy (the directory; the root file is the retired layout)
+/runtime/merge-policy/
 /runtime/merge-policy.json
 
 .factory/

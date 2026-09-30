@@ -4,6 +4,8 @@
 **/.env.*
 runtime/secrets
 runtime/backups
+runtime/merge-policy
+runtime/merge-policy.json
 **/__pycache__
 internal
 *.log

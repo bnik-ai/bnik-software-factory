@@ -1,7 +1,13 @@
 # Add after compose.live.yaml only when the restricted review App is configured.
+# The policy directory, not the file, is mounted: a file mount follows the inode, so an edit that
+# replaces the file would never reach this long-running service (docs/human-merge.md).
 services:
   runtime:
     environment:
       FACTORY_MERGE_POLICY_FILE: /run/config/merge-policy.json
     volumes:
-      - ${FACTORY_STATE_DIR:-.}/merge-policy.json:/run/config/merge-policy.json:ro
+      - type: bind
+        source: ${FACTORY_STATE_DIR:-.}/merge-policy
+        target: /run/config
+        read_only: true
+        bind: {create_host_path: false}

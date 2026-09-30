@@ -4,10 +4,13 @@ import os
 import sys
 from pathlib import Path
 
+from merge_policy import merge_policy_file
+
 command = sys.argv[1] if len(sys.argv) > 1 else ''
 source_root = Path(__file__).resolve().parent
 root = Path(os.environ.get('FACTORY_STATE_DIR', source_root)).resolve()
 settings = dict(line.split('=', 1) for line in (root / '.env').read_text().splitlines() if line and not line.startswith('#'))
+merge_policy = merge_policy_file(root)
 allowed = ['PATH', 'HOME', 'DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_CONFIG', 'DOCKER_TLS_VERIFY', 'DOCKER_CERT_PATH', 'FACTORY_OPERATOR_ACTOR']
 env = {key: os.environ[key] for key in allowed if key in os.environ}
 for key in [
@@ -42,8 +45,8 @@ env.update(
 )
 if settings.get('FACTORY_MODE') == 'live':
     env['GITHUB_APP_PRIVATE_KEY_FILE'] = str(root / 'secrets/app_private_key')
-    if (root / 'merge-policy.json').exists():
-        env['FACTORY_MERGE_POLICY_FILE'] = str(root / 'merge-policy.json')
+    if merge_policy:
+        env['FACTORY_MERGE_POLICY_FILE'] = str(merge_policy)
     if settings.get('FACTORY_EXECUTION') == 'bounded':
         env['ANTHROPIC_API_KEY_FILE'] = str(root / 'secrets/model_key')
         env['FACTORY_PUBLISHER_APP_PRIVATE_KEY_FILE'] = str(root / 'secrets/publisher_private_key')

@@ -36,8 +36,8 @@ export class HumanMergeGate extends LeasedConsumer {
   }
   /**
    * This look's configuration: the merge policy as its file holds it now, else as loaded. A file
-   * that cannot be read observed nothing (retryable: the next scan looks again); a renamed-over
-   * file is gone from the container's bind mount until the service is recreated; an invalid file
+   * that cannot be read observed nothing (retryable: the next scan looks again); a missing file
+   * (the review services mount its directory, runtime/compose.review.yaml) parks; an invalid file
    * parks with its validation reason.
    */
   private current(): RuntimeConfig {

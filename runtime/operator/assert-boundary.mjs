@@ -21,7 +21,10 @@ const actual = fs.existsSync('/state/secrets') ? fs.readdirSync('/state/secrets'
 assert.deepEqual(actual, expected, `${role}: only declared secrets are mounted`);
 for (const name of actual) assert.ok(fs.readFileSync(`/state/secrets/${name}`).length);
 assert.equal(fs.existsSync('/state/.env'), expected.length > 0);
-assert.equal(fs.existsSync('/state/merge-policy.json'), ['github-operator', 'live-supervisor', 'live-autonomy-supervisor', 'live-automerge-supervisor'].includes(role));
+// The review roles see the policy directory, which holds the policy alone; nobody sees the retired root file.
+const review = ['github-operator', 'live-supervisor', 'live-autonomy-supervisor', 'live-automerge-supervisor'].includes(role);
+assert.deepEqual(fs.existsSync('/state/merge-policy') ? fs.readdirSync('/state/merge-policy') : [], review ? ['merge-policy.json'] : []);
+assert.equal(fs.existsSync('/state/merge-policy.json'), false);
 assert.equal(fs.existsSync('/var/run/docker.sock'), role.includes('supervisor'));
 assert.equal(fs.existsSync('/artifacts/input/job.json'), !['probe', 'database-operator', 'demo-operator', 'supervisor', 'autonomy-operator'].includes(role));
 // Autonomy roles see the policy; only their supervisors see the protected bundle; none sees the runtime password.

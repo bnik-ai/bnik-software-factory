@@ -44,16 +44,18 @@ failures); it is never `PASS`.
 
 The job is a script the maintainer runs from the candidate root with the authorization record,
 a staging directory holding the App registrations, and a state directory outside the source
-tree. It needs Python 3, Docker, and the locked `services/local-runtime` dependencies installed
-on the host (`npm ci`): `rehearse`, `lane` and `proof` refuse to start without them, because
-the policy comparator runs there before any budget or repository write. It never reads a secret value; the installation's keys move into `STATE/secrets` at `init`
+tree. It needs Python 3 with the `cryptography` package (it signs the GitHub App tokens; every
+subcommand refuses to start without it), Docker, and the locked `services/local-runtime`
+dependencies installed on the host (`npm ci`): `rehearse`, `lane` and `proof` refuse to start
+without them, because the policy comparator runs there before any budget or repository write. It never reads a secret value; the installation's keys move into `STATE/secrets` at `init`
 and are read only by `./sfac`'s containers.
 
 - `ids` resolves App ids, slugs, installation ids and the repository id through each App's own
   key (App JWT, installation token), so nothing is typed by hand.
 - `init` runs `./sfac init --mode live --execution bounded --reviewer claude --publication base
   --secretless-ci-attested --automerge …` with those ids, moves the keys, writes
-  `merge-policy.json` (the automatic profile, the merger App), records the non-secret facts in
+  `merge-policy/merge-policy.json` (the automatic profile, the merger App; replaced atomically
+  at every activation), records the non-secret facts in
   `STATE/live.json`, applies the repository's merge settings (squash only, no auto-merge) and
   creates the status labels. The model key is placed by the owner afterwards.
 - `rehearse` runs one case's GitHub side end to end without a model call and revokes the scope:

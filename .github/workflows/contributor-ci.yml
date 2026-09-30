@@ -40,6 +40,10 @@ jobs:
           for service in agents github-app orchestrator validator local-runtime; do
             npm ci --prefix "services/$service" --ignore-scripts --no-audit --no-fund
           done
+      - name: Native CLI and live-driver contracts (no Docker, network or model)
+        run: |
+          python3 runtime/cli-test.py
+          python3 runtime/evals/live-test.py
       - name: Durable runtime integration and recovery
         run: python3 runtime/test.py
       - name: Isolated worker integration (synthetic provider only)

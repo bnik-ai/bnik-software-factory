@@ -65,6 +65,13 @@ TASK_BOUNDS = {'maxTurns': 20, 'timeoutMs': 300000}
 TSX = ROOT / 'services/local-runtime/node_modules/.bin/tsx'
 
 
+def require_signing():
+    """Every command authenticates as a GitHub App (RS256 JWT); the job's host needs the `cryptography` package."""
+    import importlib.util
+    if importlib.util.find_spec('cryptography') is None:
+        raise RuntimeError('the live job signs GitHub App tokens with the Python cryptography package; install it on the job host')
+
+
 def require_toolchain():
     """The comparator runs on the host: the locked services/local-runtime dependencies (npm ci) must be installed before any budget or repository write."""
     if not TSX.exists():
@@ -107,6 +114,21 @@ LIVE_RULES = {
     'A11': {'orchestration': 'revoke'},
     'A12': {'orchestration': 'approve-revise', 'action': 'publish', 'surface': ['.github/CODEOWNERS'], 'holdOnSurface': True},
 }
+
+
+def merge_policy_path(state):
+    """The installation's merge policy (runtime/merge_policy.py): a file in its own directory, which the review services mount."""
+    return Path(state) / 'merge-policy' / 'merge-policy.json'
+
+
+def write_merge_policy(state, text):
+    """Replaces the merge policy atomically: the running gate reads either the old or the new file, never a torn one."""
+    target = merge_policy_path(state)
+    target.parent.mkdir(mode=0o700, exist_ok=True)
+    staged = target.with_name(target.name + '.next')
+    staged.write_text(text)
+    staged.chmod(0o600)
+    os.replace(staged, target)
 
 
 def utc():
@@ -454,7 +476,7 @@ class Live:
         shutil.rmtree(target, ignore_errors=True)
         shutil.copytree(bundle_dir, target)
         policy_file = self.state / 'autonomy-policy.json'
-        merge_policy_file = self.state / 'merge-policy.json'
+        merge_policy_file = merge_policy_path(self.state)
         # What the files held before this activation: restored if the ledger refuses it.
         previous = (policy_file.read_text() if policy_file.exists() else None, merge_policy_file.read_text())
         template = json.loads((ROOT / 'examples/autonomy-demo/autonomy-policy.json').read_text())
@@ -489,7 +511,7 @@ class Live:
         policy_file.chmod(0o600)
         merge_policy = json.loads(previous[1])
         merge_policy['baseBranch'] = base_branch
-        merge_policy_file.write_text(json.dumps(merge_policy, indent=2) + '\n')
+        write_merge_policy(self.state, json.dumps(merge_policy, indent=2) + '\n')
         args = ['autonomy', 'activate'] + (['--acknowledge', ','.join(acknowledge)] if acknowledge else [])
         result = self.sfac(*args, check=False)
         if result.returncode != 0:
@@ -498,7 +520,7 @@ class Live:
                 policy_file.unlink(missing_ok=True)
             else:
                 policy_file.write_text(previous[0])
-            merge_policy_file.write_text(previous[1])
+            write_merge_policy(self.state, previous[1])
             sys.stderr.write(result.stdout[-6000:] + result.stderr[-3000:])
             raise RuntimeError(f'sfac autonomy activate exited {result.returncode}')
         activated = scripted.parse_json(result.stdout) or {}
@@ -1035,8 +1057,7 @@ def command_init(args):
     if webhook.exists():
         shutil.move(str(webhook), str(secrets_dir / 'webhook_secret'))
         (secrets_dir / 'webhook_secret').chmod(0o600)
-    (state / 'merge-policy.json').write_text(json.dumps({'version': 1, 'baseBranch': 'main', 'reviewers': [args.owner], 'mergers': [args.owner], 'requiredChecks': [{'name': REQUIRED_CHECK, 'appId': ACTIONS_APP_ID}], 'merger': {'appSlug': facts['merger']['slug'], 'appId': facts['merger']['appId']}}, indent=2) + '\n')
-    (state / 'merge-policy.json').chmod(0o600)
+    write_merge_policy(state, json.dumps({'version': 1, 'baseBranch': 'main', 'reviewers': [args.owner], 'mergers': [args.owner], 'requiredChecks': [{'name': REQUIRED_CHECK, 'appId': ACTIONS_APP_ID}], 'merger': {'appSlug': facts['merger']['slug'], 'appId': facts['merger']['appId']}}, indent=2) + '\n')
     (state / 'live.json').write_text(json.dumps({'repository': repository, 'repositoryId': repository_id, 'owner': args.owner, 'ownerId': args.owner_id, 'apps': facts, 'reviewerModel': args.reviewer_model, 'authorModel': args.author_model, 'webhookUrl': args.webhook_url, 'initializedAt': utc()}, indent=2) + '\n')
     print(json.dumps({'repository': repository, 'repositoryId': repository_id, 'apps': {r: {k: v for k, v in f.items() if k in ('appId', 'slug', 'installationId')} for r, f in facts.items()},
                       'next': f'place the model key at {secrets_dir}/model_key (mode 0600); run prepare, then ./sfac build && ./sfac up with SFAC_STATE_DIR={state}'}, indent=2))
@@ -1311,6 +1332,7 @@ def main():
     parser.add_argument('--await-minutes', type=int, default=30)
     parser.add_argument('--delete-repository', action='store_true')
     args = parser.parse_args()
+    require_signing()
     if args.command == 'ids':
         command_ids(args)
     elif args.command == 'init':

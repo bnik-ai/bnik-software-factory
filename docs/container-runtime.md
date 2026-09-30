@@ -82,7 +82,7 @@ Source snapshot transfers into the worker still use stdin, with no host bind mou
 | `python3 runtime/recovery.py ...` | `./sfac recovery ...` |
 | `python3 runtime/worker/demo-source.py DIR` | `./sfac demo-source DIR` |
 | `python3 examples/invoice/prepare-result.py ...` | `./sfac prepare-result ...` |
-| `runtime/.env`, `runtime/secrets/`, `runtime/merge-policy.json` | `.factory/.env`, `.factory/secrets/`, `.factory/merge-policy.json` |
+| `runtime/.env`, `runtime/secrets/`, `runtime/merge-policy/merge-policy.json` | `.factory/.env`, `.factory/secrets/`, `.factory/merge-policy/merge-policy.json` |
 | `python3 runtime/autonomy.py …` with `autonomy-policy.json` and `acceptance/` | `./sfac autonomy …` with `.factory/autonomy-policy.json` and `.factory/acceptance/` (see [autonomy operations](autonomy-operations.md)) |
 | `/tmp/example-input`, `/tmp/example-result` | Unique names under `/artifacts/` |
 
