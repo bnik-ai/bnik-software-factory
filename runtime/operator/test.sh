@@ -10,6 +10,9 @@ cleanup() {
   if [ -n "${review_runtime:-}" ]; then docker rm -f "$review_runtime" >/dev/null 2>&1 || true; fi
   rm -f "$SFAC_STATE_DIR/merge-policy.json"
   if [ -L "$SFAC_STATE_DIR/merge-policy" ]; then rm "$SFAC_STATE_DIR/merge-policy"; fi
+  # A symlinked or missing policy file (a failed refusal step) would make sfac refuse `down`.
+  if [ -L "$SFAC_STATE_DIR/merge-policy/merge-policy.json" ]; then rm "$SFAC_STATE_DIR/merge-policy/merge-policy.json"; fi
+  if [ -d "$SFAC_STATE_DIR/merge-policy" ] && [ ! -f "$SFAC_STATE_DIR/merge-policy/merge-policy.json" ]; then rm -rf "$SFAC_STATE_DIR/merge-policy"; fi
   if [ -f "$SFAC_STATE_DIR/.env" ]; then "$root/sfac" down --volumes; fi
   if [ -f "$SFAC_STATE_DIR/project" ]; then
     "$root/sfac" clean-images
