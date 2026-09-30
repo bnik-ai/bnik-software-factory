@@ -5,8 +5,8 @@ Task activation, isolated coding, explicit publication, human review and require
 CI, human merge and verified Task completion. [SUPPORT.md](../SUPPORT.md) defines
 its environment and limitations.
 
-Before the first release: finish licensing and public maintainer configuration,
-review dependency findings, complete independent setup/recovery exercises, verify
+Before the first release: provision the release repository's reporting route and
+branch protection, review dependency findings, complete independent setup/recovery exercises, verify
 the exact source artifact and obtain the owner's publication decision.
 
 In progress before the first release: automate routine execution, publication and

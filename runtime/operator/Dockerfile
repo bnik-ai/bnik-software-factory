@@ -14,7 +14,7 @@ RUN for service in github-app validator orchestrator agents local-runtime; do \
 COPY services /app/services
 COPY runtime /app/runtime
 COPY examples /app/examples
-COPY LICENSE THIRD_PARTY.md PROVENANCE.md /app/
+COPY LICENSE NOTICE THIRD_PARTY.md PROVENANCE.md /app/
 # Normalize image-owned source modes even when the host checkout uses umask 077.
 # Host files and separately mounted secrets are not changed.
 RUN chmod -R a+rX /app

@@ -1,8 +1,9 @@
 # Contributing
 
-The project is preparing its first alpha. External contributions are not open until
-the public maintainer and repository are finalized. See [support](SUPPORT.md).
-The process below is the intended contribution workflow once that happens.
+The project is preparing its first alpha, maintained by
+[@bnikanjam](https://github.com/bnikanjam). External contributions open with the public
+release repository. See [support](SUPPORT.md). The process below is the contribution
+workflow from then on.
 
 ## Propose and implement a change
 

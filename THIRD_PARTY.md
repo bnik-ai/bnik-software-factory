@@ -35,7 +35,7 @@ the source distribution. The project's own copyright notice is in [NOTICE](NOTIC
 
 | Artifact | Contents and notice handling |
 | --- | --- |
-| Project source archive | Project source/docs, lockfiles, LICENSE and provenance; preserve any source notices. No installed third-party implementation is vendored. |
+| Project source archive | Project source/docs, lockfiles, LICENSE, NOTICE and provenance; preserve any source notices. No installed third-party implementation is vendored. |
 | Locally installed npm packages | Each installed package retains its own license/notice. The lockfile is an inventory reference, not a replacement for license text. |
 | Locally built worker/operator/control-plane image | Includes dependencies, OS tools and possibly the vendor SDK; not an approved distribution artifact. Inventory and satisfy exact artifact obligations before redistribution. |
 | Provider/GitHub services | Account contracts, acceptable-use, billing and data-processing rules apply separately from source licensing. |
