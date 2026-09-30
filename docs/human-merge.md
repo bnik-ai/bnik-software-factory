@@ -132,10 +132,12 @@ fork PRs; a pull request that opt-in bounded autonomy publishes from its configu
 scan. Register and observe the open PR before merging it.
 
 A webhook delivery that can change what the gate observes about a tracked, unreconciled
-pull request queues its look at once, parked or not: a pull-request event, a review by a
-configured reviewer or a dismissal, an edit, label or state change of its Task, a completed
-check or a settled status on its head. Comments and other people's reviews carry no gate
-evidence and queue nothing. The control plane also scans tracked
+pull request queues its look at once, parked or not: a pull-request event; a review by a
+configured reviewer (or, under the automatic profile, the merger App), a dismissal, a change
+request by anyone (any user's latest change request parks it), or any review while it is parked
+on a change request; an edit, label, lock or state change of its Task; a completed check run or
+suite on its head (the gate reads check runs, not commit statuses). Comments, statuses and other
+reviews queue nothing. The reviewer list is read from the current policy file. The control plane also scans tracked
 PRs once a minute, including after a restart, as the fallback for missed deliveries:
 a scan queues one look per never-evaluated or `awaiting_human_merge` pull request, and
 looks at a parked one again after 15 minutes, so a repository with many permanently
