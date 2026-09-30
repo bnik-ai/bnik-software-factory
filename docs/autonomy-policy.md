@@ -3,8 +3,9 @@
 **Status: contract and decision library, consumed by the bounded-autonomy
 controller described in [autonomy operations](autonomy-operations.md).** Neither is
 the default: an installation enables them explicitly (`FACTORY_EXECUTION=bounded` or,
-in demo mode, `FACTORY_AUTONOMY=bounded`), and no live pull request has been published
-under them yet. The supported workflow remains human-gated: explicit activation,
+in demo mode, `FACTORY_AUTONOMY=bounded`); the live qualification in
+[`evals/qualification/`](../evals/qualification/) exercised them on a real repository. The
+default workflow remains human-gated: explicit activation,
 operator publication, native human review and human merge. Automatic merge exists as a
 further opt-in (`FACTORY_AUTOMERGE=enabled`, see [operations](autonomy-operations.md#merging))
 and its live qualification is recorded in [`evals/qualification/`](../evals/qualification/) (see [live qualification](live-qualification.md)).

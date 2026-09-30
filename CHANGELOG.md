@@ -73,9 +73,9 @@ proposal is project source/build instructions, with dependencies obtained separa
 
 ### Limits and release prerequisites
 
-The runtime does not publish PRs or automatically execute AI reviews. Revisions
-run from a pinned default-branch snapshot. Single repository only; no autonomous
-merge/deploy or hosted service. Planning/Azure/operations paths are experimental.
+In the default profile the runtime does not publish PRs, run AI reviews or merge;
+opt-in bounded autonomy adds those within its policy. Revisions run from a pinned
+default-branch snapshot. Single repository only; no autonomous deploy or hosted service. Planning/Azure/operations paths are experimental.
 Model access depends on the operator's account and exact SDK/model compatibility;
 there is no model substitution. Cost estimates are not bills or hard spending caps.
 
