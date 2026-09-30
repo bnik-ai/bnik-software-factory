@@ -104,7 +104,7 @@ the effective limit; they cannot raise the operator cap.
 
 | Setting | Default | Allowed range / behavior |
 | --- | --- | --- |
-| `FACTORY_MAX_TASK_RUNS` | 4 | 1–20 total `run-activation` attempts per Task identity, including its first run; default allows at most three further attempts. Bounded-autonomy attempts are not counted here; the scope's `--max-runs` and the policy's `execution.maxTaskRuns` cap them. |
+| `FACTORY_MAX_TASK_RUNS` | 4 | 1–20 total `run-activation` attempts per Task identity, including its first run; default allows at most three further attempts. Bounded-autonomy attempts are not counted here, and the scope's `--max-runs` and the policy's `execution.maxTaskRuns` cap them; a Task whose manual attempts reached this cap is refused in bounded mode too (`task_run_limit_reached`). |
 | `FACTORY_MAX_RUN_TURNS` | 60 | 1–60; also capped by the approved Task's `maxTurns`. |
 | `FACTORY_MAX_RUN_MS` | 1800000 | 1000–1800000 ms execution deadline; also capped by approved `timeoutMs`. |
 | `FACTORY_MAX_RUN_BUDGET_USD` | 5 | 0.001–100 USD SDK estimate threshold; optional approved `maxBudgetUsd` may lower it. |

@@ -5,7 +5,7 @@
      Regenerate: node scripts/gen-architecture-diagrams.mjs > docs/architecture-diagrams.md
      Check drift with the generator --check option. -->
 
-> **Snapshot:** sources as of `content-derived` · sha256 `51c7318`
+> **Snapshot:** sources as of `content-derived` · sha256 `9666146`
 >
 > Deterministically generated ASCII rendering of the architecture; the enumerable facts (agents, FSMs, queues, container apps, record kinds) are derived from their source-of-truth files and the layout is held in the generator's static model. Successive snapshots `diff` cleanly. Source of truth:
 > - [`architecture.md`](architecture.md) — source responsibilities and record tables
@@ -32,10 +32,9 @@ GitHub webhook -> intake -> validator + audit -> verdict gate -> role dispatcher
 ```
 
 The role inventory includes experimental planning and operations handlers.
-It does not imply all roles are deployed or supported. The supported workflow
-uses the Build role with native human review, required CI and human merge; the
-Review role is the experimental AI ReviewAgent, which the local runtime does not
-invoke.
+It does not imply all roles are deployed or supported: the supported workflow
+dispatches none of them. Its isolated worker runs each coding job directly
+(`runCodingAgent`), followed by native human review, required CI and human merge.
 
 ## Experimental Azure roles
 

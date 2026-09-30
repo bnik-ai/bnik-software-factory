@@ -9,7 +9,7 @@ Do not mix its `runtime/` state with the launcher's `.factory/` state.
 This candidate supports one explicitly configured GitHub.com repository. Start with
 a disposable repository containing synthetic data. Live intake records events and
 human activation receipts; it never automatically invokes a model. In the default human-gated mode, PR publication is an explicit operator step in the
-[end-to-end walkthrough](end-to-end-pilot.md); the opt-in [bounded-autonomy controller](autonomy-operations.md), live-qualified as recorded in [`evals/qualification/`](../evals/qualification/), publishes under an activated policy instead. The optional [human merge profile](human-merge.md)
+[end-to-end walkthrough](end-to-end-pilot.md); the opt-in [bounded-autonomy controller](autonomy-operations.md), live-qualified on commit `039c43a` ([record](../evals/qualification/039c43a.json); later commits are not themselves qualified), publishes under an activated policy instead. The optional [human merge profile](human-merge.md)
 adds protected review, CI verification and Task reconciliation for explicitly paired PRs.
 
 ## Register a dedicated App
@@ -40,7 +40,7 @@ merge requires, replaces them with its own exact set.
 
 Subscribe to **Issues, Issue comment, Pull request, Pull request review, Check run,
 Check suite, Status**. Installation lifecycle and ping deliveries are liveness
-records only. Write grants and extra permission categories are rejected by this
+records only. Write grants and extra permission categories are rejected by the intake
 profile. Use a dedicated App instead of expanding an existing broadly privileged
 installation. Use a separate, narrowly scoped publisher for the explicit publication step described
 in the end-to-end walkthrough.
@@ -77,8 +77,9 @@ and neither is a bypass allowance in branch protection: the merger App is a rest
 pusher, nothing more. Their private keys live at `secrets/publisher_private_key` and
 `secrets/merger_private_key`; the merger key is mounted only into the container that runs
 the merge commands. Both Apps stay unused, and their keys need not exist, until the
-corresponding opt-in is configured. This path is live-qualified as recorded in
-[`evals/qualification/`](../evals/qualification/); see [live qualification](live-qualification.md).
+corresponding opt-in is configured. This path passed live qualification on commit `039c43a`
+([record](../evals/qualification/039c43a.json)). Later commits are not themselves qualified; see
+[live qualification](live-qualification.md).
 
 ## Configure and verify intake
 

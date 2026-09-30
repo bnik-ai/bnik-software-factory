@@ -9,7 +9,7 @@ This private development candidate runs authenticated intake, validation, audit 
 routing with durable PostgreSQL queues. The packaged demo uses synthetic GitHub
 reads and a receipt-only worker. Live mode verifies GitHub installation and human Task activation, storing durable
 authorization receipts. The separate [isolated executor](isolated-worker.md) accepts
-explicit requests bound to those receipts. The [end-to-end walkthrough](end-to-end-pilot.md) connects activation, explicit execution, operator publication and human merge. Publication is manual in the default mode (the opt-in [bounded-autonomy controller](autonomy-operations.md), live-qualified as recorded in [`evals/qualification/`](../evals/qualification/), is the exception); the demo is not that live workflow.
+explicit requests bound to those receipts. The [end-to-end walkthrough](end-to-end-pilot.md) connects activation, explicit execution, operator publication and human merge. Publication is manual in the default mode (the opt-in [bounded-autonomy controller](autonomy-operations.md), live-qualified on commit `039c43a` ([record](../evals/qualification/039c43a.json); later commits are not themselves qualified), is the exception); the demo is not that live workflow.
 
 For explicitly paired PRs, the optional [human merge profile](human-merge.md) checks
 native protection, human review and required CI, then reconciles verified human merges

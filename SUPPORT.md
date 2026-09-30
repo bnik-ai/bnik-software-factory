@@ -50,8 +50,9 @@ the local runtime does not publish worker output or automatically invoke the
 experimental AI ReviewAgent, and AI output never satisfies a required human approval.
 The opt-in bounded-autonomy controller (`FACTORY_EXECUTION=bounded`, see
 [operating bounded autonomy](docs/autonomy-operations.md)) publishes pull requests for
-routine changes under an activated policy; it passes synthetic contracts, its live
-qualification is recorded in `evals/qualification/`, and it stays outside the supported workflow. Source snapshots come from the
+routine changes under an activated policy; it passes synthetic contracts, it passed live
+qualification on commit `039c43a` (`evals/qualification/039c43a.json`; later commits are not
+themselves qualified), and it stays outside the supported workflow. Source snapshots come from the
 pinned default branch; revision prompts must describe the complete intended result.
 
 ## Experimental and unsupported

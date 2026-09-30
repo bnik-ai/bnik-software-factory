@@ -131,7 +131,9 @@ python3 runtime/worker.py review-status
 Pairing stores immutable repository, installation, PR, and Task identities plus
 the Task title/body hash. Changing the Task or its backlink parks reconciliation;
 the CLI cannot silently replace a registered pair. Head commits may advance, but
-each advance needs fresh checks and human review. The human flow's `track-pr` refuses
+each advance needs fresh checks and a fresh approval of the new head: a listed human
+reviewer's or, for the merger App's own merge under the automatic-merge profile, the merger
+App's. The human flow's `track-pr` refuses
 fork PRs; a pull request that opt-in bounded autonomy publishes from its configured fork
 (`--publication fork`) is accepted by the autonomy commands and by the control plane's
 scan. Register and observe the open PR before merging it.

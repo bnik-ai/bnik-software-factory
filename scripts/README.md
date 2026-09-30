@@ -10,5 +10,5 @@ check with `node scripts/gen-architecture-diagrams.mjs --check`.
 
 `doc-pr-sync.mjs` compares Mermaid blocks in `PR_BODY` against tracked Markdown.
 A block preceded by `<!-- sf:diagram-local -->` is intentionally local to a PR.
-These scripts do not create pull requests or send Slack notifications; the generator's
-`--slack-notify` option is not wired into any workflow.
+These scripts do not create pull requests. The generator's `--slack-notify` option posts to
+`SLACK_WEBHOOK_URL` only when someone runs it by hand; no workflow runs it.
