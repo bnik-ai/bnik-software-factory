@@ -1168,7 +1168,7 @@ def ledger_merge(live, pull_number):
     return next((m for m in live.status().get('merges') or [] if m.get('pullNumber') == pull_number and m.get('state') == 'merged'), None)
 
 
-def critical_evidence(trial, merged, reviews, merged_commit, task, owner_id, driver_commit):
+def critical_evidence(trial, merged, reviews, merged_commit, task, owner_id, driver_commit, decisions=None):
     """The critical live proof from records: the owner's APPROVED review of the exact merged head, the merge commit's shape, the Task's end."""
     head = merged.get('head')
     approving = [r for r in reviews if r.get('state') == 'APPROVED' and (r.get('user') or {}).get('id') == owner_id and r.get('commit_id') == head]
@@ -1179,6 +1179,8 @@ def critical_evidence(trial, merged, reviews, merged_commit, task, owner_id, dri
         'approvingReviewIds': [r['id'] for r in approving], 'humanInterventions': len(approving), 'mergeCommit': merged.get('mergeCommit'),
         'mergeCommitParents': [p['sha'] for p in (merged_commit or {}).get('parents', [])], 'mergeCommitTree': ((merged_commit or {}).get('tree') or {}).get('sha'),
         'taskLabels': [l['name'] for l in task.get('labels', [])], 'taskState': task.get('state'),
+        # The merge command's own decisions for the call that merged, when this proof made that call.
+        'mergeDecisions': decisions,
         'demonstrated': bool(approving) and task.get('state') == 'closed' and (trial.get('observed') or {}).get('mergeReason') == 'merge_approval_required',
         'at': utc(),
     }
@@ -1198,17 +1200,22 @@ def proof_critical(live, driver, report, number, await_minutes):
         if live.base_branch != trial['branch']:
             return {**base, 'demonstrated': False, 'stateAfter': None, 'reasonAfter': 'trial_activation_superseded',
                     'why': "the merge is admitted under the trial's scope and policy revision; run the case as the last activation and approve within the scope's life", 'at': utc()}
+        # Held, admitted (a recheck pending) and observing (CI or the gate pending) are all still on the way.
         outcome = merge_until_settled(live, number, deadline_seconds=60, poll_seconds=10)
         deadline = time.time() + await_minutes * 60
-        while outcome.get('state') == 'held' and time.time() < deadline:
+        while outcome.get('state') in ('held', 'admitted', 'observing') and time.time() < deadline:
             time.sleep(60)
             outcome = merge_until_settled(live, number, deadline_seconds=60, poll_seconds=10)
+        pull_number = pull_number or outcome.get('pullNumber')
         merged = ledger_merge(live, pull_number) if outcome.get('state') == 'merged' else None
         if merged is None:
-            return {**base, 'demonstrated': False, 'stateAfter': outcome.get('state'), 'reasonAfter': outcome.get('reason'), 'at': utc()}
+            return {**base, 'pullNumber': pull_number, 'demonstrated': False, 'stateAfter': outcome.get('state'), 'reasonAfter': outcome.get('reason'), 'at': utc()}
+        decisions = outcome.get('decisions') or []
+    else:
+        decisions = None
     wait_for_task_done(driver, number)
     return critical_evidence(trial, merged, driver.reviews(pull_number), driver.git_commit(merged['mergeCommit']) if merged.get('mergeCommit') else None,
-                             driver.issue(number), live.facts['ownerId'], driver_commit)
+                             driver.issue(number), live.facts['ownerId'], driver_commit, decisions)
 
 
 def command_proof(args):

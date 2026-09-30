@@ -249,6 +249,54 @@ class CriticalProofTest(unittest.TestCase):
         out = live.proof_critical(Live(), None, report, 412, 1)
         self.assertEqual((out['demonstrated'], out['reasonAfter'], out['pullNumber']), (False, 'trial_activation_superseded', 413))
 
+    def test_the_awaiting_path_polls_through_admitted_and_observing_and_never_activates(self):
+        test = self
+        answers = [{'state': 'held', 'reason': 'merge_approval_required'}, {'state': 'admitted', 'reason': 'recheck_pending', 'timedOut': True},
+                   {'state': 'observing', 'reason': 'required_ci_missing_failed_or_pending', 'timedOut': True},
+                   {'state': 'merged', 'pullNumber': 413, 'head': 'h' * 40, 'mergeCommit': 'm' * 40, 'decisions': [{'action': 'merge', 'outcome': 'allow'}]}]
+        ledger = {'merges': []}
+
+        class Live:
+            base_branch = 'q/abc/A05/4'
+            facts = {'ownerId': 55}
+            def status(self):
+                return ledger
+
+        class Driver:
+            def reviews(self, pull):
+                return [{'id': 9, 'state': 'APPROVED', 'user': {'id': 55}, 'commit_id': 'h' * 40}]
+            def git_commit(self, sha):
+                return test.commit
+            def issue(self, number):
+                return {'state': 'closed', 'labels': [{'name': 'status:done'}]}
+
+        def fake_merge_until_settled(live_, number, **kw):
+            out = answers.pop(0)
+            if out['state'] == 'merged':
+                ledger['merges'].append(test.merged)
+            return out
+        originals = (live.merge_until_settled, live.wait_for_task_done, live.time)
+        live.merge_until_settled, live.wait_for_task_done, live.time = fake_merge_until_settled, lambda d, n, **kw: {'done': True}, Clock(step=1.0)
+        try:
+            out = live.proof_critical(Live(), Driver(), {'trials': [self.trial]}, 412, 30)
+        finally:
+            live.merge_until_settled, live.wait_for_task_done, live.time = originals
+        self.assertEqual((out['demonstrated'], out['humanInterventions'], out['mergeDecisions'], answers), (True, 1, [{'action': 'merge', 'outcome': 'allow'}], []))
+
+    def test_the_awaiting_path_records_an_expired_scope_as_the_outcome(self):
+        class Live:
+            base_branch = 'q/abc/A05/4'
+            facts = {'ownerId': 55}
+            def status(self):
+                return {'merges': []}
+        originals = (live.merge_until_settled, live.time)
+        live.merge_until_settled, live.time = (lambda live_, number, **kw: {'state': 'error', 'reason': 'scope_expired', 'exit': 1}), Clock(step=1.0)
+        try:
+            out = live.proof_critical(Live(), None, {'trials': [self.trial]}, 412, 1)
+        finally:
+            live.merge_until_settled, live.time = originals
+        self.assertEqual((out['demonstrated'], out['stateAfter'], out['reasonAfter'], out['pullNumber']), (False, 'error', 'scope_expired', 413))
+
     def test_a_merge_already_in_the_ledger_is_proven_from_records(self):
         test = self
 
