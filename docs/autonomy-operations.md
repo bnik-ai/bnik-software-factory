@@ -1,10 +1,9 @@
 # Operating bounded autonomy
 
-**Status: implemented, not the default; live-qualified as recorded in [`evals/qualification/`](../evals/qualification/)** (a routine change executed, published and squash-merged by the merger App with no human step; critical changes held at publication or merge; a controller killed mid-execution recovered with no second execution; a revoked scope refusing publication, merge and new attempts; base publication refused without the secretless-CI attestation; the native-review unlock of a critical merge is recorded when the owner performs it). The controller,
-trusted runners and publisher exist and pass synthetic contracts (fixture executor,
-real sandboxes, PostgreSQL, a Git-hashing fixture host). No pull request has been
-published to a real repository under this mode yet; OSS-22 covers that proof. The
-supported alpha workflow stays human-gated until then.
+**Status: implemented, not the default; live-qualified as recorded in [`evals/qualification/`](../evals/qualification/)** (a routine change executed, published and squash-merged by the merger App with no human step; critical changes held at publication or merge; a controller killed mid-execution recovered with no second execution; a revoked scope refusing publication, merge and new attempts; base publication refused without the secretless-CI attestation; a held critical merge unlocked only by the owner's native review of the exact head). The controller,
+trusted runners and publisher also pass synthetic contracts (fixture executor,
+real sandboxes, PostgreSQL, a Git-hashing fixture host). The default alpha workflow
+stays human-gated; this mode is enabled explicitly.
 
 Bounded autonomy lets routine work go from an authorized Task to a published pull
 request without a human step, while critical, out-of-scope or uninspectable changes
@@ -247,7 +246,7 @@ attributes); the publisher reports `publish_base_tree_mismatch` and nothing is w
 Ignore rules and attribute filters in the repository do not matter: snapshots track every
 archived file byte for byte.
 
-Not yet provided: a live proof of the whole path (OSS-22), GitHub-review–sourced
+Not yet provided: GitHub-review–sourced
 approvals for execute and publish holds (those take the console approval; a merge hold takes
 only a native review), a revision path for a `blocked` merge other than a new attempt, and
 scheduling.

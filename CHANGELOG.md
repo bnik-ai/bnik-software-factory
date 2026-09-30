@@ -28,7 +28,7 @@
   revision, approval holds with re-verification of expired receipts, scopes that bind
   each Task to the intent digest the owner reviewed, a `factory_controller` database
   role and `./sfac autonomy …` commands (`intent`, `pin`, `activate`, `grant`, `run`,
-  `approve`, `reconcile`, …). Not the default; no live pull request published yet.
+  `approve`, `reconcile`, …). Not the default; live-qualified as recorded in `evals/qualification/`.
 
 - Add the trusted autonomy policy foundation (not yet wired into any runtime path):
   a strict host policy file, deterministic risk rules over the complete change,
@@ -74,7 +74,8 @@ proposal is project source/build instructions, with dependencies obtained separa
 ### Limits and release prerequisites
 
 In the default profile the runtime does not publish PRs, run AI reviews or merge;
-opt-in bounded autonomy adds those within its policy. Revisions run from a pinned
+opt-in bounded autonomy adds publication and AI review, and a further opt-in
+(`FACTORY_AUTOMERGE=enabled`) adds merge, all within its policy. Revisions run from a pinned
 default-branch snapshot. Single repository only; no autonomous deploy or hosted service. Planning/Azure/operations paths are experimental.
 Model access depends on the operator's account and exact SDK/model compatibility;
 there is no model substitution. Cost estimates are not bills or hard spending caps.

@@ -70,8 +70,8 @@ and neither is a bypass allowance in branch protection: the merger App is a rest
 pusher, nothing more. Their private keys live at `secrets/publisher_private_key` and
 `secrets/merger_private_key`; the merger key is mounted only into the container that runs
 the merge commands. Both Apps stay unused, and their keys need not exist, until the
-corresponding opt-in is configured. The live behaviour of this path has not been
-qualified; see [live qualification](live-qualification.md).
+corresponding opt-in is configured. This path is live-qualified as recorded in
+[`evals/qualification/`](../evals/qualification/); see [live qualification](live-qualification.md).
 
 ## Configure and verify intake
 
