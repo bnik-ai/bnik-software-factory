@@ -33,9 +33,10 @@ tripwires, not a sandbox against arbitrary code. The actual boundary is an ephem
 hosted runner, no operator secrets, and GitHub's read-only fork token policy.
 See [GitHub secure workflow guidance](https://docs.github.com/en/actions/reference/security/secure-use).
 
-Live model tests are separate operator actions under the
-[explicit activation flow](github-installation.md) and [isolated worker](isolated-worker.md).
-They are not invoked by any CI workflow. A future paid workflow requires separate
+Live model tests are separate operator actions: the
+[explicit activation flow](github-installation.md) with the [isolated worker](isolated-worker.md),
+and the maintainer-run [live qualification](live-qualification.md) job. They are not invoked
+by any CI workflow. A future paid workflow requires separate
 maintainer configuration and review; adding credentials to contributor CI is not
 supported. CI can consume GitHub Actions runner minutes; no zero-runner-cost claim
 is made.
@@ -87,8 +88,9 @@ choose targeted fixes and rerun relevant checks. The five lockfiles audited clea
 September 30, 2026; re-audit before each release. Passing CI does not imply a clean
 dependency audit.
 
-The `container-operator` job runs `runtime/operator/test.sh` with fresh state and
-unique image tags. It blocks host Node/npm/Python in PATH and exercises the demo,
+The `container-operator` job runs `runtime/operator/restrictive-test.py`, which runs
+`runtime/operator/test.sh` from a restrictive source export with fresh state and unique
+image tags. It blocks host Node/npm/Python in PATH and exercises the demo,
 worker/cached result, cancellation, recovery, backup/restore and restart. It uses
 synthetic data only and participates in the required aggregate check.
 

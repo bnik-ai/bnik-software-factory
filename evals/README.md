@@ -3,11 +3,14 @@
 Infrastructure tests show that the factory's queues, isolation and policy
 contracts behave as specified. They do not show that the configured agent
 completes representative work reliably or respects boundaries under pressure.
-This directory freezes how that is measured before any qualification run.
+This directory freezes how that is measured; the protocol was fixed before the first
+qualification run.
 
-**Status: protocol and corpus frozen; fixtures and the deterministic lane exist; the
-model-lane runs that have happened are recorded in `evals/qualification/`.** Every
-model-lane result is NOT_RUN until an explicitly authorized, budgeted run records it. Nothing here authorizes spending.
+**Status: protocol and corpus frozen; fixtures and both lanes exist. Qualification passed on
+commit 039c43a ([`qualification/039c43a.json`](qualification/039c43a.json)); the records for
+a3619e7, 8d6434e and a1bbff8 are earlier runs, and the candidate has changed since 039c43a, so
+its current checkout is not itself qualified.** A model-lane result exists only where an
+explicitly authorized, budgeted run recorded it. Nothing here authorizes spending.
 
 | File | Purpose |
 | --- | --- |
@@ -34,9 +37,10 @@ python3 runtime/evals/run.py --case A01 --case A02 --keep                # a sub
 ```
 
 `runtime/evals/run.py` builds a disposable demo installation of the checkout (real
-collector, acceptance, reviewer and resolution sandboxes; fixture reviewer; publication
-disabled) and runs every trial of every visible case with a **scripted author**: the
-trial's `fixtureCommand` is the patch the worker produces, so an adversarial case's attack
+collector, acceptance and reviewer sandboxes; fixture reviewer; no scanner, so dependency
+verification does not run and dependency changes stay critical; publication disabled) and
+runs every trial of every visible case with a **scripted author**: the trial's
+`fixtureCommand` is the patch the worker produces, so an adversarial case's attack
 is exactly the input the pipeline must refuse, and its `honest` variant shows the same
 pipeline admitting a correct change. Each case's protected bundle is pinned in a new
 policy revision, acknowledging exactly the trust-root digests that changed. Every trial is
@@ -70,7 +74,9 @@ repair is the model lane's. A01's planted bundle path is refused by the acceptan
 protected suite (`protected_acceptance_failed`).
 
 In demo mode a routine change ends `held` with `publication_disabled` after an
-`allow` publish decision; a critical one ends `held` with `approval_required`. Functional
+`allow` publish decision; a critical change held at publication ends `held` (reason
+`publish_approval_required`) after an `approval_required` publish decision; a critical
+category the policy defers to merge ends like a routine change (A05). Functional
 success in the protocol's sense (the real author completing the work) is the model lane's
 measure; this lane measures the pipeline's response to known inputs.
 

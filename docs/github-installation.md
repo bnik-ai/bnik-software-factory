@@ -23,7 +23,8 @@ tunnel URL must remain stable for the test; update both App settings and local
 configuration when it changes. Network, domain and tunnel provisioning are operator
 responsibilities.
 
-Use exactly these repository permissions, with no organization/account permissions:
+For intake alone, use exactly these repository permissions, with no organization/account
+permissions:
 
 | Permission | Access | Purpose |
 | --- | --- | --- |
@@ -33,6 +34,9 @@ Use exactly these repository permissions, with no organization/account permissio
 | Checks | Read-only | Observe check run and suite events |
 | Commit statuses | Read-only | Observe status events |
 | Metadata | Read-only | Repository and current collaborator permission |
+
+The [human merge profile](human-merge.md#app-and-local-configuration), which automatic
+merge requires, replaces them with its own exact set.
 
 Subscribe to **Issues, Issue comment, Pull request, Pull request review, Check run,
 Check suite, Status**. Installation lifecycle and ping deliveries are liveness
@@ -56,8 +60,11 @@ into issues, Task definitions or model prompts. Official references:
 
 ## Apps for bounded autonomy (opt-in)
 
-Bounded autonomy ([operations](autonomy-operations.md)) never widens the intake App. It
-uses up to two more Apps, each registered and installed separately, each holding only what
+Bounded autonomy ([operations](autonomy-operations.md)) adds no grant of its own to the
+intake App. When the merge policy is configured, which `--automerge` requires, the intake
+App holds the [human merge profile](human-merge.md#app-and-local-configuration)'s grants,
+and publication uses its Issues write to pair the Task with its pull request. Bounded
+autonomy uses up to two more Apps, each registered and installed separately, each holding only what
 its step needs, each minting one short-lived installation token per action and revoking it:
 
 | App | Repository permissions | Installed on | Used by |

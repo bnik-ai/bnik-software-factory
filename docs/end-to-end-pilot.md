@@ -106,8 +106,10 @@ Using the separately configured trusted publisher, upload only those reviewed
 commit. Create a PR with its Task node-ID reference (`task-ref: …`), exact runtime
 run/hash evidence, test receipts, model identity and limitations. Do not include
 GitHub auto-closing keywords. Record the PR node ID/head and confirm required CI
-runs against that exact head. The public runtime does not automate this publication
-step; report it as manual intervention.
+runs against that exact head. In this default human-gated walkthrough the runtime does
+not perform this publication step; report it as manual intervention. The opt-in
+[bounded-autonomy controller](autonomy-operations.md) publishes instead and is outside
+this walkthrough.
 
 ## Request changes and execute a revision
 

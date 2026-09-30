@@ -1,17 +1,19 @@
 <!--
 Generated from {{FACTORY_REPO}}/templates/app-repo/.github/pull_request_template.md
-The factory's Validator requires that every PR links to a Task that links to a Goal.
-Agents that open PRs without these links cannot merge — the validator blocks transition.
+Link the Task this PR implements. The factory pairs a Task and PR through exactly one
+`task-ref: TASK_NODE_ID` line in this body and the `pr-ref:` backlink on the Task (added by
+the operator, or at bounded-autonomy publication). The validator does not block a PR that
+lacks these links.
 -->
 
 ## Linked Task
 
-<!-- REQUIRED. Validator hard-rejects merge if missing. Format: `Closes #N` where N is a Task issue. -->
-Closes #
+<!-- Required by the merge gate. Format: `task-ref: TASK_NODE_ID`, the Task's GitHub node ID. Do not use GitHub auto-closing keywords such as `Closes #N`. -->
+task-ref:
 
 ## Parent Goal
 
-<!-- REQUIRED. The Task's parent Goal in machine-readable form. Format: owner/repo#N -->
+<!-- Optional, experimental. The validator reads `parent-goal:` only from Spec, Design and Task issue bodies, never from a PR body. Format: owner/repo#N -->
 parent-goal:
 
 ## Summary
@@ -23,8 +25,7 @@ parent-goal:
 <!--
 For non-trivial changes, include a Mermaid diagram of the change — `flowchart` for a
 flow / process, `stateDiagram-v2` for a lifecycle, `sequenceDiagram` for interactions.
-GitHub renders it inline. Convention (canonical): {{FACTORY_REPO}}/templates/app-repo/AGENTS.md.tpl
-(§Documentation conventions). Omit for trivial / mechanical changes.
+GitHub renders it inline. Omit for trivial / mechanical changes.
 
 ```mermaid
 flowchart TD
@@ -42,17 +43,14 @@ flowchart TD
 
 ## Surface area
 
-- [ ] Affects `/api/health` contract (added or removed a dependency)
-- [ ] Touches data-classification.md categories
 - [ ] Adds a new env var (added to `.env.example`)
 - [ ] Adds a new dependency (justified in commit message body)
-- [ ] Cross-repo change (paired infra PR in {{PLATFORM_REPO}}: <link>)
 
 ## Verification
 
 <!-- How did you verify? CI is required but not sufficient. -->
 
-- [ ] CI green (lint, typecheck, test, container build, infra-contract validate)
+- [ ] CI green (install, lint, type check and test)
 - [ ] Ran locally; verified the golden-path manually
 - [ ] Updated affected runbook(s) in `docs/runbooks/`
 - [ ] No new lint or typecheck warnings

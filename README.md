@@ -3,10 +3,11 @@
 BNIK Software Factory turns coding agents into a recoverable, policy-controlled GitHub workflow that you operate locally.
 
 Turn a bounded GitHub Task into a reviewed change using your own repository,
-credentials and local runtime. A human authorizes each coding run, an isolated
-worker returns a patch and test receipts, an operator publishes the reviewed
-output, and a human reviews and merges after required CI. The runtime verifies
-the merge and completes the paired Task.
+credentials and local runtime. In the default install, a human authorizes each
+coding run, an isolated worker returns a patch and test receipts, an operator
+publishes the reviewed output, and a human reviews and merges after required CI.
+The runtime verifies the merge and completes the paired Task. Bounded autonomy is
+an explicit opt-in; see [autonomy operations](docs/autonomy-operations.md).
 
 - **Recoverable:** inspect durable work and receipts, reconcile interrupted runs,
   and recover without blindly repeating model calls.
@@ -43,9 +44,13 @@ operator tools in containers; no host Python or Node install is needed. Then try
 [real Task-to-merge walkthrough](docs/end-to-end-pilot.md).
 
 The local profile targets one GitHub.com repository, one operator-controlled
-installation and Claude Agent SDK execution. Publication is an explicit operator
-step. AI review is advisory; the packaged workflow requires native human review.
-This is not an autonomous development or deployment service.
+installation and Claude Agent SDK execution. In the default install, publication is
+an explicit operator step, AI review is advisory, and the packaged workflow requires
+native human review and human merge. Opt-in bounded autonomy
+(`FACTORY_EXECUTION=bounded`) automates execution, publication and AI review inside
+the owner's policy. A further live-only opt-in (`FACTORY_AUTOMERGE=enabled`) merges
+routine changes, and critical changes wait for a native GitHub review of the exact
+head. This is not an autonomous deployment or hosted service.
 
 ## Documentation
 

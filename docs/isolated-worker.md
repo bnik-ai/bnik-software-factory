@@ -2,7 +2,10 @@
 
 The local executor runs an explicitly submitted coding job in a disposable Docker
 container and returns a patch with command receipts. It uses the existing Claude
-Agent SDK adapter. Live jobs require a verified human Task activation and a separate local command.
+Agent SDK adapter. In the default mode, live jobs require a verified human Task
+activation and a separate local command. Under opt-in bounded autonomy, the
+controller submits jobs authorized by a consumed ledger admission under an
+owner-granted scope; see [autonomy operations](autonomy-operations.md).
 The [end-to-end walkthrough](end-to-end-pilot.md) connects this executor to explicit
 operator publication, required CI, human review/merge and Task reconciliation.
 
@@ -66,7 +69,8 @@ record that failure and its unknown billing rather than treating it as a success
 zero-cost run. Review and test SDK upgrades, then obtain a fresh activation for
 an intentional retry. No model is silently substituted.
 
-The supervisor uses an immutable `activation-<receipt UUID>` job ID. A duplicate
+A live manual job uses an immutable `activation-<receipt UUID>` job ID; a
+bounded-autonomy job uses `autonomy-<run UUID>`. A duplicate
 submission can return a saved result without another model run; conflicting job
 contents fail. A fresh approval is needed for an intentional new run. Leases and
 receipts do not make external model effects exactly once. GitHub can change after
@@ -186,8 +190,10 @@ the installed SDK against a synthetic provider, denial/limit checks, cancellatio
 lease loss, cleanup failure and killed-supervisor recovery with disposable
 PostgreSQL. It uses no live GitHub credentials or paid model API. The database suite
 checks the existing control-plane crash/restart/restore contracts. Real installation,
-paid-model compatibility, PR creation and the full approval workflow still require
-separate end-to-end evidence.
+paid-model compatibility, PR creation and merge are separate end-to-end evidence: the
+live qualification of commit `039c43a`
+([`evals/qualification/039c43a.json`](../evals/qualification/039c43a.json)) exercised
+them through opt-in bounded autonomy.
 
 Boundary references: [Docker security](https://docs.docker.com/engine/security/),
 [container resource settings](https://docs.docker.com/engine/containers/run/), and

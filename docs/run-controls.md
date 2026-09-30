@@ -40,8 +40,10 @@ Output includes up to 100 jobs/runs, with the original job and work IDs, run ID,
 Task activation and issue identity, source head, archive/patch hashes, start/end
 times, state, reason, attempts, retry count, test results, usage and effective
 limits. A queued cancellation has no run ID because no executor started.
-`revision: 0` is the first attempt; subsequent attempts for that Task increment
-the index. Failed attempts also count. A cancelled queued item has zero attempts.
+`revision: 0` is the first attempt; subsequent `run-activation` attempts for that
+Task increment the index. Failed attempts also count. Bounded-autonomy jobs do not
+advance it; `autonomy status` numbers their attempts. A cancelled queued item has
+zero attempts.
 
 Status contains test command/output hashes and exit results, not commands,
 transcripts, Task prompts, patches or raw error messages. Local artifact files
@@ -102,7 +104,7 @@ the effective limit; they cannot raise the operator cap.
 
 | Setting | Default | Allowed range / behavior |
 | --- | --- | --- |
-| `FACTORY_MAX_TASK_RUNS` | 4 | 1–20 total attempts per Task identity, including its first run; default allows at most three further attempts. |
+| `FACTORY_MAX_TASK_RUNS` | 4 | 1–20 total `run-activation` attempts per Task identity, including its first run; default allows at most three further attempts. Bounded-autonomy attempts are not counted here; the scope's `--max-runs` and the policy's `execution.maxTaskRuns` cap them. |
 | `FACTORY_MAX_RUN_TURNS` | 60 | 1–60; also capped by the approved Task's `maxTurns`. |
 | `FACTORY_MAX_RUN_MS` | 1800000 | 1000–1800000 ms execution deadline; also capped by approved `timeoutMs`. |
 | `FACTORY_MAX_RUN_BUDGET_USD` | 5 | 0.001–100 USD SDK estimate threshold; optional approved `maxBudgetUsd` may lower it. |
@@ -112,7 +114,10 @@ the effective limit; they cannot raise the operator cap.
 Worker CPU, memory, process count and temporary storage bounds remain those in
 the [isolated-worker guide](isolated-worker.md). Preparation/cleanup use separately
 bounded calls outside the execution deadline. Every queued coding job has one
-attempt: failed paid work requires fresh human activation, not automatic retry.
+attempt. In the default mode, failed paid work requires fresh human activation, not
+automatic retry. Under opt-in bounded autonomy, a `repair_required` decision starts
+a new paid attempt automatically within the scope's run limit, and a failed attempt
+needs `reconcile` if its reservation is open, then `run --new-attempt`.
 The Task cap counts prior durable attempts across fresh activation IDs, restarts
 and content pruning. Increasing it is an explicit trusted-operator policy change.
 

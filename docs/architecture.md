@@ -1,10 +1,14 @@
 # Architecture
 
-The local profile has two explicit paths: a credential-free demonstration of the
-validator/router pipeline, and an operator-driven live workflow. PostgreSQL stores
-durable work, authorization and run/review receipts. GitHub holds Tasks, PRs,
-reviews, CI results and the human merge. These paths share source packages but
-must not be confused when evaluating what a demo proves.
+The local profile has two default paths: a credential-free demonstration of the
+validator/router pipeline, and an operator-driven live workflow. A third path,
+opt-in bounded autonomy (`FACTORY_EXECUTION=bounded`; demo `FACTORY_AUTONOMY=bounded`),
+runs a controller that executes, publishes and AI-reviews routine work inside the
+owner's policy. Automatic merge is a further live-only opt-in; see
+[autonomy operations](autonomy-operations.md). PostgreSQL stores durable work,
+authorization and run/review receipts. GitHub holds Tasks, PRs, reviews, CI results
+and the merge. These paths share source packages but must not be confused when
+evaluating what a demo proves.
 
 The [container launcher](container-runtime.md) packages operator tools and the trusted
 supervisor with Python and Node. Only the supervisor receives the Docker socket;
@@ -91,8 +95,10 @@ local profile.
 Intake and its receipt commit together. In the demo pipeline, validator audit,
 verdict, outgoing work and acknowledgement share a transaction; routing and agent
 job insertion also settle atomically. Renewable leases and fencing prevent stale
-owners from committing database effects. Each coding job has one execution attempt;
-failed paid work requires a fresh human activation. These rules do not make external
+owners from committing database effects. In the human-gated workflow each coding
+job has one execution attempt, and failed paid work requires a fresh human
+activation. Under opt-in bounded autonomy, repair attempts start automatically only
+within the granted scope's run limit. These rules do not make external
 provider or GitHub effects exactly once. Recovery must preserve uncertain outcomes.
 
 Run records retain source/published/reviewed heads, effective limits, tests and

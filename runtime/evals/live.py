@@ -21,8 +21,8 @@ record it is given.
 
 Identities: the intake, publisher and merger Apps are the installation's (their keys move into
 STATE/secrets at `init` and are read only by ./sfac's containers); the driver App is the job's
-own (STAGING/driver_private_key; administration, contents and issues write on the one
-repository) and seeds branches, protection and Tasks. No secret value is printed or recorded.
+own (STAGING/driver_private_key; administration, contents, issues and workflows write on the
+one repository) and seeds branches, protection and Tasks. No secret value is printed or recorded.
 
 Per trial the driver creates a branch holding the case's fixture tree, makes it the repository
 default branch (the live Task source and the merge gate both read the default branch), protects

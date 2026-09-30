@@ -51,7 +51,8 @@ These suites create and clean disposable fixtures. Never point tests at an opera
 live database. Review [CI and source artifacts](docs/contributor-ci.md) for runner
 permissions and build contracts. For documentation-only changes, verify commands,
 relative links and rendered output; run affected source checks if behavior changes.
-Regenerate architecture diagrams with `node scripts/gen-architecture-diagrams.mjs`
+Regenerate architecture diagrams with
+`node scripts/gen-architecture-diagrams.mjs > docs/architecture-diagrams.md`
 only when their source model changes, then verify with `--check`.
 
 ## Review and acceptance

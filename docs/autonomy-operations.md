@@ -1,6 +1,6 @@
 # Operating bounded autonomy
 
-**Status: implemented, not the default; live-qualified as recorded in [`evals/qualification/`](../evals/qualification/)** (a routine change executed, published and squash-merged by the merger App with no human step; critical changes held at publication or merge; a controller killed mid-execution recovered with no second execution; a revoked scope refusing publication, merge and new attempts; base publication refused without the secretless-CI attestation; a held critical merge unlocked only by the owner's native review of the exact head). The controller,
+**Status: implemented, not the default. Live qualification passed on commit 039c43a ([`evals/qualification/039c43a.json`](../evals/qualification/039c43a.json)); the candidate has changed since, so the current checkout is not itself the qualified commit.** That run showed a routine change executed, published and squash-merged by the merger App with no human step; critical changes held at publication or merge; a controller killed mid-execution recovered with no second execution; a revoked scope refusing publication, merge and new attempts; base publication refused without the secretless-CI attestation; and a held critical merge unlocked by the owner's native review of the exact head. The controller,
 trusted runners and publisher also pass synthetic contracts (fixture executor,
 real sandboxes, PostgreSQL, a Git-hashing fixture host). The default alpha workflow
 stays human-gated; this mode is enabled explicitly.
@@ -48,13 +48,17 @@ worker, the sandboxes and the scanner never hold a credential.
 
 Run `./sfac init` with autonomy selected:
 
-- Demo (credential-free): `./sfac init --mode demo --autonomy`. Fixture reviewer and
-  scanner, no publisher; the pipeline runs end to end and stops in `held` with reason
-  `publication_disabled` and both decisions recorded, because nothing can be published
-  without GitHub.
+- Demo (credential-free): `./sfac init --mode demo --autonomy`. Fixture reviewer, no
+  scanner (add `--scanner fixture` and a policy `dependencies` block to exercise dependency
+  verification with the fixture scanner), no publisher; the pipeline runs end to end and
+  stops in `held` with reason `publication_disabled` and both decisions recorded, because
+  nothing can be published without GitHub.
 - Live: `./sfac init --mode live --execution bounded --reviewer claude --reviewer-model claude-… --publication fork --fork-repository OWNER/REPO --fork-repository-id ID --publisher-app-id ID --publisher-installation-id ID …`
-  plus the usual live arguments. `--scanner trivy --scanner-image REF --scanner-cache-volume NAME`
-  enables dependency verification. Fork mode needs the fork to contain the Task's base
+  plus the usual live arguments. Base publication instead takes `--publication base
+  --secretless-ci-attested` (you attest the base repository's pull-request CI holds no
+  secrets; `init` refuses base publication without it).
+  `--scanner trivy --scanner-image REF --scanner-cache-volume NAME` enables dependency
+  verification. Fork mode needs the fork to contain the Task's base
   commit (keep it synced with the base) and the publisher App installed on both. Fork pull
   requests run the base repository's `pull_request` workflows without secrets, but
   `pull_request_target` and `workflow_run` workflows run with the base's secrets: a base
@@ -109,7 +113,7 @@ configured, dependency verification. It then admits `publish`. Outcomes:
 | Run state | Meaning | Next |
 | --- | --- | --- |
 | `published` | PR opened or updated on the exact tested tree; paired and tracked when the merge policy is configured | `./sfac autonomy merge TASK_NUMBER` (or `merge-scan`) decides the merge; see [Merging](#merging) |
-| `held` | `execute_approval_required` or `publish_approval_required`: a human must approve the recorded `actionSha256` | `./sfac autonomy approve --action SHA --kind publish --approver GITHUB_USER_ID`, then `run` again; receipts older than `receiptTtlMs` are verified again before the decision |
+| `held` | `execute_approval_required` or `publish_approval_required`: a human must approve the recorded `actionSha256` | `./sfac autonomy approve --action SHA --kind KIND --approver GITHUB_USER_ID`, where `KIND` is `execute` or `publish` (the kind the hold names), then `run` again; receipts older than `receiptTtlMs` are verified again before the decision |
 | `repair` | Acceptance failed or the reviewer found important defects; a new attempt was started with the findings appended to the prompt, within the scope's run limit | nothing; the next attempt continues automatically |
 | `blocked` | Policy or ledger refused (paused, revoked, budget, malformed evidence) | fix the cause; `run --new-attempt` starts another attempt |
 | `failed` | The worker or collector failed; no external effect. A worker that had already started keeps an `unknown` reservation (spend uncertain) until reconciled | `reconcile` if a reservation is open, then `run --new-attempt` if appropriate |

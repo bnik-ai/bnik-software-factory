@@ -25,6 +25,13 @@ The container paths below are `.factory/`; native paths are `runtime/`.
   to change the role password and private file together while services are stopped.
   This launcher does not automate admin rotation. Do not delete a retained volume
   to work around a password mismatch; restore access or follow a reviewed restore.
+- **Controller database password:** stop the autonomy commands, replace
+  `secrets/controller_database_password`, then run `./sfac up`; the migrator sets the
+  `factory_controller` role password as it does for the runtime role.
+- **Publisher and merger App keys:** generate a replacement in that App's settings,
+  install it as `secrets/publisher_private_key` or `secrets/merger_private_key` with
+  mode 0600 while no `./sfac autonomy` command is running, and revoke the old key
+  after the next autonomy command works; revoke immediately if compromised.
 
 Keep directories mode 0700 and secret files mode 0600, owned by the configuring
 user. Back up secrets separately from database dumps using your approved encrypted

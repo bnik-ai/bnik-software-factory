@@ -12,5 +12,5 @@ versions and configure required checks for your own repository before enabling i
 Dependency snippets need the application's own lockfile and license review.
 
 Issue forms retain the experimental planning vocabulary used by existing parsers.
-They are not a promise that the Task-first onboarding flow is already implemented.
+They are not part of the Task workflow; create Tasks with [factory-task.md](factory-task.md).
 Do not enable autonomous merge/deployment from these templates.

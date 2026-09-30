@@ -4,9 +4,11 @@
 preparation inside an image containing Python 3, Node 24.21.0 and the five locked
 service installs. Only Docker/Compose, a POSIX shell and basic shell utilities are
 needed on the operator host. The database stays on the Compose network. This is
-local hosting: live operation still depends on GitHub, Anthropic, an operator-owned
-HTTPS tunnel/reverse proxy and human publication/review. It is not an offline model
-or an automatically published application.
+local hosting: live operation still depends on GitHub, Anthropic and an operator-owned
+HTTPS tunnel/reverse proxy. Publication, review and merge are human in the default
+mode; opt-in bounded autonomy publishes routine work, and opt-in automatic merge
+merges it, without a human step. It is not an offline model or an automatically
+published application.
 
 ```text
 Host: shell + Docker CLI                   .factory/ (private state/artifacts)
@@ -26,7 +28,9 @@ start containers with host mounts. Containerizing it does not make it untrusted 
 remove that authority. Use trusted factory source/images and a dedicated host for
 sensitive workloads. Commands mount individual configuration/secret files according to the table below.
 No operator or supervisor command receives the database administrator password.
-Only `worker run`, `run-activation` and `recover` receive the Docker socket.
+Only the supervisor commands receive the Docker socket: `worker run`, `run-activation`
+and `recover`, and `autonomy intent`, `pin`, `run`, `cancel`, `merge`, `merge-scan`
+and `recover`.
 Workers retain their existing restricted boundaries.
 
 | Command | Mounted credentials | Other mounts |
@@ -41,8 +45,8 @@ Workers retain their existing restricted boundaries.
 | Worker `run-activation` | Runtime database password, webhook secret, App key, model key | Configuration, artifacts, optional trusted merge policy, Docker socket |
 | Autonomy `activate`, `status`, `grant`, `revoke`, `pause`, `resume`, `approve`, `reconcile` | Controller database password, webhook secret | Configuration, autonomy policy |
 | Autonomy `intent`, `pin`, `run`, `cancel`, `merge`, `merge-scan`, `recover` (demo; merge refuses) | Controller database password, webhook secret | Configuration, autonomy policy, acceptance bundle, artifacts, Docker socket |
-| Autonomy `intent`, `pin`, `run`, `cancel`, `recover` (live) | Controller database password, webhook secret, App key, model key, publisher App key | Configuration, autonomy policy, acceptance bundle, artifacts, optional trusted merge policy, Docker socket |
-| Autonomy `merge`, `merge-scan` (live, `--automerge`) | The above plus the merger App key | The above |
+| Autonomy `intent`, `pin`, `run`, `cancel`, `recover`, and `merge`, `merge-scan` without automatic merge (live; merge refuses) | Controller database password, webhook secret, App key, model key, publisher App key | Configuration, autonomy policy, acceptance bundle, artifacts, optional trusted merge policy, Docker socket |
+| Autonomy `merge`, `merge-scan` (live, `FACTORY_AUTOMERGE=enabled`) | The above plus the merger App key | The above |
 
 `init` is the bootstrap exception: it writes the fresh state directory and refuses
 existing configuration or secrets. Database backup/restore runs inside the database
@@ -62,9 +66,10 @@ select a daemon-host socket path, but rootless/remote configurations are unquali
 ## Files and commands
 
 State defaults to `.factory/` beside `sfac`. Set an absolute `SFAC_STATE_DIR` to
-reuse private state across source upgrades. Keep custom state **outside the source
-build context**; otherwise Docker may receive private files during a build. Do not
-share state between installations. Do not change its persisted `project` name.
+reuse private state across source upgrades. Custom state must be **outside the source
+build context**; `sfac` refuses a custom state directory inside the checkout, because
+Docker would receive private files during a build. Do not share state between
+installations. Do not change its persisted `project` name.
 
 Operator commands run from `/artifacts`, backed by `.factory/artifacts/`. Pass
 relative paths there or absolute `/artifacts/...` paths, not arbitrary host paths.
@@ -89,15 +94,17 @@ Source snapshot transfers into the worker still use stdin, with no host bind mou
 The native guides remain useful for explicit low-level operation. With `sfac`, do
 not add `compose.worker.yaml`, expose PostgreSQL, install host Node/Python or mix
 native configuration paths into the container commands. The launcher adds the live
-override automatically when configured live, and the review override when a merge
-policy file exists. Supply your App/model files and policy using private permissions
-before startup. No provider keys are inherited from the host environment.
+override automatically when configured live and, in live mode, the review overrides
+when `merge-policy/merge-policy.json` exists. Supply your App/model files and policy
+using private permissions before startup. No provider keys are inherited from the host environment.
 
 For the live sample, put your trusted sample checkout under `.factory/artifacts/`
 and pass `/artifacts/SAMPLE` to `prepare-result`. Publishing the reviewed files to
 GitHub remains a separate operator action using the GitHub UI or your chosen Git
 publishing client. It is not a factory runtime dependency or an automatic action.
-Human Task approval, review and merge remain mandatory as described in the live guides.
+In the default mode, human Task approval, review and merge remain mandatory as
+described in the live guides. Opt-in bounded autonomy and automatic merge are
+described in [autonomy operations](autonomy-operations.md).
 
 `./sfac worker cancel JOB_ID` is idempotent: `requested:0` means no matching active
 work was changed, not that a job with that ID existed. A cancelled run can have a

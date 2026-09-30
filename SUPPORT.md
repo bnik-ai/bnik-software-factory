@@ -61,10 +61,11 @@ legacy multi-agent orchestration and autonomous deployment are experimental sour
 references. The fixture validator/router demo does not establish their live support.
 Multi-tenant hosting, arbitrary outbound worker networking, submodules, LFS
 hydration, symlink-dependent sources and automatic dependency installation inside the
-worker are unsupported. Automatic merge exists only as a further opt-in of bounded
-autonomy (`FACTORY_AUTOMERGE=enabled`); its live qualification, the agent-quality protocol's
-model lane and the live proof, passed on the qualified commit recorded in `evals/qualification/`
-(see [live qualification](docs/live-qualification.md) and the [roadmap](docs/roadmap.md)).
+worker are unsupported. Automatic merge exists only as a further, live-only opt-in of
+bounded autonomy (`FACTORY_AUTOMERGE=enabled`). The agent-quality protocol's deterministic
+and model lanes and the live proof of a routine merge and a critical hold passed on commit
+`039c43a` (`evals/qualification/039c43a.json`; see [live qualification](docs/live-qualification.md)
+and the [roadmap](docs/roadmap.md)); later commits are not themselves qualified.
 
 The five lockfiles audited clean on September 30, 2026; audits are point-in-time and are
 repeated before each release. Passing tests is not a clean security audit. Containers share a host kernel;

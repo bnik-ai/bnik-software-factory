@@ -9,10 +9,12 @@ Before the first release: provision the release repository's reporting route and
 branch protection, review dependency findings, complete independent setup/recovery exercises, verify
 the exact source artifact and obtain the owner's publication decision.
 
-Opt-in bounded autonomy automates routine execution, publication and merge inside
-owner-configured scope and limits, while critical, out-of-scope or uninspectable changes
-wait for a human approval of the exact revision. Protected acceptance tests, a separate
-fresh-context reviewer and a frozen [agent-quality protocol](../evals/README.md) gate it.
+Opt-in bounded autonomy (`FACTORY_EXECUTION=bounded`) automates routine execution,
+publication and AI review inside owner-configured scope and limits; automatic merge is a
+further live-only opt-in (`FACTORY_AUTOMERGE=enabled`). Critical, out-of-scope or
+uninspectable changes wait for a human approval of the exact revision. Protected
+acceptance tests, a separate fresh-context reviewer and a frozen
+[agent-quality protocol](../evals/README.md) gate it.
 The [policy contract](autonomy-policy.md), the
 [controller, trusted runners and publisher](autonomy-operations.md) and the automatic merge
 are implemented. The protocol's deterministic lane, its model lane on a real repository and
@@ -20,7 +22,7 @@ the [live proof](live-qualification.md) of a routine merge and a critical hold p
 the qualified commit `039c43a` ([record](../evals/qualification/039c43a.json)). The default install
 remains human-gated; bounded autonomy is enabled explicitly.
 
-Potential later work includes safer publication automation, clearer revision inputs,
+Potential later work includes further hardening of automated publication, clearer revision inputs,
 additional qualified runtime/model adapters, expanded platform coverage and smoother
 operator setup. These are proposals, not implemented features or delivery promises.
 Any expansion must preserve human authority, credential isolation and reviewable

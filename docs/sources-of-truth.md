@@ -13,7 +13,7 @@
 | Agent contracts and implementation | `services/agents/src/types.ts` and `services/agents/src/agents` |
 | Dependency versions | Each service's `package-lock.json` |
 | Generated architecture drawing | `scripts/gen-architecture-diagrams.mjs` and its model |
-| Current candidate support boundary | [README](../README.md) |
+| Current candidate support boundary | [SUPPORT.md](../SUPPORT.md) |
 | Upstream and deployment integration | [Upstream policy](upstream.md) |
 
 GitHub issue/PR records describe requested and reviewed work; source and tests

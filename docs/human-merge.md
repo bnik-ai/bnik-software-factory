@@ -5,10 +5,13 @@ The low-level commands below describe the optional native profile; the mapping
 covers configuration, secret paths, worker/recovery commands and sample artifacts.
 Do not mix its `runtime/` state with the launcher's `.factory/` state.
 
-The supported local profile never calls a merge or deployment API. AI review is
-advisory. A native GitHub review by a configured human and successful required CI
-on the PR's current head are mandatory. That human performs the squash merge in
-GitHub. The runtime then verifies the merge and completes its paired Task.
+The default human-gated profile never calls a merge or deployment API. In it, AI
+review is advisory, a native GitHub review by a configured human and successful
+required CI on the PR's current head are mandatory, and that human performs the
+squash merge in GitHub. The runtime then verifies the merge and completes its paired
+Task. The one exception is the opt-in automatic-merge profile of bounded autonomy,
+described below: a separate merger App approves and squash-merges routine work, and
+critical work still waits for a configured approver's native review of the exact head.
 
 This is an optional, conservative review profile for an organization repository
 with enforceable branch protection. It does not publish worker output as PRs itself; publication comes from the explicit operator
@@ -75,7 +78,8 @@ Checks, Workflows, or Deployments write permission is accepted. Preflight reject
 extra grants and installations on more than one repository.
 
 The native worker still receives no GitHub write credential. Reads mint scoped
-read tokens, and Task reconciliation mints only Issues write plus Metadata read.
+read tokens, and Task reconciliation, and the Task pairing that bounded-autonomy
+publication performs, mint only Issues write plus Metadata read.
 Each token is revoked after use. App administration **read** allows inspection of
 protection, not modification of it.
 
@@ -87,10 +91,11 @@ this file alone: the review services mount the whole directory read-only. The co
 plane reads the file again before every look of the merge gate, so any edit, including one
 that replaces the file (an editor's atomic save, `sed -i`, `mv`), takes effect at the next
 look without a restart, and every observation records the digest of the policy it used. A
-missing file (`merge_policy_file_missing`, for example during an editor's non-atomic save) or
-one that cannot be read (`merge_policy_unreadable`) parks the look, and the next scan looks
-again; an invalid one parks with its validation reason (`merge_policy_invalid`,
-`merge_policy_merger_must_match_FACTORY_MERGER_settings`, …). A policy left at the retired
+file that cannot be read or is not well-formed JSON (`merge_policy_unreadable`, for example a
+half-written save) parks the look, and the next scan looks again; well-formed JSON that fails
+validation parks with its validation reason (`merge_policy_invalid`,
+`merge_policy_merger_must_match_FACTORY_MERGER_settings`, …); a missing file is
+`merge_policy_file_missing`, also transient. A policy left at the retired
 location `runtime/merge-policy.json` (or `.factory/merge-policy.json`), or a symlink in place of
 the file, is refused by every command until it is moved into the directory as a regular file. Then start the control plane:
 
@@ -157,9 +162,11 @@ weakening policy. Start with one active pilot PR; API quotas bound larger queues
 
 An eligible observation waits for the human to merge. After merge, the runtime
 requires the same head, policy and protection, a preceding base observation, a
-single-parent squash commit onto that base, a configured human merger, and native
-approval/check timestamps no later than the merge. An unobserved merge, changed
-base, bot merge, or unreadable surface remains parked for human investigation.
+single-parent squash commit onto that base, and native approval/check timestamps no
+later than the merge. The merger must be a configured human or, under the
+automatic-merge profile, the merger App for exactly the merge commit the autonomy
+ledger recorded. An unobserved merge, changed base, any other bot merge, or
+unreadable surface remains parked for human investigation.
 It does not try to reverse an external merge. Administrators of GitHub or the
 runtime host remain trusted: these reads do not reconstruct historical protection
 changes or provide an atomic lock across GitHub and PostgreSQL.

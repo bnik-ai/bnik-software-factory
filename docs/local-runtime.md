@@ -12,7 +12,8 @@ authorization receipts. The separate [isolated executor](isolated-worker.md) acc
 explicit requests bound to those receipts. The [end-to-end walkthrough](end-to-end-pilot.md) connects activation, explicit execution, operator publication and human merge. Publication is manual in the default mode (the opt-in [bounded-autonomy controller](autonomy-operations.md), live-qualified as recorded in [`evals/qualification/`](../evals/qualification/), is the exception); the demo is not that live workflow.
 
 For explicitly paired PRs, the optional [human merge profile](human-merge.md) checks
-native protection, human review and required CI, then reconciles verified human merges.
+native protection, human review and required CI, then reconciles verified human merges
+and, with opt-in automatic merge, the merger App's admitted merges.
 
 ## Verified environment and dependencies
 
@@ -53,7 +54,8 @@ host UID/GID allows the non-root container to read those private files. If port
 8787 is occupied, supply `--port <free-port>` when creating configuration.
 
 The database starts with SCRAM host authentication. A one-shot migrator creates
-versioned, checksum-verified schema and a separate `factory_runtime` login. The
+versioned, checksum-verified schema and separate `factory_runtime` and
+`factory_controller` logins. The
 runtime can update delivery/work state and append audit records, but cannot create
 schema, delete work or rewrite the audit ledger. It does not receive the database
 administration credential. The local launcher never constructs Azure credentials.
@@ -84,9 +86,11 @@ model/App credentials. The local profile rejects Azure/Service Bus configuration
 Follow the [GitHub installation guide](github-installation.md) for the exact read-only
 App permissions, event subscriptions, single-repository selection, HTTPS endpoint,
 operator list and credentials. Live mode additionally requires immutable repository
-ID, App ID/key, webhook URL and explicit `FACTORY_EXECUTION=disabled|manual`.
-`disabled` rejects a model key; `manual` requires one only in the native supervisor.
-The Compose live service is always intake-only and receives no model credential.
+ID, App ID/key, webhook URL and explicit `FACTORY_EXECUTION=disabled|manual|bounded`.
+`disabled` rejects a model key. `manual` and `bounded` require one, and only the
+supervisor commands receive it; `bounded` is the opt-in
+[bounded-autonomy](autonomy-operations.md) mode. The Compose live service is always
+intake-only and receives no model credential.
 
 Live startup authenticates the App and verifies the installation, permissions,
 repository selection and webhook settings before listening. Unsupported settings
@@ -112,8 +116,10 @@ unmanaged pre-existing factory tables and fail on checksum drift.
 Each queue serializes enqueue/claim decisions briefly; processing happens without
 holding a database transaction. FIFO is per record within a queue, not a global
 ordering across roles or a guarantee of GitHub event arrival order. Independent
-records can be claimed concurrently. The supported control plane uses one database
-role; separate role/process isolation and production-scale throughput are not claimed.
+records can be claimed concurrently. The control plane's queues use one database role,
+`factory_runtime`; the opt-in bounded-autonomy controller connects as a separate
+`factory_controller` role. Per-consumer role/process isolation and production-scale
+throughput are not claimed.
 
 Defaults: 30-second renewable leases, five attempts, exponential retry from one
 second capped at 60 seconds, pool size eight, ten-second statement and outbound
@@ -137,13 +143,15 @@ commit together, and routing/job insertion/settlement commit together. If the
 process dies inside a transaction, PostgreSQL rolls it back. If it dies after the
 commit response is lost, the stored decision and outgoing job remain intact.
 Retries never recompute a committed verdict. This is not exactly-once execution
-of GitHub/model effects; future workers must reconcile uncertain external effects.
+of GitHub/model effects; uncertain external effects are reconciled as described in
+the [recovery runbook](recovery.md#reconcile-uncertain-effects).
 
 Malformed work is dead-lettered with a reason; transient failures retry within the
 attempt bound, including leases abandoned by crashed processes. Status shows queue
 and state counts. The [recovery runbook](recovery.md) provides authenticated
 inspection, quarantine and one-attempt replay for eligible intake/reconciliation
-items. Paid coding jobs require fresh human activation.
+items. Paid coding jobs are never replayed: the default mode requires fresh human
+activation, and bounded autonomy a `run --new-attempt` within its scope.
 
 Completed raw payloads and result snapshots can be compacted after a chosen number
 of days while delivery hashes/keys remain to prevent duplicate execution:
@@ -181,12 +189,12 @@ docker compose -f runtime/compose.yaml exec -e POSTGRES_DATABASE=factory_restore
 ```
 
 `createdb` fails if that database already exists. On a new server, initialize the
-migrator/runtime roles first using the same credential files; database dumps do not
+migrator, runtime and controller roles first using the same credential files; database dumps do not
 contain role passwords. Verify schema checksums, row counts and audit-chain integrity
 in the restored database. Stop processing before a recovery cutover and explicitly
 point both migration and runtime database settings to the verified restore. Database
 restore cannot reverse already-completed GitHub/model effects; reconcile them before
-resuming future live workers.
+resuming live supervisors or the autonomy controller.
 
 To intentionally discard only this Compose project's local data, first keep a
 verified backup, then run `docker compose -f runtime/compose.yaml down --volumes`.

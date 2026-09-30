@@ -4,6 +4,11 @@
   16 high across entries): Hono 4.13.11 and `@hono/node-server` 1.19.17 in the control plane,
   Vitest 4.1.11 in the four test-running services, and patched transitive packages within
   their ranges. The webhook's 1 MiB body limit is now covered by a test.
+- Move the trusted merge policy to `merge-policy/merge-policy.json` in the state
+  directory (native `runtime/merge-policy/merge-policy.json`), mounted as a directory so
+  an edited file reaches the running control plane; a `merge-policy.json` in the state
+  root is refused.
+
 - Add opt-in automatic merge for bounded autonomy (`FACTORY_AUTOMERGE=enabled`, live
   only): a trusted merge-gate observation (head tree, protection, required checks,
   reviews), approvals sourced from native GitHub reviews of the exact head by configured
@@ -28,15 +33,19 @@
   revision, approval holds with re-verification of expired receipts, scopes that bind
   each Task to the intent digest the owner reviewed, a `factory_controller` database
   role and `./sfac autonomy …` commands (`intent`, `pin`, `activate`, `grant`, `run`,
-  `approve`, `reconcile`, …). Not the default; live-qualified as recorded in `evals/qualification/`.
+  `approve`, `reconcile`, …). Not the default; live-qualified on commit `039c43a` as
+  recorded in `evals/qualification/`; later commits are not themselves qualified.
 
-- Add the trusted autonomy policy foundation (not yet wired into any runtime path):
+- Add the trusted autonomy policy foundation (wired into the opt-in bounded-autonomy
+  controller above):
   a strict host policy file, deterministic risk rules over the complete change,
   acceptance/review/merge-gate/approval receipts, a pure decision engine and a
   PostgreSQL ledger for policy activation, pause, scopes, single-use admissions
   and budget reservations. The runtime database role gets read-only access.
 - Freeze the agent-quality qualification protocol and a 24-case corpus with five
-  held-out cases published as digests. No qualification run has happened.
+  held-out cases published as digests. Both lanes and the live proof passed on commit
+  `039c43a` ([record](evals/qualification/039c43a.json)); later commits are not
+  themselves qualified.
 - Add optional trusted dependency verification to the policy contract: a
   pluggable, digest-pinned scanner adapter plus deterministic lockfile, script,
   shape and license checks can make manifest changes routine; findings at or above

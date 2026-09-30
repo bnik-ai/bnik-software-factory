@@ -3,12 +3,13 @@
 **Status: contract and decision library, consumed by the bounded-autonomy
 controller described in [autonomy operations](autonomy-operations.md).** Neither is
 the default: an installation enables them explicitly (`FACTORY_EXECUTION=bounded` or,
-in demo mode, `FACTORY_AUTONOMY=bounded`); the live qualification in
-[`evals/qualification/`](../evals/qualification/) exercised them on a real repository. The
-default workflow remains human-gated: explicit activation,
-operator publication, native human review and human merge. Automatic merge exists as a
-further opt-in (`FACTORY_AUTOMERGE=enabled`, see [operations](autonomy-operations.md#merging))
-and its live qualification is recorded in [`evals/qualification/`](../evals/qualification/) (see [live qualification](live-qualification.md)).
+in demo mode, `FACTORY_AUTONOMY=bounded`). Live qualification passed on commit 039c43a on
+a real repository ([`evals/qualification/039c43a.json`](../evals/qualification/039c43a.json));
+the candidate has changed since, so the current checkout is not itself the qualified commit.
+The default workflow remains human-gated: explicit activation, operator publication, native
+human review and human merge. Automatic merge exists as a further opt-in
+(`FACTORY_AUTOMERGE=enabled`, see [operations](autonomy-operations.md#merging)); the same run
+qualified it (see [live qualification](live-qualification.md)).
 
 The policy decides, for one proposed consequential action, whether the factory
 may proceed without a human. Routine work inside configured scope proceeds once
@@ -72,10 +73,10 @@ spending caps.
 ### Changing the policy
 
 The **active** policy assesses its replacement. Activation computes every
-weakening (wider paths, removed critical or protected paths, added models or
-approvers, raised limits, `human_gated` to `bounded`, `deployment` to `none`,
-enabling or loosening dependency verification, and any trust-root change) and
-refuses unless the operator acknowledges exactly that list. A proposed policy cannot vouch for itself. Existing installations have no
+weakening (any change to the repository or its base branch, wider paths, removed
+critical or protected paths, added models or approvers, raised limits, `human_gated` to
+`bounded`, `deployment` to `none`, enabling or loosening dependency verification, and any
+trust-root change) and refuses unless the operator acknowledges exactly that list. A proposed policy cannot vouch for itself. Existing installations have no
 active policy and keep today's behavior; enabling `bounded` is an explicit,
 acknowledged activation. Activating a new policy invalidates pending decisions and
 every scope granted under the old one; pause state carries over.

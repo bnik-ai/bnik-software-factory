@@ -87,7 +87,7 @@ model output and raw error text; unknown error text becomes `unclassified_failur
 | --- | --- |
 | `queued` | Pending claim or retry delay; inspect attempts and availability time. |
 | `running` | Lease owned or awaiting expiry; never replay an active item. |
-| `awaiting-human` | PR policy is satisfied and a human merge is still required. |
+| `awaiting-human` | PR policy is satisfied; a human merges it, or with opt-in automatic merge, `autonomy merge` can merge it through the merger App. |
 | `failed` | Queue item exhausted/rejected, or a separate PR policy check is parked; read the reason. |
 | `completed` | Queue item settled, or PR reconciliation completed. |
 | `quarantined` | This queue item cannot be claimed until an allowed explicit replay. |
@@ -152,15 +152,21 @@ Leases fence database writes; they do not undo an external API call.
 If a Task update succeeded before acknowledgment, the merge gate re-reads the
 same registered PR/Task and uses immutable merge proof to finish idempotently.
 It may repeat harmless label/close requests, but creates no replacement PR or
-Task. A changed PR head requires matching CI and current human approval.
+Task. A changed PR head requires matching CI and a current approval of that head:
+a configured human's, or, for a merge the merger App made under opt-in automatic
+merge, that App's own.
 
 For a coding/provider failure, inspect `python3 runtime/worker.py status` and use
 `python3 runtime/worker.py recover` to clean up uncertain resources as described
 in the [worker guide](isolated-worker.md). Recovery does not run a paid job again.
 After resolving the cause, a fresh human activation and explicit new coding
-request are required. Never reset attempt counters or reuse a failed paid job.
+request are required; under opt-in bounded autonomy, settle an open reservation
+with `autonomy reconcile` and start another attempt with `autonomy run --new-attempt`.
+Never reset attempt counters or reuse a failed paid job.
 
-Publication is an explicit operator step in the [pilot walkthrough](end-to-end-pilot.md).
+In the default mode, publication is an explicit operator step in the
+[pilot walkthrough](end-to-end-pilot.md); under opt-in bounded autonomy the publisher
+adopts a branch written before a crash (see [autonomy operations](autonomy-operations.md)).
 Before retrying an uncertain push or PR creation, compare the recorded branch,
 remote head, patch hash and existing PR. Reuse the existing matching PR; stop on
 conflicting identities. The recovery CLI has no publishing or merging authority.
