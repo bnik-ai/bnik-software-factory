@@ -2,10 +2,10 @@
 
 ## Maintainer and reporting
 
-This is a private candidate. The named public maintainer and contact have not yet
-been confirmed; no public support or private vulnerability-reporting channel is
-currently promised. A maintainer identity and tested reporting route are required
-before external distribution.
+This is a private candidate maintained by [@bnikanjam](https://github.com/bnikanjam).
+No public support or private vulnerability-reporting channel exists until the release
+repository is provisioned; a tested reporting route is required before external
+distribution.
 
 The proposed alpha policy is best-effort maintenance of the latest released alpha
 and current development branch only, with no guaranteed response time, fix date,

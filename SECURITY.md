@@ -3,9 +3,10 @@
 ## Reporting
 
 This private candidate has no public release repository or verified public security
-contact yet. Before external distribution, the named maintainer must enable and
-test GitHub private vulnerability reporting in that repository and identify any
-fallback private contact in this file.
+contact yet. Before external distribution, the maintainer
+([@bnikanjam](https://github.com/bnikanjam)) must enable and test GitHub private
+vulnerability reporting in that repository and identify any fallback private contact
+in this file.
 
 The proposed release reporting route is the repository's **Security → Advisories →
 Report a vulnerability** action. If that action is unavailable, do not post exploit

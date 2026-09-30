@@ -1,8 +1,9 @@
 # Maintainer guide
 
 Read [support](../SUPPORT.md), [contributing](../CONTRIBUTING.md) and
-[security](../SECURITY.md) for the public policy. The public maintainer identity and
-reporting route remain unconfirmed in this private candidate.
+[security](../SECURITY.md) for the public policy. The maintainer is
+[@bnikanjam](https://github.com/bnikanjam); the public reporting route remains unconfirmed until
+the release repository is provisioned.
 
 ## Triage and review
 

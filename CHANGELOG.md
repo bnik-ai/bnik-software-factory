@@ -79,7 +79,8 @@ merge/deploy or hosted service. Planning/Azure/operations paths are experimental
 Model access depends on the operator's account and exact SDK/model compatibility;
 there is no model substitution. Cost estimates are not bills or hard spending caps.
 
-Before release, confirm licensing/maintainer details, resolve dependency findings,
+Licensing and maintainer are confirmed: Apache-2.0, copyright 2026 Babak Nikanjam,
+maintained by @bnikanjam. Before release, resolve dependency findings,
 complete independent onboarding, review the exact artifact and obtain publication
 approval. Runtime integration and prior human workflow exercises do not replace
 independent onboarding. See [support](SUPPORT.md), [third-party components](THIRD_PARTY.md)

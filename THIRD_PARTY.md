@@ -28,7 +28,7 @@ manifest digests; their OS/runtime notices and the full built-image inventory ne
 review before distribution. Legacy service Dockerfiles remain experimental.
 Project-owned code uses [Apache-2.0](LICENSE); it does not override dependency or
 service terms. No SDK/platform binary or installed dependency tree is shipped in
-the source distribution. Exact copyright attribution is being finalized.
+the source distribution. The project's own copyright notice is in [NOTICE](NOTICE).
 
 
 ## Artifact and notice scope

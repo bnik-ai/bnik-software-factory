@@ -15,8 +15,9 @@ the merge and completes the paired Task.
 - **Locally operated:** run the factory through Docker using your own repository
   and credentials. Live work still connects to GitHub and the model provider.
 
-**Private alpha candidate; not yet released.** Apache-2.0 is selected for project-owned source; public attribution and maintainer
-identity are being finalized. No public repository, installation service or
+**Private alpha candidate; not yet released.** Project-owned source is licensed under Apache-2.0,
+copyright 2026 Babak Nikanjam (see [NOTICE](NOTICE)), and maintained by
+[@bnikanjam](https://github.com/bnikanjam). No public repository, installation service or
 prebuilt image is available from this tree. See the [license](LICENSE), [support status](SUPPORT.md),
 [provenance](PROVENANCE.md) and [third-party terms](THIRD_PARTY.md).
 
