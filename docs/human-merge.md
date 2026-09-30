@@ -131,14 +131,16 @@ fork PRs; a pull request that opt-in bounded autonomy publishes from its configu
 (`--publication fork`) is accepted by the autonomy commands and by the control plane's
 scan. Register and observe the open PR before merging it.
 
-A webhook delivery about a tracked, unreconciled pull request queues its look at
-once, parked or not: a pull request or review event, an edit or comment on its Task or
-pull request, or a check or status on its head. The control plane also scans tracked
+A webhook delivery that can change what the gate observes about a tracked, unreconciled
+pull request queues its look at once, parked or not: a pull-request event, a review by a
+configured reviewer or a dismissal, an edit, label or state change of its Task, a completed
+check or a settled status on its head. Comments and other people's reviews carry no gate
+evidence and queue nothing. The control plane also scans tracked
 PRs once a minute, including after a restart, as the fallback for missed deliveries:
 a scan queues one look per never-evaluated or `awaiting_human_merge` pull request, and
 looks at a parked one again after 15 minutes, so a repository with many permanently
-parked pull requests does not starve fresh ones. A pull request never has more than one
-look queued. A pull request parked by a retryable GitHub failure
+parked pull requests does not starve fresh ones. A pull request normally has at most one
+look queued, and a delivery during a running look queues the next. A pull request parked by a retryable GitHub failure
 (server error, rate limit, connection) keeps the one-minute cadence. A scan queues
 at most 100 pull requests, stalest first; the rest follow on the next scans.
 `review-scan` queues a look at every tracked, unreconciled pull request at once,

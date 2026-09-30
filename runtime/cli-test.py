@@ -63,5 +63,35 @@ class MergePolicyFileTest(unittest.TestCase):
             self.assertIn('the review services mount the merge-policy/ directory', result.stderr, script)
 
 
+
+@unittest.skipUnless((HERE.parent / 'services/local-runtime/node_modules/tsx').exists(), 'needs the locked services/local-runtime install (CI installs it first)')
+class WorkerEnvironmentTest(unittest.TestCase):
+    """runtime/worker.py hands the merge gate's scan the fork publication settings; pairing never sees them."""
+
+    def environment(self, command):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / '.env').write_text('FACTORY_MODE=live\nFACTORY_PUBLICATION_MODE=fork\nFACTORY_FORK_REPOSITORY_ID=99\n')
+            (root / 'merge-policy').mkdir()
+            (root / 'merge-policy' / 'merge-policy.json').write_text('{}')
+            bin_dir = root / 'bin'
+            bin_dir.mkdir()
+            out = root / 'env.txt'
+            node = bin_dir / 'node'
+            node.write_text(f'#!/bin/sh\nenv > {out}\n')
+            node.chmod(0o755)
+            result = subprocess.run([sys.executable, str(HERE / 'worker.py'), command], env={'PATH': f'{bin_dir}:/usr/bin:/bin', 'FACTORY_STATE_DIR': str(root)}, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return dict(line.split('=', 1) for line in out.read_text().splitlines() if '=' in line)
+
+    def test_the_scan_commands_receive_the_fork_settings_and_pairing_does_not(self):
+        for command in ('review-scan', 'review-status'):
+            env = self.environment(command)
+            self.assertEqual((env.get('FACTORY_PUBLICATION_MODE'), env.get('FACTORY_FORK_REPOSITORY_ID'), env.get('FACTORY_MERGE_POLICY_FILE', '').endswith('merge-policy/merge-policy.json')), ('fork', '99', True), command)
+        for command in ('track-pr', 'record-pr'):
+            env = self.environment(command)
+            self.assertNotIn('FACTORY_FORK_REPOSITORY_ID', env, command)
+            self.assertNotIn('FACTORY_PUBLICATION_MODE', env, command)
+
 if __name__ == '__main__':
     unittest.main()

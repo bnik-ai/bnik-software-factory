@@ -26,18 +26,35 @@ export const PARKED_RESCAN_MINUTES = 15;
 /** The most pull requests one scan queues; the stalest go first, the rest wait for the next scan. */
 export const SCAN_LIMIT = 100;
 /** A webhook delivery, as far as it names a pull request, a Task or a head commit. */
+type CheckPullRequest = { number?: number; base?: { repo?: { id?: number } } };
 export interface DeliveryBody {
+  action?: string;
   pull_request?: { number?: number };
+  review?: { user?: { login?: string } };
   issue?: { number?: number; pull_request?: unknown };
-  check_run?: { head_sha?: string; pull_requests?: { number?: number }[] };
-  check_suite?: { head_sha?: string; pull_requests?: { number?: number }[] };
+  check_run?: { head_sha?: string; pull_requests?: CheckPullRequest[] };
+  check_suite?: { head_sha?: string; pull_requests?: CheckPullRequest[] };
   sha?: string;
+  state?: string;
 }
+/** Task edits that change what the pairing binds (title, body, status labels) or the Task's life. */
+const TASK_ACTIONS = new Set([
+  'edited',
+  'labeled',
+  'unlabeled',
+  'closed',
+  'reopened',
+  'deleted',
+  'transferred',
+]);
 /**
  * Queues a gate look, in the caller's transaction, at every tracked pull request a delivery
- * concerns: its pull request or review, a Task edit (the pairing binds the Task), a check or
- * status on its head. Parked and pending pairs both; never a reconciled one, never one that
- * already has a look queued. The periodic scan remains the fallback for missed deliveries.
+ * concerns, when the delivery can change what the gate observes: a pull-request event; a review
+ * by a configured reviewer, or a dismissal; a Task edit, label or state change (the pairing binds
+ * the Task); a completed check or a settled status on its head. Comments and other people's
+ * reviews carry no gate evidence and cost no GitHub reads. Parked and pending pairs both; never a
+ * reconciled one; not when a look is already pending (a running look may have read stale
+ * evidence, so a delivery during it still queues one). The periodic scan remains the fallback.
  */
 export async function queueDeliveryLooks(
   client: PoolClient,
@@ -52,20 +69,28 @@ export async function queueDeliveryLooks(
   let head: string | null = null;
   const number = (value: unknown) =>
     Number.isSafeInteger(value) && (value as number) > 0 ? (value as number) : null;
-  if (event === 'pull_request' || event === 'pull_request_review') {
+  const reviewers = new Set(
+    (config.mergePolicy?.reviewers ?? []).map((login) => login.toLowerCase()),
+  );
+  if (event === 'pull_request') {
     const pull = number(body.pull_request?.number);
     if (pull) pulls.add(pull);
-  } else if (event === 'issues' || event === 'issue_comment') {
+  } else if (event === 'pull_request_review') {
+    const reviewer = body.review?.user?.login?.toLowerCase();
+    const pull = number(body.pull_request?.number);
+    if (pull && (body.action === 'dismissed' || (reviewer && reviewers.has(reviewer))))
+      pulls.add(pull);
+  } else if (event === 'issues') {
     const issue = number(body.issue?.number);
-    if (issue) (body.issue?.pull_request ? pulls : tasks).add(issue);
-  } else if (event === 'check_run' || event === 'check_suite') {
+    if (issue && TASK_ACTIONS.has(body.action ?? '')) tasks.add(issue);
+  } else if ((event === 'check_run' || event === 'check_suite') && body.action === 'completed') {
     const check = event === 'check_run' ? body.check_run : body.check_suite;
     for (const entry of check?.pull_requests ?? []) {
       const pull = number(entry?.number);
-      if (pull) pulls.add(pull);
+      if (pull && entry?.base?.repo?.id === config.repositoryId) pulls.add(pull);
     }
     head = check?.head_sha ?? null;
-  } else if (event === 'status') head = body.sha ?? null;
+  } else if (event === 'status' && body.state !== 'pending') head = body.sha ?? null;
   if (head !== null && !/^[0-9a-f]{40}$/.test(head)) head = null;
   if (!pulls.size && !tasks.size && head === null) return [];
   const rows = await client.query<{ pull_number: number }>(
@@ -75,7 +100,7 @@ export async function queueDeliveryLooks(
         OR ($5::text IS NOT NULL AND (s.head = $5 OR p.pair->>'initialHead' = $5)))
       AND (s.state IS NULL OR s.state <> 'reconciled')
       AND NOT EXISTS (SELECT 1 FROM factory_work w WHERE w.queue_name='HumanMergeGate'
-        AND w.state IN ('pending','running') AND (w.body->>'repositoryId')::bigint=p.repository_id
+        AND w.state='pending' AND (w.body->>'repositoryId')::bigint=p.repository_id
         AND (w.body->>'pull')::bigint=p.pull_number)
     ORDER BY p.pull_number LIMIT $6::int`,
     [config.repositoryId, config.installationId, [...pulls], [...tasks], head, SCAN_LIMIT],

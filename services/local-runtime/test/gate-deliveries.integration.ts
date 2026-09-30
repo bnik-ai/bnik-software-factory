@@ -50,12 +50,14 @@ async function tracked() {
   return { github, gate, intake };
 }
 
-test('a delivery about a tracked pull request queues its gate look at once, one at a time', async () => {
+test('a delivery that can change the gate evidence queues its look at once, one at a time', async () => {
   const { github, gate, intake } = await tracked();
+  const head = github.pull.head.sha;
   try {
     await deliver(intake, 'pull_request_review', {
       action: 'submitted',
       pull_request: { number: 2 },
+      review: { user: { login: 'Example-Maintainer' } },
     });
     const queued = await looks();
     assert.deepEqual(
@@ -63,34 +65,35 @@ test('a delivery about a tracked pull request queues its gate look at once, one 
       [2],
     );
     assert.match(queued[0]?.key ?? '', /^42:2:delivery:/);
-    // A second delivery while that look is queued adds nothing.
+    // A second delivery while that look is pending adds nothing.
     await deliver(intake, 'pull_request', { action: 'synchronize', pull_request: { number: 2 } });
     assert.equal((await looks()).length, 1);
     assert.equal(await gate.step(), true);
-    for (const [event, body] of [
-      ['status', { sha: github.pull.head.sha, state: 'success' }],
-      [
-        'check_run',
-        { action: 'completed', check_run: { head_sha: github.pull.head.sha, pull_requests: [] } },
-      ],
+    const deliveries: [string, object][] = [
+      ['status', { sha: head, state: 'success' }],
+      ['check_run', { action: 'completed', check_run: { head_sha: head, pull_requests: [] } }],
       [
         'check_suite',
         {
           action: 'completed',
-          check_suite: { head_sha: 'f'.repeat(40), pull_requests: [{ number: 2 }] },
+          check_suite: {
+            head_sha: 'f'.repeat(40),
+            pull_requests: [{ number: 2, base: { repo: { id: 42 } } }],
+          },
         },
       ],
       ['issues', { action: 'edited', issue: { number: 1 } }],
       [
-        'issue_comment',
+        'pull_request_review',
         {
-          action: 'created',
-          issue: { number: 2, pull_request: {} },
-          comment: { body: 'looks good' },
+          action: 'dismissed',
+          pull_request: { number: 2 },
+          review: { user: { login: 'someone-else' } },
         },
       ],
-    ] as const) {
-      await deliver(intake, event, body);
+    ];
+    for (const [event, payload] of deliveries) {
+      await deliver(intake, event, payload);
       assert.deepEqual(
         (await looks()).map((l) => l.pull),
         [2],
@@ -104,15 +107,60 @@ test('a delivery about a tracked pull request queues its gate look at once, one 
   }
 });
 
-test('deliveries about untracked or reconciled pull requests, or unusable heads, queue nothing', async () => {
+test('deliveries without gate evidence, or about untracked or reconciled pull requests, queue nothing', async () => {
   const { github, gate, intake } = await tracked();
+  const head = github.pull.head.sha;
   try {
-    await deliver(intake, 'pull_request', { action: 'opened', pull_request: { number: 3 } });
-    await deliver(intake, 'status', { sha: 'not-a-sha' });
-    await deliver(intake, 'check_suite', {
-      check_suite: { head_sha: 'e'.repeat(40), pull_requests: [] },
-    });
-    assert.deepEqual(await looks(), []);
+    const ignored: [string, object][] = [
+      ['pull_request', { action: 'opened', pull_request: { number: 3 } }],
+      ['status', { sha: 'not-a-sha', state: 'success' }],
+      ['status', { sha: head, state: 'pending' }],
+      [
+        'check_suite',
+        {
+          action: 'requested',
+          check_suite: {
+            head_sha: head,
+            pull_requests: [{ number: 2, base: { repo: { id: 42 } } }],
+          },
+        },
+      ],
+      [
+        'check_run',
+        {
+          action: 'completed',
+          check_run: {
+            head_sha: 'e'.repeat(40),
+            pull_requests: [{ number: 2, base: { repo: { id: 7 } } }],
+          },
+        },
+      ],
+      [
+        'issue_comment',
+        {
+          action: 'created',
+          issue: { number: 2, pull_request: {} },
+          comment: { body: 'looks good' },
+        },
+      ],
+      [
+        'issue_comment',
+        { action: 'created', issue: { number: 1 }, comment: { body: 'any news?' } },
+      ],
+      ['issues', { action: 'opened', issue: { number: 1 } }],
+      [
+        'pull_request_review',
+        {
+          action: 'submitted',
+          pull_request: { number: 2 },
+          review: { user: { login: 'drive-by' } },
+        },
+      ],
+    ];
+    for (const [event, payload] of ignored) {
+      await deliver(intake, event, payload);
+      assert.deepEqual(await looks(), [], event);
+    }
     github.merge();
     await gate.schedule({ includeParked: true });
     assert.equal(await gate.step(), true);
@@ -125,14 +173,56 @@ test('deliveries about untracked or reconciled pull requests, or unusable heads,
   }
 });
 
+test('each head clause alone matches, and a delivery during a running look queues the next', async () => {
+  const { github, gate, intake } = await tracked();
+  const repositoryId = github.config.repositoryId as number;
+  const setHead = (sha: string) =>
+    admin.query('UPDATE factory_pr_state SET head=$3 WHERE repository_id=$1 AND pull_number=$2', [
+      repositoryId,
+      2,
+      sha,
+    ]);
+  try {
+    // The observed head moved on: a status on it matches the state row, not the pairing's initial head.
+    await setHead('b'.repeat(40));
+    await deliver(intake, 'status', { sha: 'b'.repeat(40), state: 'failure' });
+    assert.deepEqual(
+      (await looks()).map((l) => l.pull),
+      [2],
+    );
+    assert.equal(await gate.step(), true);
+    // A status on the pairing's initial head matches even when the state row names another head.
+    await setHead('c'.repeat(40));
+    await deliver(intake, 'status', { sha: github.pull.head.sha, state: 'success' });
+    assert.deepEqual(
+      (await looks()).map((l) => l.pull),
+      [2],
+    );
+    // A look is running (it may already have read the evidence): a delivery still queues the next.
+    const running = await gate.take();
+    assert.ok(running);
+    await deliver(intake, 'check_run', {
+      action: 'completed',
+      check_run: { head_sha: github.pull.head.sha, pull_requests: [] },
+    });
+    const states = (
+      await admin.query<{ state: string }>(
+        "SELECT state FROM factory_work WHERE queue_name='HumanMergeGate' AND state IN ('pending','running') ORDER BY id",
+      )
+    ).rows.map((row) => row.state);
+    assert.deepEqual(states, ['running', 'pending']);
+    await gate.forget(running.lease_token);
+  } finally {
+    await gate.close();
+    await intake.close();
+  }
+});
+
 test('without a merge profile the intake queues no gate looks', async () => {
   const { gate, intake } = await tracked();
   const plain = new GitHubIntake(pool, liveConfig(), new MergeFixture());
   try {
-    await deliver(plain, 'pull_request_review', {
-      action: 'submitted',
-      pull_request: { number: 2 },
-    });
+    await deliver(plain, 'pull_request', { action: 'synchronize', pull_request: { number: 2 } });
     assert.deepEqual(await looks(), []);
   } finally {
     await plain.close();

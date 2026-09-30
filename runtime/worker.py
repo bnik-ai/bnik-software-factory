@@ -16,6 +16,12 @@ env = {key: os.environ[key] for key in allowed if key in os.environ}
 for key in ['FACTORY_MODE', 'FACTORY_REPOSITORY', 'GITHUB_INSTALLATION_ID', 'GITHUB_APP_SLUG', 'GITHUB_APP_ID', 'FACTORY_WORKER_IMAGE', 'FACTORY_REPOSITORY_ID', 'FACTORY_WEBHOOK_URL', 'FACTORY_OPERATORS', 'FACTORY_EXECUTION', 'FACTORY_MAX_TASK_RUNS', 'FACTORY_MAX_RUN_TURNS', 'FACTORY_MAX_RUN_MS', 'FACTORY_MAX_RUN_BUDGET_USD']:
     if key in settings:
         env[key] = settings[key]
+# The merge gate's scan accepts pull requests bounded autonomy publishes from the configured fork;
+# pairing (`track-pr`, `record-pr`) stays refused for forks in the human flow.
+if command in ('review-scan', 'review-status'):
+    for key in ['FACTORY_PUBLICATION_MODE', 'FACTORY_FORK_REPOSITORY_ID']:
+        if key in settings:
+            env[key] = settings[key]
 if os.environ.get('FACTORY_WORKER_IMAGE'):
     env['FACTORY_WORKER_IMAGE'] = os.environ['FACTORY_WORKER_IMAGE']
 env.update(POSTGRES_HOST=os.environ.get('FACTORY_DATABASE_HOST', '127.0.0.1'), POSTGRES_PORT='5432' if os.environ.get('FACTORY_DATABASE_HOST') else settings.get('FACTORY_DATABASE_PORT', '55432'), POSTGRES_DATABASE='software_factory', POSTGRES_USER='factory_runtime', POSTGRES_TLS='disable', POSTGRES_PASSWORD_FILE=str(root / 'secrets/database_password'), GITHUB_WEBHOOK_SECRET_FILE=str(root / 'secrets/webhook_secret'))
