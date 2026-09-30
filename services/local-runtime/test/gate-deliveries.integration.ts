@@ -282,7 +282,8 @@ test('anyone may park a pull request with a change request; any review then queu
       (await gate.status()).map((row) => [row.state, row.reason]),
       [['parked', 'changes_requested']],
     );
-    // Parked on the change request: the same user's later comment or approval may lift it.
+    // Parked on the change request: any review queues a look (the same user's approval lifts it; a comment
+    // changes nothing and costs one look).
     await deliver(intake, 'pull_request_review', review('drive-by', 'commented'));
     assert.equal((await looks()).length, 1);
     assert.equal(await gate.step(), true);
@@ -296,6 +297,19 @@ test('anyone may park a pull request with a change request; any review then queu
     );
     await deliver(intake, 'pull_request_review', review('drive-by', 'approved'));
     assert.deepEqual(await looks(), []);
+    // A look is running (it may have read a change request the stored state does not show yet): any
+    // review queues the next look.
+    await gate.schedule({ includeParked: true });
+    const running = await gate.take();
+    assert.ok(running);
+    await deliver(intake, 'pull_request_review', review('drive-by', 'approved'));
+    const states = (
+      await admin.query<{ state: string }>(
+        "SELECT state FROM factory_work WHERE queue_name='HumanMergeGate' AND state IN ('pending','running') ORDER BY id",
+      )
+    ).rows.map((row) => row.state);
+    assert.deepEqual(states, ['running', 'pending']);
+    await gate.forget(running.lease_token);
   } finally {
     await gate.close();
     await intake.close();

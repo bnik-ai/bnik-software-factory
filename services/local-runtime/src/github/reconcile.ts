@@ -48,8 +48,9 @@ const TASK_ACTIONS = new Set([
   'unlocked',
 ]);
 /**
- * Whose review can satisfy the gate (merge-policy.ts `verifyReviews`: a listed reviewer, or the
- * merger App's bot under the automatic profile), as the policy file says now, else as loaded.
+ * Whose approval can count (merge-policy.ts `verifyReviews`): a listed reviewer, or under the
+ * automatic profile the merger App's bot, for the App's own merge only. As the policy file says
+ * now, else as loaded.
  */
 function countedReviewers(config: RuntimeConfig): Set<string> {
   let policy = config.mergePolicy;
@@ -69,7 +70,8 @@ function countedReviewers(config: RuntimeConfig): Set<string> {
  * concerns, when the delivery can change what the gate observes: a pull-request event; a review
  * whose approval can count (`countedReviewers`), a dismissal, anyone's change request (any
  * user's latest CHANGES_REQUESTED parks, merge-policy.ts `verifyReviews`), or any review while
- * the pair is parked on a change request; a Task edit, label, lock or state change (the pairing
+ * the pair is parked on a change request or a look at it is running (it may have read the
+ * change request the review lifts); a Task edit, label, lock or state change (the pairing
  * binds the Task); a completed check run or suite on its head (the gate reads check runs, never
  * statuses). Comments, statuses and other reviews cost no GitHub reads; the one-minute scan
  * covers pairs awaiting a merge. Parked and pending pairs both; never a reconciled one; not when
@@ -123,7 +125,9 @@ export async function queueDeliveryLooks(
       AND (p.pull_number = ANY($3::bigint[]) OR p.task_number = ANY($4::bigint[])
         OR ($5::text IS NOT NULL AND (s.head = $5 OR p.pair->>'initialHead' = $5)))
       AND (s.state IS NULL OR s.state <> 'reconciled')
-      AND (NOT $7::boolean OR (s.state = 'parked' AND s.reason = 'changes_requested'))
+      AND (NOT $7::boolean OR (s.state = 'parked' AND s.reason = 'changes_requested')
+        OR EXISTS (SELECT 1 FROM factory_work r WHERE r.queue_name='HumanMergeGate' AND r.state='running'
+          AND (r.body->>'repositoryId')::bigint=p.repository_id AND (r.body->>'pull')::bigint=p.pull_number))
       AND NOT EXISTS (SELECT 1 FROM factory_work w WHERE w.queue_name='HumanMergeGate'
         AND w.state='pending' AND (w.body->>'repositoryId')::bigint=p.repository_id
         AND (w.body->>'pull')::bigint=p.pull_number)
