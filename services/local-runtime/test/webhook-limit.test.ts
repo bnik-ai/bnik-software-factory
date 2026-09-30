@@ -56,8 +56,8 @@ for (const [mode, app] of [
     assert.equal((await post(app, LIMIT + 1, true)).status, 413);
   });
   test(`${mode}: a webhook body of exactly 1 MiB reaches the handler (refused there for its signature)`, async () => {
-    const response = await post(app, LIMIT);
-    assert.notEqual(response.status, 413);
-    assert.ok(response.status >= 400 && response.status < 500, String(response.status));
+    // 401 is the handler's missing-signature answer; an unrouted POST would be 404.
+    assert.equal((await post(app, LIMIT)).status, 401);
+    assert.equal((await post(app, LIMIT, true)).status, 401);
   });
 }
