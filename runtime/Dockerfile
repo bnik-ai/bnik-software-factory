@@ -10,7 +10,7 @@ RUN for service in github-app validator orchestrator local-runtime; do \
     done
 COPY services /app/services
 COPY runtime /app/runtime
-COPY THIRD_PARTY.md PROVENANCE.md /app/
+COPY LICENSE NOTICE THIRD_PARTY.md PROVENANCE.md /app/
 # No Agent SDK/runtime installation or model-executed shell in this image.
 # Normalize image-owned source modes even when the host checkout uses umask 077.
 # Host files and separately mounted secrets are not changed.

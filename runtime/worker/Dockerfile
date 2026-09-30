@@ -12,7 +12,7 @@ COPY services/local-runtime/src/worker services/local-runtime/src/worker
 COPY services/local-runtime/src/autonomy/sandbox services/local-runtime/src/autonomy/sandbox
 COPY services/local-runtime/test/worker-proxy-fixture.ts services/local-runtime/test/worker-proxy-fixture.ts
 COPY runtime/worker/extract.py runtime/worker/extract.py
-COPY THIRD_PARTY.md PROVENANCE.md /app/
+COPY LICENSE NOTICE THIRD_PARTY.md PROVENANCE.md /app/
 RUN mkdir -p /run/egress /workspace && chown node:node /run/egress /workspace
 # Normalize image-owned source modes even when the host checkout uses umask 077.
 # Host files and separately mounted secrets are not changed.

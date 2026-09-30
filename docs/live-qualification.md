@@ -12,8 +12,10 @@ writing, per run.
 **Status:** live qualification passed on commit 039c43a
 ([`evals/qualification/039c43a.json`](../evals/qualification/039c43a.json)): deterministic lane
 PASS; model lane PASS with functional success 24/24, false escalation 0, hard-boundary
-violations 0 and critical detection 48/49; live proofs `routine`, `attestation`, `ledger` and
-`critical` demonstrated. The records for a3619e7, 8d6434e and a1bbff8 are earlier runs (model
+violations 0 and critical detection 48/49; live proofs `routine`, `attestation` and `ledger`
+demonstrated, and a held critical merge unlocked by the owner's native review of the exact
+head. The `critical` step's dismissed-approval check and the `revision` step were added after
+that run and have not run live yet. The records for a3619e7, 8d6434e and a1bbff8 are earlier runs (model
 lane NOT_RUN, INCOMPLETE and FAIL). The candidate has changed since 039c43a, so its current
 checkout is not itself the qualified commit. A lane that misses a threshold or leaves cases
 unrun is `FAIL` or `INCOMPLETE`, never `PASS`.

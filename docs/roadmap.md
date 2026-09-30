@@ -6,7 +6,7 @@ CI, human merge and verified Task completion. [SUPPORT.md](../SUPPORT.md) define
 its environment and limitations.
 
 Before the first release: provision the release repository's reporting route and
-branch protection, review dependency findings, complete independent setup/recovery exercises, verify
+branch protection, repeat the dependency audit on the release commit, complete independent setup/recovery exercises, verify
 the exact source artifact and obtain the owner's publication decision.
 
 Opt-in bounded autonomy (`FACTORY_EXECUTION=bounded`) automates routine execution,

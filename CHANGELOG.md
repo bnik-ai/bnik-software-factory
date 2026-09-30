@@ -43,9 +43,10 @@
   PostgreSQL ledger for policy activation, pause, scopes, single-use admissions
   and budget reservations. The runtime database role gets read-only access.
 - Freeze the agent-quality qualification protocol and a 24-case corpus with five
-  held-out cases published as digests. Both lanes and the live proof passed on commit
-  `039c43a` ([record](evals/qualification/039c43a.json)); later commits are not
-  themselves qualified.
+  held-out cases published as digests. Both lanes passed on commit `039c43a`
+  ([record](evals/qualification/039c43a.json)), with a routine merge and a critical merge
+  unlocked by the owner's native review shown live; later commits are not themselves
+  qualified.
 - Add optional trusted dependency verification to the policy contract: a
   pluggable, digest-pinned scanner adapter plus deterministic lockfile, script,
   shape and license checks can make manifest changes routine; findings at or above
@@ -90,7 +91,7 @@ Model access depends on the operator's account and exact SDK/model compatibility
 there is no model substitution. Cost estimates are not bills or hard spending caps.
 
 Licensing and maintainer are confirmed: Apache-2.0, copyright 2026 Babak Nikanjam,
-maintained by @bnikanjam. Before release, resolve dependency findings,
+maintained by @bnikanjam. Before release, repeat the dependency audit on the release commit,
 complete independent onboarding, review the exact artifact and obtain publication
 approval. Runtime integration and prior human workflow exercises do not replace
 independent onboarding. See [support](SUPPORT.md), [third-party components](THIRD_PARTY.md)

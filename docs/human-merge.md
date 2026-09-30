@@ -162,7 +162,8 @@ API failures and missing/failed/stale evidence park visibly and are reconsidered
 on the next scan that includes them. Verify protection errors rather than
 weakening policy. Start with one active pilot PR; API quotas bound larger queues.
 
-An eligible observation waits for the human to merge. After merge, the runtime
+An eligible observation waits for the merge: a configured human's or, under the
+automatic-merge profile, the merger App's. After merge, the runtime
 requires the same head, policy and protection, a preceding base observation, a
 single-parent squash commit onto that base, and native approval/check timestamps no
 later than the merge. The merger must be a configured human or, under the
