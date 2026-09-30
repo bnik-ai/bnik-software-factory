@@ -7,7 +7,7 @@
       "configuration": {
         "modelId": "claude-sonnet-5"
       },
-      "registeredAt": "2026-09-30T05:17:45+00:00",
+      "registeredAt": "2026-09-30T06:02:36+00:00",
       "record": "evals/qualification/039c43a.json",
       "recordSha256": "e95c5b25d4946952aafe95ad1151c2b162f1d170a8f69a336f978adf9f625bea",
       "candidateCommit": "039c43afbf28a136ce45532afb577a4231798024",
