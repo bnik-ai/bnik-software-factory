@@ -83,9 +83,9 @@ in [THIRD_PARTY.md](../THIRD_PARTY.md).
 
 Dependency audits are a separate review input, not an automatic `npm audit fix`.
 Record advisory IDs, affected locked versions, runtime/dev scope and exposure;
-choose targeted fixes and rerun relevant checks. Current preparation has unresolved
-advisories, including the agent test toolchain and Hono middleware. Passing CI does
-not imply a clean dependency audit. Review/remediation remains required for release.
+choose targeted fixes and rerun relevant checks. The five lockfiles audited clean on
+September 30, 2026; re-audit before each release. Passing CI does not imply a clean
+dependency audit.
 
 The `container-operator` job runs `runtime/operator/test.sh` with fresh state and
 unique image tags. It blocks host Node/npm/Python in PATH and exercises the demo,

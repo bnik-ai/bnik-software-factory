@@ -66,8 +66,8 @@ autonomy (`FACTORY_AUTOMERGE=enabled`); its live qualification is recorded in `e
 protocol's model lane and the live proof have not run (see
 [live qualification](docs/live-qualification.md) and the [roadmap](docs/roadmap.md)).
 
-This candidate has known dependency advisories requiring review/remediation before
-release. Passing tests is not a clean security audit. Containers share a host kernel;
+The five lockfiles audited clean on September 30, 2026; audits are point-in-time and are
+repeated before each release. Passing tests is not a clean security audit. Containers share a host kernel;
 provider requests can include repository content, and local estimates are not bills.
 See [security](SECURITY.md), [worker boundaries](docs/isolated-worker.md) and
 [third-party terms](THIRD_PARTY.md) before using non-synthetic data.

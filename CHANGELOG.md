@@ -1,5 +1,9 @@
 # Release notes
 
+- Remediate every dependency advisory `npm audit` reported for the five lockfiles (1 critical,
+  16 high across entries): Hono 4.13.11 and `@hono/node-server` 1.19.17 in the control plane,
+  Vitest 4.1.11 in the four test-running services, and patched transitive packages within
+  their ranges. The webhook's 1 MiB body limit is now covered by a test.
 - Add opt-in automatic merge for bounded autonomy (`FACTORY_AUTOMERGE=enabled`, live
   only): a trusted merge-gate observation (head tree, protection, required checks,
   reviews), approvals sourced from native GitHub reviews of the exact head by configured

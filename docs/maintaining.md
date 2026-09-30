@@ -17,8 +17,8 @@ For dependency upgrades, inspect lockfile changes, advisory IDs, direct/transiti
 and runtime/development scope, vendor terms and exact installed versions. Do not
 run blanket audit fixes or silently change model IDs. SDK upgrades need compatibility
 checks and the worker boundary suite. Preserve vendor notices and inventory any
-new copied source. Current advisories remain release work until mitigated or
-explicitly evaluated in the release decision.
+new copied source. Re-audit every lockfile before each release; an advisory is release
+work until mitigated or explicitly evaluated in the release decision.
 
 ## Operate the local profile
 

@@ -39,8 +39,9 @@ local result directories can contain sensitive code. Use [retention controls](do
 and [recovery procedures](docs/recovery.md); local content pruning does not erase
 GitHub history, provider records, filesystem exports or backups.
 
-Dependency audits have unresolved findings in the test toolchain and Hono middleware.
-They require release review; a passing build is not evidence of no vulnerabilities.
+`npm audit` of all five lockfiles reported no advisories on September 30, 2026, after the
+remediation in the [release notes](CHANGELOG.md). Audits are point-in-time: re-audit before
+each release; a passing build is not evidence of no vulnerabilities.
 Do not expose development test UI servers or experimental entrypoints as services.
 Report vendor vulnerabilities to that vendor's security channel as appropriate;
 project maintainers cannot commit to fixes in a vendor's runtime or service.
