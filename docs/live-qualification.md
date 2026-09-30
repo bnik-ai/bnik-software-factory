@@ -144,8 +144,10 @@ For every visible case, three trials, each from a clean fixture state:
    results, not their specs.
 
 Every trial counts. There are no selective reruns; a case with mixed outcomes is reported
-as flaky with every outcome. The first run that meets every absolute threshold registers
-the baseline.
+as flaky with every outcome. The first run of a configuration that meets every absolute
+threshold with every case run is registered as its baseline (`qualify.py --register-baseline`, see
+[evals/README.md](../evals/README.md#thresholds)); later runs of that model must stay within
+the regression tolerance of it.
 
 ## The live proof of the merge path
 
@@ -171,8 +173,9 @@ attestation; the ledger commands under the `autonomy-operator` mounts in live mo
 evals/qualification/<commit>.json` writes the record: the configuration fingerprint (exact
 commit, model id, SDK version, prompt/context package, tool surface, policy, worker image,
 reviewer configuration, acceptance runner image, corpus, scorer, protocol, run limits,
-authorized budget), both lanes with every trial's outcome, the threshold evaluation, the
-baseline, and the open gates. The record is committed after the commit it describes. Live
+authorized budget), both lanes with every trial as judged and each report's digest, the
+threshold evaluation including the regression against the registered baseline, and the open
+gates. The record is committed after the commit it describes. Live
 proof evidence (pull request numbers, merge commits, review ids, ledger decisions) goes
 into the same record under `liveProof`.
 

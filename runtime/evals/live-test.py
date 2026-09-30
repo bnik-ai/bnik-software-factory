@@ -3,6 +3,7 @@
 import base64
 import contextlib
 import importlib.util
+import hashlib
 import io
 import json
 import os
@@ -632,6 +633,281 @@ class QualifyIncompleteTest(unittest.TestCase):
     def test_functional_failures_below_threshold_fail(self):
         self.assertEqual(self.lane([self.trial('F01', 'functional', 1, success=False), self.trial('F01', 'functional', 2)])['status'], 'FAIL')
 
+
+
+class QualifyBaselineTest(unittest.TestCase):
+    """Protocol `baseline` and `counting`: every judged trial kept, flaky cases of both kinds, the first passing run as baseline."""
+
+    protocol = json.loads((ROOT / 'evals/qualification-protocol.json').read_text())
+    authorization = {'authorizedBy': 'o', 'budgetUsd': 1, 'repository': 'o/r', 'expiresAt': '2099-01-01T00:00:00Z', 'trustedJob': 'test'}
+
+    def trial(self, case, kind, n, ok=True, outcome='completed', held_out=False, escalation=False, violations=0):
+        return {'case': case, 'trial': n, 'kind': kind, 'outcome': outcome, 'heldOut': held_out, 'functionalSuccess': ok if kind == 'functional' else None,
+                'falseEscalation': escalation, 'criticalDetection': ok if kind == 'adversarial' else None, 'hardBoundaryViolations': violations,
+                'attackSurfaceObserved': ['src/secret_layout.py'] if held_out else [], 'estimatedCostUsd': 0.1, 'latencySeconds': 10, 'humanInterventions': 0, 'repairCount': 0,
+                'observed': {'runState': 'published', 'mergeState': 'merged', 'stderr': 'not kept', 'publication': {'pullNumber': 7}, 'detection': True,
+                             'changedPaths': ['src/secret_layout.py'], 'reasonCodes': ['ci_or_repository_automation'],
+                             'mergeDecisions': [{'action': 'merge', 'outcome': 'allow', 'reasons': ['x']}], 'executedAttempts': 1, 'runCosts': [0.1]}}
+
+    def test_flaky_cases_follow_outcome_success_detection_escalation(self):
+        self.assertEqual(qualify.flaky_cases([self.trial('A08', 'adversarial', 1), self.trial('A08', 'adversarial', 2, ok=False, outcome='error'), self.trial('F01', 'functional', 1), self.trial('F01', 'functional', 2)]), ['A08'])
+        # Same outcome kind, different detection: still flaky (an outcome-only rule would miss it).
+        self.assertEqual(qualify.flaky_cases([self.trial('A01', 'adversarial', 1), self.trial('A01', 'adversarial', 2, ok=False)]), ['A01'])
+        self.assertEqual(qualify.flaky_cases([self.trial('F02', 'functional', 1), self.trial('F02', 'functional', 2, escalation=True)]), ['F02'])
+        self.assertEqual(qualify.flaky_cases([self.trial('A03', 'adversarial', 1), self.trial('A03', 'adversarial', 2, violations=1)]), ['A03'])
+
+    def test_judged_trials_keep_what_the_score_used_and_withhold_held_out_layouts(self):
+        visible, held = qualify.judged_trials([self.trial('F01', 'functional', 1), self.trial('H01', 'adversarial', 1, held_out=True)])
+        self.assertEqual((visible['observed']['detection'], visible['observed']['published'], visible['observed']['mergeDecisions'], visible['observed']['executedAttempts'], visible['observed']['runCosts']),
+                         (True, True, [{'action': 'merge', 'outcome': 'allow'}], 1, [0.1]))
+        self.assertEqual((visible['observed']['changedPaths'], 'stderr' in visible['observed'], 'publication' in visible['observed']), (['src/secret_layout.py'], False, False))
+        self.assertEqual((held['attackSurfaceObserved'], held['observed']['changedPaths'], held['observed']['reasonCodes']), ('withheld',) * 3)
+        self.assertNotIn('secret_layout', json.dumps(held))
+        self.assertNotIn('ci_or_repository_automation', json.dumps(held))
+
+    def test_the_lane_keeps_every_trial_as_judged_and_the_report_digest(self):
+        trials = [self.trial('F01', 'functional', n) for n in (1, 2)]
+        with tempfile.TemporaryDirectory() as tmp:
+            report = Path(tmp) / 'report.json'
+            report.write_text(json.dumps(QualifyIncompleteTest.report(None, trials)))
+            authorization = Path(tmp) / 'auth.json'
+            authorization.write_text(json.dumps(self.authorization))
+            lane = qualify.model_lane(report, authorization, self.protocol)[0]
+            digest = hashlib.sha256(report.read_bytes()).hexdigest()
+        self.assertEqual((lane['reportSha256'], len(lane['trialRecords'])), (digest, 2))
+
+    def test_policy_paths_are_recorded_without_local_directories(self):
+        self.assertEqual(qualify.relative_path(str(ROOT / 'examples/autonomy-demo/autonomy-policy.json')), 'examples/autonomy-demo/autonomy-policy.json')
+        self.assertEqual(qualify.relative_path('/Users/someone/other-checkout/examples/autonomy-demo/autonomy-policy.json'), 'examples/autonomy-demo/autonomy-policy.json')
+        self.assertEqual(qualify.relative_path('/private/tmp/policy-alias.json'), 'policy-alias.json')
+
+    def test_a_report_of_another_model_fails_the_lane(self):
+        self.assertEqual(qualify.bind_model({'status': 'PASS', 'modelId': 'other'}, 'm')['status'], 'FAIL')
+        self.assertEqual(qualify.bind_model({'status': 'PASS', 'modelId': 'm'}, 'm')['status'], 'PASS')
+        self.assertEqual(qualify.bind_model({'status': 'NOT_RUN'}, 'm')['status'], 'NOT_RUN')
+
+    def test_regression_is_judged_against_the_registered_baseline_only(self):
+        baseline = {'record': 'r.json', 'candidateCommit': 'c', 'functionalSuccessRate': 1.0}
+        ran = lambda rate: {'status': 'PASS', 'functionalSuccessRate': rate}
+        self.assertEqual(qualify.regression_evaluation(ran(0.5), None, 5)['met'], None)
+        # A registered baseline the record could not judge (no model lane) is named, never reported as absent.
+        unjudged = qualify.regression_evaluation({'status': 'NOT_RUN'}, None, 5, 'evals/qualification/r.json')
+        self.assertEqual((unjudged['met'], unjudged['baseline']), (None, 'registered (evals/qualification/r.json); not evaluated: the model lane did not run'))
+        self.assertEqual(qualify.regression_evaluation({'status': 'NOT_RUN'}, None, 5)['baseline'], 'none registered')
+        self.assertEqual(qualify.regression_evaluation({'status': 'NOT_RUN'}, baseline, 5)['met'], None)
+        self.assertTrue(qualify.regression_evaluation(ran(23 / 24), baseline, 5)['met'])
+        self.assertTrue(qualify.regression_evaluation(ran(0.95), baseline, 5)['met'])
+        self.assertFalse(qualify.regression_evaluation(ran(22 / 24), baseline, 5)['met'])
+
+    def record(self, commit='c' * 40, model='m', met=True, generated='2026-09-30T00:00:00+00:00', report_sha=None, protocol_sha=None, lanes_pass=True):
+        model_lane = {'status': 'PASS' if lanes_pass else 'FAIL', **qualify.lane_rates(self.trials), 'authorization': self.authorization, **({'reportSha256': report_sha} if report_sha else {}),
+                      'estimatedCostUsd': sum(t['estimatedCostUsd'] for t in self.trials), 'latencySeconds': sum(t['latencySeconds'] for t in self.trials)}
+        absolute = {k: {'met': met} for k in ('deterministicContractsPassRate', 'hardBoundaryViolations', 'functionalSuccessRateMin', 'falseEscalationRateMax')}
+        return {'protocolId': self.protocol['protocolId'], 'generatedAt': generated, 'qualification': 'met' if met else 'open', 'openGates': [] if met else ['model'],
+                'fingerprint': {'candidateCommit': commit, 'modelId': model, 'protocolSha256': protocol_sha or qualify.sha256_file('evals/qualification-protocol.json'), 'policyTemplate': str(ROOT / 'examples/autonomy-demo/autonomy-policy.json')},
+                'lanes': {'deterministic': {'status': 'PASS'}, 'model': model_lane}, 'thresholds': {**absolute, 'regressionToleranceFunctionalPercentagePoints': {'met': None}}}
+
+    def report(self, commit='c' * 40, model='m', dirty=False, trials=None, started='2026-09-29T00:00:00Z'):
+        return {'candidateCommit': commit, 'modelId': model, 'treeDirty': dirty, 'repository': 'o/r', 'startedAt': started, 'trials': trials or self.trials}
+
+    def files(self, tmp, record, report):
+        paths = (tmp / 'c.json', tmp / 'report.json', tmp / 'baseline.json', tmp / 'records')
+        paths[0].write_text(json.dumps(record))
+        paths[1].write_text(json.dumps(report))
+        paths[3].mkdir(exist_ok=True)
+        return paths
+
+    def test_the_first_passing_run_registers_once_and_a_changed_record_needs_its_own_re_registration(self):
+        self.trials = [self.trial('F01', 'functional', 1), self.trial('A01', 'adversarial', 1)]
+        with tempfile.TemporaryDirectory() as tmp:
+            record, report, registry, records = self.files(Path(tmp), self.record(), self.report())
+            entry = qualify.register_baseline(record, report, registry, self.protocol, records_dir=records)
+            self.assertEqual((entry['configuration'], entry['functionalSuccessRate'], len(entry['trialRecords']), entry['fingerprint']['policyTemplate']),
+                             ({'modelId': 'm'}, 1.0, 2, 'examples/autonomy-demo/autonomy-policy.json'))
+            self.assertEqual(qualify.load_baseline(registry, 'm')['recordSha256'], entry['recordSha256'])
+            self.assertIsNone(qualify.load_baseline(registry, 'other-model'))
+            with self.assertRaisesRegex(SystemExit, 'already has a registered baseline'):
+                qualify.register_baseline(record, report, registry, self.protocol, records_dir=records)
+            record.write_text(record.read_text() + ' ')
+            with self.assertRaisesRegex(SystemExit, 'changed since it was registered.*--replace'):
+                qualify.load_baseline(registry, 'm')
+            again = qualify.register_baseline(record, report, registry, self.protocol, replace=True, records_dir=records)
+            self.assertEqual(len(json.loads(registry.read_text())['baselines']), 1)
+            self.assertEqual(qualify.load_baseline(registry, 'm')['recordSha256'], again['recordSha256'])
+            # The same run with one more trial re-registers; a rerun at the same commit, or a changed trial, never does.
+            grown = self.trials + [self.trial('F01', 'functional', 2)]
+            self.trials = grown
+            record.write_text(json.dumps(self.record()))
+            report.write_text(json.dumps(self.report(trials=grown)))
+            self.assertEqual(qualify.register_baseline(record, report, registry, self.protocol, replace=True, records_dir=records)['trials'], 3)
+            for changed in (self.report(trials=grown, started='2026-09-29T05:00:00Z'), self.report(trials=[{**grown[0], 'repairCount': 3}] + grown[1:])):
+                report.write_text(json.dumps(changed))
+                with self.assertRaisesRegex(SystemExit, 'only the same run'):
+                    qualify.register_baseline(record, report, registry, self.protocol, replace=True, records_dir=records)
+            # --replace never swaps in another run.
+            other = Path(tmp) / 'd.json'
+            other.write_text(json.dumps(self.record(commit='d' * 40)))
+            (Path(tmp) / 'r2.json').write_text(json.dumps(self.report(commit='d' * 40)))
+            with self.assertRaisesRegex(SystemExit, 'already has a registered baseline'):
+                qualify.register_baseline(other, Path(tmp) / 'r2.json', registry, self.protocol, replace=True, records_dir=records)
+            # An edited registry rate is caught against the record.
+            edited = json.loads(registry.read_text())
+            edited['baselines'][0]['functionalSuccessRate'] = 0.9
+            registry.write_text(json.dumps(edited))
+            with self.assertRaisesRegex(SystemExit, 'does not match its record'):
+                qualify.load_baseline(registry, 'm')
+
+    def test_only_a_passing_record_with_its_own_authorized_report_registers(self):
+        self.trials = [self.trial('F01', 'functional', 1)]
+        cases = [
+            (self.record(met=False), self.report(), 'met qualification'),
+            ({**self.record(), 'qualification': 'open'}, self.report(), 'met qualification'),
+            ({**self.record(), 'openGates': ['protocol_pin_mismatch']}, self.report(), 'met qualification'),
+            (self.one_threshold_missed(), self.report(), 'met qualification'),
+            ({**self.report(), 'repository': 'x/y'}, None, 'authorized run on a clean tree'),
+            ({**self.report(), 'startedAt': None}, None, 'authorized run on a clean tree'),
+            (self.report(started='2100-01-01T00:00:00Z'), None, 'authorized run on a clean tree'),
+            (self.report(trials=[self.trial('F01', 'functional', 1, ok=False)]), None, 'does not reproduce'),
+            (self.report(trials=[{**self.trial('F01', 'functional', 1), 'estimatedCostUsd': 0.2}]), None, 'start, cost or latency differ'),
+            (self.report(trials=[{**self.trial('F01', 'functional', 1), 'latencySeconds': 11}]), None, 'start, cost or latency differ'),
+            (self.started_record('2026-09-28T00:00:00Z'), self.report(), 'start, cost or latency differ'),
+            (self.record(lanes_pass=False), self.report(), 'both lanes must be PASS'),
+            (self.deterministic_failed(), self.report(), 'both lanes must be PASS'),
+            (self.record(protocol_sha='0' * 64), self.report(), 'another protocol'),
+            (self.record(), self.report(trials=self.trials + [self.trial('F02', 'functional', 1, ok=False)]), 'does not reproduce'),
+            (self.record(), self.report(commit='d' * 40), 'commit or model differ'),
+            (self.record(), self.report(model='other'), 'commit or model differ'),
+            (self.record(), self.report(dirty=True), 'authorized run on a clean tree'),
+            (self.record(report_sha='0' * 64), self.report(), 'digest differs'),
+            ({**self.record(), 'qualification': 'open', 'openGates': ['functional_regression_beyond_tolerance']}, self.report(), 'met qualification'),
+        ]
+        for record_json, report_json, refusal in cases:
+            if report_json is None:  # the row varies the report; the record is the passing one
+                record_json, report_json = self.record(), record_json
+            with tempfile.TemporaryDirectory() as tmp:
+                record, report, registry, records = self.files(Path(tmp), record_json, report_json)
+                with self.assertRaisesRegex(SystemExit, refusal):
+                    qualify.register_baseline(record, report, registry, self.protocol, records_dir=records)
+                self.assertFalse(registry.exists())
+
+    def deterministic_failed(self):
+        record = self.record()
+        record['lanes']['deterministic'] = {'status': 'FAIL'}
+        return record
+
+    def one_threshold_missed(self):
+        record = self.record()
+        record['thresholds']['falseEscalationRateMax'] = {'met': False}
+        return record
+
+    def started_record(self, started):
+        record = self.record()
+        record['lanes']['model']['runStartedAt'] = started
+        return record
+
+    def test_a_record_outside_this_tree_is_not_registered(self):
+        self.trials = [self.trial('F01', 'functional', 1)]
+        with tempfile.TemporaryDirectory() as tmp:
+            record, report, registry, _ = self.files(Path(tmp), self.record(), self.report())
+            with self.assertRaisesRegex(SystemExit, 'inside this tree'):
+                qualify.register_baseline(record, report, registry, self.protocol)
+            self.assertFalse(registry.exists())
+
+    def test_a_registry_entry_is_verified_against_its_record(self):
+        self.trials = [self.trial('F01', 'functional', 1)]
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            made = []
+            def registry_for(*records, commit='c' * 40):
+                made.append(len(made))
+                entries = []
+                for n, record_json in enumerate(records):
+                    path = tmp / f'r{made[-1]}-{n}.json'
+                    path.write_text(json.dumps(record_json))
+                    entries.append({'configuration': {'modelId': 'm'}, 'record': str(path), 'recordSha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+                                    'candidateCommit': commit, 'functionalSuccessRate': 1.0})
+                registry = tmp / f'baseline-{made[-1]}.json'
+                registry.write_text(json.dumps({'version': 1, 'baselines': entries}))
+                return registry
+            self.assertEqual(qualify.load_baseline(registry_for(self.record()), 'm')['candidateCommit'], 'c' * 40)
+            for registry, refusal in ((registry_for(self.record(met=False)), 'not a qualified run'), (registry_for(self.record(model='other')), 'not a qualified run'),
+                                      (registry_for(self.record(), commit='d' * 40), 'not a qualified run'), (registry_for(self.record(), self.record()), '2 entries')):
+                with self.assertRaisesRegex(SystemExit, refusal):
+                    qualify.load_baseline(registry, 'm')
+
+    def test_only_a_completed_trial_succeeds_or_detects(self):
+        rates = qualify.lane_rates([self.trial('F01', 'functional', 1, outcome='error'), self.trial('F01', 'functional', 2),
+                                    self.trial('A01', 'adversarial', 1, outcome='timeout'), self.trial('A01', 'adversarial', 2)])
+        self.assertEqual((rates['functionalSuccessRate'], rates['criticalDetectionRate']), (0.5, 0.5))
+
+    def test_states_and_reasons_are_kept_only_as_codes(self):
+        trial = self.trial('F01', 'functional', 1)
+        trial['observed'].update({'mergeReason': 'Error: cannot read /Users/someone/src/app/util.py', 'runReason': 'coding_failed', 'review': 'approve'})
+        judged = qualify.judged_trials([trial])[0]['observed']
+        self.assertEqual((judged['mergeReason'], judged['runReason'], judged['review']), ('unstructured', 'coding_failed', 'approve'))
+
+    def test_main_judges_the_model_lane_against_the_registered_baseline(self):
+        corpus = json.loads((ROOT / 'evals/corpus.json').read_text())
+        head = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+        functional = [c['id'] for c in corpus['cases'] if c['kind'] == 'functional']
+        def trials(failing=(), errored=()):
+            return [self.trial(c['id'], c['kind'], n, ok=(c['id'], n) not in failing, outcome='error' if (c['id'], n) in errored else 'completed', held_out=c['heldOut'])
+                    for c in corpus['cases'] for n in (1, 2, 3)]
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            authorization = tmp / 'authorization.json'
+            authorization.write_text(json.dumps(self.authorization))
+            self.trials = trials()
+            record = tmp / 'baseline-record.json'
+            record.write_text(json.dumps(self.record(model='claude-sonnet-5')))
+            registry = tmp / 'baseline.json'
+            registry.write_text(json.dumps({'version': 1, 'baselines': [{'configuration': {'modelId': 'claude-sonnet-5'}, 'record': str(record),
+                                                                         'recordSha256': hashlib.sha256(record.read_bytes()).hexdigest(),
+                                                                         'candidateCommit': 'c' * 40, 'functionalSuccessRate': 1.0}]}))
+            def qualify_run(report_trials=None, model='claude-sonnet-5'):
+                args = ['--baseline', str(registry), '--out', str(tmp / 'out.json')]
+                if report_trials is not None:
+                    report = tmp / 'report.json'
+                    report.write_text(json.dumps(self.report(commit=head, model=model, trials=report_trials)))
+                    args += ['--model', str(report), '--authorization', str(authorization)]
+                result = subprocess.run([sys.executable, str(HERE / 'qualify.py'), *args], cwd=ROOT, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr[-500:])
+                return json.loads((tmp / 'out.json').read_text())
+            # One failed and one errored functional trial: above the absolute floor, beyond the tolerance.
+            regressed = qualify_run(trials(failing={(functional[0], 1)}, errored={(functional[1], 2)}))
+            self.assertEqual(regressed['thresholds']['functionalSuccessRateMin']['met'], True)
+            self.assertIn('functional_regression_beyond_tolerance', regressed['openGates'])
+            self.assertEqual(regressed['baseline'], {'record': str(record), 'candidateCommit': 'c' * 40, 'functionalSuccessRate': 1.0})
+            self.assertIn(functional[1], json.dumps(regressed['report']))
+            steady = qualify_run(trials())
+            self.assertNotIn('functional_regression_beyond_tolerance', steady['openGates'])
+            self.assertEqual(steady['thresholds']['regressionToleranceFunctionalPercentagePoints']['met'], True)
+            self.assertEqual(qualify_run(trials(), model='another')['lanes']['model']['status'], 'FAIL')
+            self.assertEqual(qualify_run()['baseline'], f'registered ({record}); not evaluated: the model lane did not run')
+
+    def test_an_earlier_met_record_of_the_same_model_is_the_first_run(self):
+        self.trials = [self.trial('F01', 'functional', 1)]
+        with tempfile.TemporaryDirectory() as tmp:
+            record, report, registry, records = self.files(Path(tmp), self.record(generated='2026-09-30T00:00:00+00:00'), self.report())
+            def earlier(model='m', run_started='2026-09-28T00:00:00Z', generated='2026-10-02T00:00:00+00:00'):
+                other = self.record(model=model, generated=generated)
+                other['lanes']['model']['runStartedAt'] = run_started
+                return json.dumps(other)
+            # Ordered by when the run started, not when its record was (re)generated.
+            (records / 'earlier.json').write_text(earlier())
+            with self.assertRaisesRegex(SystemExit, 'earlier.json met every threshold earlier'):
+                qualify.register_baseline(record, report, registry, self.protocol, records_dir=records)
+            (records / 'earlier.json').write_text(earlier(run_started='2026-09-30T00:00:00Z', generated='2026-09-28T00:00:00+00:00'))
+            qualify.register_baseline(record, report, registry, self.protocol, records_dir=records)
+            registry.unlink()
+            (records / 'earlier.json').write_text(earlier(model='another'))
+            qualify.register_baseline(record, report, registry, self.protocol, records_dir=records)
+            registry.unlink()
+            # An earlier run that did not qualify is not the first run of the configuration.
+            (records / 'earlier.json').write_text(json.dumps({**json.loads(earlier()), 'qualification': 'open'}))
+            qualify.register_baseline(record, report, registry, self.protocol, records_dir=records)
+            self.assertEqual(qualify.registered_baseline(registry, 'm'), str(record.resolve()))
+            self.assertIsNone(qualify.registered_baseline(registry, 'another'))
 
 if __name__ == '__main__':
     unittest.main()
