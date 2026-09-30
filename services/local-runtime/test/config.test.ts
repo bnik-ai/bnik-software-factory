@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { databaseConfig, resolveConfig, resolveControllerConfig, secret } from '../src/config.js';
+import { headRepositoryIds } from '../src/github/merge-gate.js';
 import { canonicalJson } from '../src/queue.js';
 
 const env = () => ({
@@ -368,6 +369,68 @@ test('automatic merge is a live opt-in with a merger App distinct from the publi
       FACTORY_AUTOMERGE: 'enabled',
     };
     assert.throws(() => resolveConfig(demo), /demo_autonomy_cannot_merge/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('the resident control plane accepts fork heads for the merge gate only with a merge policy and fork publication', () => {
+  const { privateKey } = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+  });
+  const directory = mkdtempSync(join(tmpdir(), 'factory-merge-policy-'));
+  const policyFile = join(directory, 'merge-policy.json');
+  writeFileSync(
+    policyFile,
+    JSON.stringify({
+      version: 1,
+      baseBranch: 'main',
+      reviewers: ['example-maintainer'],
+      mergers: ['example-maintainer'],
+      requiredChecks: [{ name: 'test', appId: 12345 }],
+    }),
+    { mode: 0o600 },
+  );
+  try {
+    // The resident runtime's environment (runtime/compose.live.yaml): execution disabled.
+    const resident = {
+      ...env(),
+      FACTORY_MODE: 'live',
+      GITHUB_APP_ID: '1',
+      GITHUB_APP_PRIVATE_KEY: privateKey,
+      FACTORY_REPOSITORY_ID: '42',
+      FACTORY_WEBHOOK_URL: 'https://factory.example.com/webhook',
+      FACTORY_OPERATORS: 'example-maintainer',
+      FACTORY_EXECUTION: 'disabled',
+      FACTORY_MERGE_POLICY_FILE: policyFile,
+      FACTORY_PUBLICATION_MODE: 'fork',
+      FACTORY_FORK_REPOSITORY_ID: '4242',
+    };
+    assert.deepEqual(headRepositoryIds(resolveConfig(resident)), [42, 4242]);
+    assert.deepEqual(
+      headRepositoryIds(resolveConfig({ ...resident, FACTORY_PUBLICATION_MODE: 'base' })),
+      [42],
+    );
+    assert.deepEqual(
+      headRepositoryIds(
+        resolveConfig({
+          ...resident,
+          FACTORY_PUBLICATION_MODE: '',
+          FACTORY_FORK_REPOSITORY_ID: '',
+        }),
+      ),
+      [42],
+    );
+    assert.deepEqual(
+      headRepositoryIds(resolveConfig({ ...resident, FACTORY_MERGE_POLICY_FILE: undefined })),
+      [42],
+    );
+    assert.throws(
+      () => resolveConfig({ ...resident, FACTORY_FORK_REPOSITORY_ID: 'x' }),
+      /FACTORY_FORK_REPOSITORY_ID/,
+    );
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

@@ -25,6 +25,74 @@ import { requireGate } from './merge-policy.js';
 export const PARKED_RESCAN_MINUTES = 15;
 /** The most pull requests one scan queues; the stalest go first, the rest wait for the next scan. */
 export const SCAN_LIMIT = 100;
+/** A webhook delivery, as far as it names a pull request, a Task or a head commit. */
+export interface DeliveryBody {
+  pull_request?: { number?: number };
+  issue?: { number?: number; pull_request?: unknown };
+  check_run?: { head_sha?: string; pull_requests?: { number?: number }[] };
+  check_suite?: { head_sha?: string; pull_requests?: { number?: number }[] };
+  sha?: string;
+}
+/**
+ * Queues a gate look, in the caller's transaction, at every tracked pull request a delivery
+ * concerns: its pull request or review, a Task edit (the pairing binds the Task), a check or
+ * status on its head. Parked and pending pairs both; never a reconciled one, never one that
+ * already has a look queued. The periodic scan remains the fallback for missed deliveries.
+ */
+export async function queueDeliveryLooks(
+  client: PoolClient,
+  config: RuntimeConfig,
+  queue: PostgresQueue,
+  event: string,
+  body: DeliveryBody,
+  deliveryKey: string,
+): Promise<number[]> {
+  const pulls = new Set<number>();
+  const tasks = new Set<number>();
+  let head: string | null = null;
+  const number = (value: unknown) =>
+    Number.isSafeInteger(value) && (value as number) > 0 ? (value as number) : null;
+  if (event === 'pull_request' || event === 'pull_request_review') {
+    const pull = number(body.pull_request?.number);
+    if (pull) pulls.add(pull);
+  } else if (event === 'issues' || event === 'issue_comment') {
+    const issue = number(body.issue?.number);
+    if (issue) (body.issue?.pull_request ? pulls : tasks).add(issue);
+  } else if (event === 'check_run' || event === 'check_suite') {
+    const check = event === 'check_run' ? body.check_run : body.check_suite;
+    for (const entry of check?.pull_requests ?? []) {
+      const pull = number(entry?.number);
+      if (pull) pulls.add(pull);
+    }
+    head = check?.head_sha ?? null;
+  } else if (event === 'status') head = body.sha ?? null;
+  if (head !== null && !/^[0-9a-f]{40}$/.test(head)) head = null;
+  if (!pulls.size && !tasks.size && head === null) return [];
+  const rows = await client.query<{ pull_number: number }>(
+    `SELECT p.pull_number FROM factory_pr_pairs p LEFT JOIN factory_pr_state s USING(repository_id,pull_number)
+    WHERE p.repository_id=$1 AND p.installation_id=$2
+      AND (p.pull_number = ANY($3::bigint[]) OR p.task_number = ANY($4::bigint[])
+        OR ($5::text IS NOT NULL AND (s.head = $5 OR p.pair->>'initialHead' = $5)))
+      AND (s.state IS NULL OR s.state <> 'reconciled')
+      AND NOT EXISTS (SELECT 1 FROM factory_work w WHERE w.queue_name='HumanMergeGate'
+        AND w.state IN ('pending','running') AND (w.body->>'repositoryId')::bigint=p.repository_id
+        AND (w.body->>'pull')::bigint=p.pull_number)
+    ORDER BY p.pull_number LIMIT $6::int`,
+    [config.repositoryId, config.installationId, [...pulls], [...tasks], head, SCAN_LIMIT],
+  );
+  for (const row of rows.rows)
+    await queue.enqueue(
+      `${config.repositoryId}:${row.pull_number}:delivery:${deliveryKey}`,
+      config.repository.toLowerCase(),
+      {
+        pull: row.pull_number,
+        repositoryId: config.repositoryId,
+        installationId: config.installationId,
+      },
+      client,
+    );
+  return rows.rows.map((row) => row.pull_number);
+}
 export class HumanMergeGate extends LeasedConsumer {
   constructor(
     private readonly pool: Pool,
@@ -96,7 +164,8 @@ export class HumanMergeGate extends LeasedConsumer {
    * GitHub reads on this serial loop; rescanning every one every minute starved fresh deliveries
    * (OSS-22 live lane: closures missed their window behind dozens of permanently parked pairs),
    * and queuing a pair again while its look is still queued grows the queue faster than the loop
-   * drains it. A delivery for a parked pull request still enqueues it at once (`track`, intake).
+   * drains it. A delivery concerning a tracked pull request queues a look at once
+   * (`queueDeliveryLooks`, from the intake); so do `track` and the autonomy commands.
    * At most SCAN_LIMIT pairs per scan, stalest first: the rest follow on later scans. The
    * delivery key names the minute and the observation the look would follow, so one minute
    * queues a pair once, a fresh look in the same minute (operator scan, transient park) still

@@ -8,6 +8,9 @@ services:
       FACTORY_WEBHOOK_URL: ${FACTORY_WEBHOOK_URL:?User-controlled HTTPS webhook URL required}
       FACTORY_OPERATORS: ${FACTORY_OPERATORS:?Explicit human operators required}
       FACTORY_EXECUTION: disabled
+      # Fork publication only: the merge gate accepts pull requests whose head is in this fork.
+      FACTORY_PUBLICATION_MODE: ${FACTORY_PUBLICATION_MODE:-}
+      FACTORY_FORK_REPOSITORY_ID: ${FACTORY_FORK_REPOSITORY_ID:-}
     secrets: [app_private_key]
 secrets:
   app_private_key: {file: "${FACTORY_STATE_DIR:-.}/secrets/app_private_key"}

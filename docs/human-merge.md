@@ -126,14 +126,19 @@ python3 runtime/worker.py review-status
 Pairing stores immutable repository, installation, PR, and Task identities plus
 the Task title/body hash. Changing the Task or its backlink parks reconciliation;
 the CLI cannot silently replace a registered pair. Head commits may advance, but
-each advance needs fresh checks and human review. Fork PRs are not supported by
-this first profile. Register and observe the open PR before merging it.
+each advance needs fresh checks and human review. The human flow's `track-pr` refuses
+fork PRs; a pull request that opt-in bounded autonomy publishes from its configured fork
+(`--publication fork`) is accepted by the autonomy commands and by the control plane's
+scan. Register and observe the open PR before merging it.
 
-The control plane scans tracked PRs once a minute, including after a restart: a
-scan queues one look per never-evaluated or pending pull request, and looks at a
-parked one again after 15 minutes (a delivery for a parked pull request still
-queues it at once), so a repository with many permanently parked pull requests
-does not starve fresh ones. A pull request parked by a retryable GitHub failure
+A webhook delivery about a tracked, unreconciled pull request queues its look at
+once, parked or not: a pull request or review event, an edit or comment on its Task or
+pull request, or a check or status on its head. The control plane also scans tracked
+PRs once a minute, including after a restart, as the fallback for missed deliveries:
+a scan queues one look per never-evaluated or `awaiting_human_merge` pull request, and
+looks at a parked one again after 15 minutes, so a repository with many permanently
+parked pull requests does not starve fresh ones. A pull request never has more than one
+look queued. A pull request parked by a retryable GitHub failure
 (server error, rate limit, connection) keeps the one-minute cadence. A scan queues
 at most 100 pull requests, stalest first; the rest follow on the next scans.
 `review-scan` queues a look at every tracked, unreconciled pull request at once,

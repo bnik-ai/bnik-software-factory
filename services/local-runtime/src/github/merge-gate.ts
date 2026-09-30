@@ -139,8 +139,11 @@ export interface GateOptions {
 /** Where a pull request head may live: the base repository and, in fork publication mode, the fork. */
 export function headRepositoryIds(config: RuntimeConfig): number[] {
   const ids = [config.repositoryId ?? 0];
-  const fork = config.autonomy?.publisher?.forkRepositoryId;
-  if (config.autonomy?.publisher?.mode === 'fork' && fork) ids.push(fork);
+  const fork =
+    config.autonomy?.publisher?.mode === 'fork'
+      ? config.autonomy.publisher.forkRepositoryId
+      : config.mergeForkRepositoryId;
+  if (fork) ids.push(fork);
   return ids;
 }
 export function assertPull(

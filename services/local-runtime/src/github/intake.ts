@@ -8,6 +8,7 @@ import { PostgresQueue, canonicalJson } from '../queue.js';
 import type { CodingJob } from '../worker/protocol.js';
 import { type ActivationProof, approvedJob, verifyActivation } from './activation.js';
 import { GitHubFailure, type GitHubReads, INTAKE_EVENTS } from './client.js';
+import { type DeliveryBody, queueDeliveryLooks } from './reconcile.js';
 
 export const LIVE_EVENTS = new Set<string>([
   ...INTAKE_EVENTS,
@@ -29,7 +30,9 @@ export class GitHubIntake extends LeasedConsumer {
   ) {
     super(new PostgresQueue(pool, 'GitHubIntake', config.queue));
     if (config.mode !== 'live') throw new Error('github_intake_requires_live_mode');
+    this.gateQueue = new PostgresQueue(pool, 'HumanMergeGate', config.queue);
   }
+  private readonly gateQueue: PostgresQueue;
   async accept(deliveryId: string, event: string, payload: string) {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(deliveryId))
       throw new GitHubFailure('delivery_id_invalid');
@@ -85,15 +88,31 @@ export class GitHubIntake extends LeasedConsumer {
         envelope.installationId !== this.config.installationId
       )
         throw new GitHubFailure('queued_configuration_changed');
-      const body = JSON.parse(envelope.payload) as { action?: string; comment?: { body?: string } };
+      const body = JSON.parse(envelope.payload) as DeliveryBody & {
+        action?: string;
+        comment?: { body?: string };
+      };
       if (
         envelope.event !== 'issue_comment' ||
         body.action !== 'created' ||
         !body.comment?.body?.trim().startsWith('/factory activate')
       ) {
-        await this.queue.complete(work.lease_token, {
+        const settled: { decision: string; paidWorkDispatched: false; gateLooks?: number[] } = {
           decision: 'observed_no_activation',
           paidWorkDispatched: false,
+        };
+        // With a merge profile, a delivery about a tracked pull request queues its gate look now,
+        // atomically with this settlement (docs/human-merge.md).
+        await this.queue.complete(work.lease_token, settled, async (client) => {
+          if (!this.config.mergePolicy) return;
+          settled.gateLooks = await queueDeliveryLooks(
+            client,
+            this.config,
+            this.gateQueue,
+            envelope.event,
+            body,
+            work.delivery_key,
+          );
         });
         return true;
       }

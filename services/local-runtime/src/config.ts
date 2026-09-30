@@ -59,6 +59,8 @@ export interface RuntimeConfig {
   webhookUrl?: string;
   operators?: readonly string[];
   mergePolicy?: MergePolicy;
+  /** Fork publication: the fork's repository id, accepted as a pull request head by the merge gate. */
+  mergeForkRepositoryId?: number;
   /** Where the merge policy was read from; the merge gate reads it again before every look. */
   mergePolicyFile?: string;
   database: DatabaseConfig;
@@ -300,6 +302,20 @@ export function resolveConfig(env: Env = process.env): RuntimeConfig {
       config.modelKey = secret(env, 'ANTHROPIC_API_KEY');
     else if (env.ANTHROPIC_API_KEY || env.ANTHROPIC_API_KEY_FILE)
       throw new ConfigurationError('disabled_execution_must_not_receive_model_credentials');
+    // The resident control plane runs with execution disabled but must still accept the pull
+    // requests bounded autonomy publishes from the configured fork (headRepositoryIds).
+    if (
+      config.mergePolicy &&
+      env.FACTORY_PUBLICATION_MODE === 'fork' &&
+      env.FACTORY_FORK_REPOSITORY_ID
+    )
+      config.mergeForkRepositoryId = integer(
+        env,
+        'FACTORY_FORK_REPOSITORY_ID',
+        0,
+        1,
+        Number.MAX_SAFE_INTEGER,
+      );
     if (execution === 'bounded') config.autonomy = autonomyConfig(env, 'live');
     else if (env.FACTORY_AUTONOMY)
       throw new ConfigurationError('FACTORY_AUTONOMY_requires_bounded_execution');
