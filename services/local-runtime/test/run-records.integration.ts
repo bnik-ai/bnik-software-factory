@@ -468,13 +468,15 @@ test('the gate reads merge-policy.json before every look, so an edited base bran
     await gate.schedule();
     await gate.step();
     assert.equal((await gate.status())[0].state, 'awaiting_human_merge');
-    // A file renamed over vanishes from a bind mount: its own reason, rests like a park.
+    // A missing file (an edit in progress) observed nothing: its own reason, transient, the next scan looks again.
     rmSync(file);
     await gate.schedule();
     await gate.step();
-    assert.equal((await gate.status())[0].reason, 'merge_policy_file_missing');
+    const missing = (await gate.status())[0];
+    assert.equal(missing.reason, 'merge_policy_file_missing');
+    assert.equal(missing.evidence.transient, true);
     write('main');
-    await gate.schedule({ includeParked: true });
+    await gate.schedule();
     await gate.step();
     assert.equal((await gate.status())[0].state, 'awaiting_human_merge');
     // A reconciled pull request is never re-judged by a policy read.

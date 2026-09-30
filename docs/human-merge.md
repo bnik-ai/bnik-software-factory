@@ -87,12 +87,12 @@ this file alone: the review services mount the whole directory read-only. The co
 plane reads the file again before every look of the merge gate, so any edit, including one
 that replaces the file (an editor's atomic save, `sed -i`, `mv`), takes effect at the next
 look without a restart, and every observation records the digest of the policy it used. A
-missing file parks every look as `merge_policy_file_missing`; a file that cannot be read
-parks the look as `merge_policy_unreadable` and is looked at again by the next scan; an
-invalid one parks with its validation reason (`merge_policy_invalid`,
+missing file (`merge_policy_file_missing`, for example during an editor's non-atomic save) or
+one that cannot be read (`merge_policy_unreadable`) parks the look, and the next scan looks
+again; an invalid one parks with its validation reason (`merge_policy_invalid`,
 `merge_policy_merger_must_match_FACTORY_MERGER_settings`, …). A policy left at the retired
-location `runtime/merge-policy.json` (or `.factory/merge-policy.json`) is refused by every
-command until it is moved into the directory. Then start the control plane:
+location `runtime/merge-policy.json` (or `.factory/merge-policy.json`), or a symlink in place of
+the file, is refused by every command until it is moved into the directory as a regular file. Then start the control plane:
 
 ```sh
 docker compose --env-file runtime/.env -f runtime/compose.yaml -f runtime/compose.live.yaml -f runtime/compose.worker.yaml -f runtime/compose.review.yaml up -d --build --wait

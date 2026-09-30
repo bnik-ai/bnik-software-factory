@@ -36,9 +36,9 @@ export class HumanMergeGate extends LeasedConsumer {
   }
   /**
    * This look's configuration: the merge policy as its file holds it now, else as loaded. A file
-   * that cannot be read observed nothing (retryable: the next scan looks again); a missing file
-   * (the review services mount its directory, runtime/compose.review.yaml) parks; an invalid file
-   * parks with its validation reason.
+   * that is missing (the review services mount its directory, runtime/compose.review.yaml) or cannot
+   * be read observed nothing (retryable: the next scan looks again); an invalid file parks with its
+   * validation reason.
    */
   private current(): RuntimeConfig {
     if (!this.config.mergePolicyFile) return this.config;
@@ -53,8 +53,9 @@ export class HumanMergeGate extends LeasedConsumer {
     } catch (error) {
       if (error instanceof GitHubFailure) throw error;
       if (error instanceof ConfigurationError) throw new GitHubFailure(error.reason);
+      // With the directory mounted, a missing file is an edit in progress or a removal: look again next scan.
       if ((error as { code?: unknown }).code === 'ENOENT')
-        throw new GitHubFailure('merge_policy_file_missing');
+        throw new GitHubFailure('merge_policy_file_missing', true);
       throw new GitHubFailure('merge_policy_unreadable', true);
     }
   }

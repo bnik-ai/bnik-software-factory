@@ -49,7 +49,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(1, str(Path(__file__).resolve().parents[1]))
 import run as scripted  # noqa: E402  the deterministic lane's helpers: one definition of the pins and the JSON parsing
+from merge_policy import merge_policy_file  # noqa: E402  runtime/merge_policy.py: the policy's location and the retired layout
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / 'evals' / 'fixtures'
@@ -442,6 +444,8 @@ class Live:
 
     def __init__(self, state):
         self.state = Path(state)
+        # Before any GitHub write: a policy left at the retired location is refused, as sfac and the CLIs do.
+        merge_policy_file(self.state)
         self.env = {k: os.environ[k] for k in ('PATH', 'HOME', 'DOCKER_HOST', 'DOCKER_CONFIG', 'DOCKER_CONTEXT') if k in os.environ}
         self.env['SFAC_STATE_DIR'] = str(self.state)
         self.facts = json.loads((self.state / 'live.json').read_text()) if (self.state / 'live.json').exists() else {}

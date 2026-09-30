@@ -127,6 +127,14 @@ class MergePolicyFileTest(unittest.TestCase):
             self.assertEqual((target.stat().st_mode & 0o777, target.parent.stat().st_mode & 0o777), (0o600, 0o700))
 
 
+class RetiredPolicyLayoutTest(unittest.TestCase):
+    def test_the_driver_refuses_a_policy_at_the_retired_location_before_anything_else(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / 'merge-policy.json').write_text('{}')
+            with self.assertRaisesRegex(SystemExit, 'the review services mount the merge-policy/ directory'):
+                live.Live(tmp)
+
+
 class ActivationPlanTest(unittest.TestCase):
     def test_plan_is_the_runtime_comparators_answer(self):
         active = valid_policy(1, maxTurns=10)

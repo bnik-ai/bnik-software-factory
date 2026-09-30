@@ -6,6 +6,10 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 export SFAC_STATE_DIR
 SFAC_STATE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/factory-operator-test.XXXXXX")
 cleanup() {
+  # A failed probe must not keep the stack alive: the probe container blocks `down`, the retired file blocks sfac.
+  if [ -n "${review_runtime:-}" ]; then docker rm -f "$review_runtime" >/dev/null 2>&1 || true; fi
+  rm -f "$SFAC_STATE_DIR/merge-policy.json"
+  if [ -L "$SFAC_STATE_DIR/merge-policy" ]; then rm "$SFAC_STATE_DIR/merge-policy"; fi
   if [ -f "$SFAC_STATE_DIR/.env" ]; then "$root/sfac" down --volumes; fi
   if [ -f "$SFAC_STATE_DIR/project" ]; then
     "$root/sfac" clean-images
@@ -128,13 +132,28 @@ done
 review_runtime=$(docker compose --project-directory "$root/runtime" --env-file "$SFAC_STATE_DIR/.env" -p "$project" -f "$root/runtime/compose.yaml" -f "$root/runtime/compose.operator.yaml" -f "$root/runtime/compose.review.yaml" run -d --no-deps --entrypoint node runtime -e 'setTimeout(() => {}, 120000)')
 printf '{"replaced":true}\n' > "$SFAC_STATE_DIR/merge-policy/merge-policy.json.next"
 mv "$SFAC_STATE_DIR/merge-policy/merge-policy.json.next" "$SFAC_STATE_DIR/merge-policy/merge-policy.json"
-docker exec "$review_runtime" node -e 'if (!require("fs").readFileSync("/run/config/merge-policy.json", "utf8").includes("replaced")) process.exit(1)'
+docker exec "$review_runtime" node -e 'const fs = require("fs"); if (fs.readdirSync("/run/config").join() !== "merge-policy.json" || !fs.readFileSync("/run/config/merge-policy.json", "utf8").includes("replaced")) process.exit(1)'
 docker rm -f "$review_runtime" >/dev/null
+review_runtime=
 # A policy in the state root is the retired layout: refused, never silently ignored.
 printf '{}\n' > "$SFAC_STATE_DIR/merge-policy.json"
 if ./sfac ps 2> "$SFAC_STATE_DIR/artifacts/policy-refusal.txt"; then echo 'A merge policy in the state root was accepted' >&2; exit 1; fi
 grep -q 'the review services mount the merge-policy/ directory' "$SFAC_STATE_DIR/artifacts/policy-refusal.txt"
 rm "$SFAC_STATE_DIR/merge-policy.json"
+# A symlinked policy would dangle inside the containers: refused too.
+mv "$SFAC_STATE_DIR/merge-policy/merge-policy.json" "$SFAC_STATE_DIR/artifacts/policy.json"
+ln -s "$SFAC_STATE_DIR/artifacts/policy.json" "$SFAC_STATE_DIR/merge-policy/merge-policy.json"
+if ./sfac ps 2> "$SFAC_STATE_DIR/artifacts/policy-refusal.txt"; then echo 'A symlinked merge policy was accepted' >&2; exit 1; fi
+grep -q 'holds no regular file merge-policy.json' "$SFAC_STATE_DIR/artifacts/policy-refusal.txt"
+rm "$SFAC_STATE_DIR/merge-policy/merge-policy.json"
+mv "$SFAC_STATE_DIR/artifacts/policy.json" "$SFAC_STATE_DIR/merge-policy/merge-policy.json"
+# A dangling directory symlink would silently drop the review overlays: refused.
+mv "$SFAC_STATE_DIR/merge-policy" "$SFAC_STATE_DIR/merge-policy.real"
+ln -s "$SFAC_STATE_DIR/absent" "$SFAC_STATE_DIR/merge-policy"
+if ./sfac ps 2> "$SFAC_STATE_DIR/artifacts/policy-refusal.txt"; then echo 'A dangling merge-policy directory was accepted' >&2; exit 1; fi
+grep -q 'holds no regular file merge-policy.json' "$SFAC_STATE_DIR/artifacts/policy-refusal.txt"
+rm "$SFAC_STATE_DIR/merge-policy"
+mv "$SFAC_STATE_DIR/merge-policy.real" "$SFAC_STATE_DIR/merge-policy"
 ./sfac down --volumes
 ./sfac clean-images
 for component in operator local worker; do

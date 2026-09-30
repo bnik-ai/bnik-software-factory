@@ -49,8 +49,8 @@ fi
 if [ -e "$state/merge-policy.json" ] || [ -L "$state/merge-policy.json" ]; then
   echo "Move $state/merge-policy.json to $state/merge-policy/merge-policy.json: the review services mount the merge-policy/ directory." >&2; exit 2
 fi
-if [ -e "$state/merge-policy" ] && [ ! -f "$state/merge-policy/merge-policy.json" ]; then
-  echo "$state/merge-policy holds no regular file merge-policy.json; add it or remove the directory." >&2; exit 2
+if { [ -e "$state/merge-policy" ] || [ -L "$state/merge-policy" ]; } && { [ -L "$state/merge-policy/merge-policy.json" ] || [ ! -f "$state/merge-policy/merge-policy.json" ]; }; then
+  echo "$state/merge-policy holds no regular file merge-policy.json; add it (not a symlink) or remove the directory." >&2; exit 2
 fi
 compose() {
   if grep -qx 'FACTORY_MODE=live' "$state/.env"; then

@@ -43,6 +43,16 @@ class MergePolicyFileTest(unittest.TestCase):
         (self.root / 'merge-policy' / 'merge-policy.json').mkdir()
         with self.assertRaisesRegex(SystemExit, 'holds no regular file'):
             merge_policy_file(self.root)
+        (self.root / 'merge-policy' / 'merge-policy.json').rmdir()
+        (self.root / 'elsewhere.json').write_text('{}')
+        (self.root / 'merge-policy' / 'merge-policy.json').symlink_to(self.root / 'elsewhere.json')
+        with self.assertRaisesRegex(SystemExit, 'not a symlink'):
+            merge_policy_file(self.root)
+
+    def test_a_dangling_policy_directory_symlink_is_refused(self):
+        (self.root / 'merge-policy').symlink_to(self.root / 'absent')
+        with self.assertRaisesRegex(SystemExit, 'holds no regular file'):
+            merge_policy_file(self.root)
 
     def test_both_clis_refuse_the_retired_layout_before_anything_else(self):
         (self.root / '.env').write_text('FACTORY_MODE=live\n')

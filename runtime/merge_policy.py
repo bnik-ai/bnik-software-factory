@@ -21,6 +21,7 @@ def merge_policy_file(root):
     if not (directory.exists() or directory.is_symlink()):
         return None
     policy = directory / FILE
-    if not policy.is_file():
-        raise SystemExit(f'{directory} holds no regular file {FILE}; add it or remove the directory.')
+    # A symlink would dangle inside the containers, which mount only this directory.
+    if policy.is_symlink() or not policy.is_file():
+        raise SystemExit(f'{directory} holds no regular file {FILE}; add it (not a symlink) or remove the directory.')
     return policy
