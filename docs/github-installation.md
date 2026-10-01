@@ -108,6 +108,12 @@ python3 runtime/worker.py github-check
 curl --fail http://127.0.0.1:8787/readyz
 ```
 
+This starts the intake profile. With the
+[human merge profile](human-merge.md#app-and-local-configuration)'s grants, which automatic
+merge requires, start with that section's command instead, which adds
+`runtime/compose.review.yaml`; this one refuses those grants
+(`installation_permissions_or_events_invalid`).
+
 The worker override exposes PostgreSQL only on `127.0.0.1:55432` for the trusted
 native CLI. Use `--port` and `FACTORY_DATABASE_PORT` for alternate free local ports.
 Startup authenticates the App ID/slug, installation owner/ID, exact permissions,
@@ -117,14 +123,16 @@ startup. `/readyz` checks the local database; it is not a continuous GitHub heal
 or authorization check. No model credential is mounted into the live service.
 
 Create an ordinary issue in the configured repository. In the App's **Recent
-deliveries**, verify an actual GitHub `issues` delivery received HTTP 202. Compare
-its `X-GitHub-Delivery` UUID with the durable runtime receipt:
+deliveries**, verify an actual GitHub `issues` delivery received HTTP 202 and note its
+`X-GitHub-Delivery` UUID. `status` prints work counts by queue and state, including
+`GitHubIntake`:
 
 ```sh
 docker compose -f runtime/compose.yaml exec runtime node --import tsx src/main.ts status
 ```
 
-An authorized database operator can inspect `webhook_deliveries.delivery_id` and
+To match the UUID itself, an authorized database operator can inspect
+`webhook_deliveries.delivery_id` and
 `factory_work` (`queue_name = 'GitHubIntake'`, `delivery_key` is the same UUID).
 An ordinary event settles as `observed_no_activation`. HTTP 202 means durable
 intake, not activation or execution. Invalid signatures, repository/installation

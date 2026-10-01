@@ -51,9 +51,11 @@ without following a final symlink and checked on the open handle: a regular
 file, not group- or world-writable, at most 64 KiB. It is never read
 from a PR branch, Task text, labels, worker output or model output. See
 [`runtime/autonomy-policy.example.json`](../runtime/autonomy-policy.example.json).
+Every field below is required and no other field is accepted (`policy_fields_invalid`).
 
 | Field | Meaning |
 | --- | --- |
+| `version` | Always `1`; any other value is refused (`policy_version_unsupported`). |
 | `revision` | Strictly increases on each activation; an older document cannot be replayed. |
 | `mode` | `human_gated` (every action needs a human, today's behavior) or `bounded`. |
 | `repository` | Exact name, numeric ID, installation ID and base branch. |
@@ -64,7 +66,7 @@ from a PR branch, Task text, labels, worker output or model output. See
 | `mergeEffect` | `deployment` holds every merge for a human. There is no `unknown`. |
 | `verification` | Trust roots: acceptance suite, harness and runner image digests, reviewer configuration digest, eval protocol digest, in-repository protected paths and receipt lifetime. |
 | `approvers` | Numeric GitHub user IDs allowed to approve holds. For merge holds each approver must also have write access and be a `reviewers` entry of `merge-policy.json`; a native review by anyone else is ignored. |
-| `dependencies` | Optional trusted dependency verification: pluggable scanner adapter and digest-pinned image, scanner database maximum age, hold severity, SPDX license allowlist, and whether new dependencies, major upgrades or downgrades may be routine. `null` keeps every dependency change critical. |
+| `dependencies` | Trusted dependency verification settings, or `null`: pluggable scanner adapter and digest-pinned image, scanner database maximum age, hold severity, SPDX license allowlist, and whether new dependencies, major upgrades or downgrades may be routine. `null` keeps every dependency change critical. |
 
 Limits cannot exceed the worker's own ceilings (60 turns, 30 minutes, USD 100 per
 run, 20 runs per Task). Cost figures are SDK estimates, not provider bills or hard
@@ -206,9 +208,13 @@ send the change to repair.
 
 The protected suite and harness are content-addressed bundles pinned by digest
 in the policy (`contentTreeDigest` over path, mode and SHA-256 of each file). The
-trusted runner mounts them read-only into a fresh verification sandbox with the
-frozen candidate tree; it does not reuse the author's processes, configuration or
-installed dependencies, and it treats test logs as untrusted data. An in-repository
+trusted runner copies them into a fresh verification sandbox with the frozen
+candidate tree (at `.factory/acceptance/`) and digests the suite and harness before and
+after the run: a digest that differs from the pin, or changes during the run, makes the
+receipt `error`. It does not reuse the author's processes, configuration or installed
+dependencies, and it treats test logs as untrusted data. Candidate code runs beside the
+tests, so this guards against bundle tampering and ordinary mistakes, not a hostile
+candidate ([operations](autonomy-operations.md#protected-acceptance-bundle)). An in-repository
 copy listed in `protectedPaths` is governance-critical to change, and merging such
 a change does not update the pinned bundle: only an acknowledged policy activation
 can.
@@ -256,7 +262,7 @@ therefore combines deterministic checks with the scanner, and both must pass:
 | Install scripts | The set of packages whose install-time scripts run is the same before and after | holds |
 | Source | Every added or upgraded package resolves from a registry, not git, a URL, a path, a link or a workspace | holds per package |
 | Shape | No new dependency, major upgrade or downgrade unless the policy allows them. The runner's `major` flag may add a break the digits do not show (it is ecosystem-aware) but may not deny one they do, including 0.x minor bumps; its `direction` must agree with the numbers; a resolved registry version starts with a number; one package has one story | holds per package; disagreement blocks |
-| Licenses | Every added or upgraded package carries an allowlisted SPDX identifier or expression: a single identifier (including `WITH` exceptions) must be listed verbatim, an `OR` choice needs one listed operand, an `AND` conjunction needs all; parentheses and mixed operators are not accepted | holds per package |
+| Licenses | Every added or upgraded package carries an allowlisted SPDX identifier or expression: a single identifier must be listed verbatim, an `OR` choice needs one listed operand, an `AND` conjunction needs all; parentheses and mixed operators are not accepted. Allowlist entries are single identifiers without spaces, so an identifier with a `WITH` exception can never be listed: such a package holds unless an `OR` choice offers a listed alternative | holds per package |
 | Scanner | No finding at or above `holdSeverity`; a finding of unknown severity counts as at the threshold. The runner may omit findings below a stated severity to bound the list, but never at or above the threshold | holds per finding; omission at the threshold blocks |
 | Scanner health | Adapter and image match the policy; the database was no older than `databaseMaxAgeMs` at scan time; status `complete` | `error`, `timeout` or stale database blocks; `unsupported` holds |
 

@@ -42,8 +42,12 @@ source but must have no deployment or model credential. Restrict base pushes to
 the human merger. Do not weaken protection or change visibility when an API fails.
 
 Create a selected-repository App with the exact review-profile grants documented
-in that guide. Configure its HTTPS webhook, runtime and trusted merge policy via
-[GitHub installation](github-installation.md). Use a fresh Compose project/database
+in that guide. Configure its HTTPS webhook and runtime via
+[GitHub installation](github-installation.md), then add the trusted merge policy and start
+the control plane with the command in
+[human merge](human-merge.md#app-and-local-configuration), which adds
+`runtime/compose.review.yaml`: the installation guide's intake-only command refuses the
+review-profile grants (`installation_permissions_or_events_invalid`). Use a fresh Compose project/database
 for this pilot and preserve unrelated local configuration. Separately configure a
 publisher identity restricted to this repository, with Contents and Pull requests
 write, Metadata read, and **no workflow, administration or merge bypass grants**.
@@ -95,9 +99,10 @@ python3 examples/invoice/prepare-result.py \
   --output $FACTORY_EXERCISE/invoice-publication-1
 ```
 
-The helper validates receipt/patch hashes, passing live outcome/command fields,
-source commit, regular file modes and the two-file scope. It writes a complete
-candidate pair and `publication-plan.json`. Local receipts are not signed proof;
+The helper checks the patch against the receipt's `patchSha256`, the passing live
+outcome/command fields, the source commit, regular file modes and the two-file scope. It
+writes a complete candidate pair and `publication-plan.json`, which records the receipt
+file's SHA-256 without checking it against anything. Local receipts are not signed proof;
 review them together with the durable database record. The helper cannot publish,
 execute tests, approve a review or merge anything.
 
