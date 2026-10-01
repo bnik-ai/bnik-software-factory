@@ -524,6 +524,21 @@ class Live:
     def popen(self, *args):
         return subprocess.Popen(['./sfac', *args], cwd=ROOT, env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
+    def check_policy_drift(self):
+        """Before a job writes anything: the state's policy file must be the ledger's active policy (only a crash
+        between an activation's two writes, or a hand edit, makes them differ). A fresh ledger under a kept file is
+        not drift; the next activation is initial (`activate`)."""
+        if self.active is None or self.drift_checked:
+            return
+        ledger = self.status().get('activePolicySha256')
+        if ledger is None:
+            return
+        # The comparator's digest of the current file (it plans only a later revision; the probe changes nothing else).
+        current = policy_plan(self.active, {**self.active, 'revision': self.active['revision'] + 1})['currentSha256']
+        if ledger != current:
+            raise LaneStop("policy_file_drifted_from_ledger: STATE/autonomy-policy.json is not the ledger's active policy; restore it from the last accepted activation")
+        self.drift_checked = True
+
     def activate(self, bundle_dir, base_branch, author_model):
         """Pins the case's bundle and the trial's base branch as the next policy revision, acknowledging exactly what changed."""
         target = self.state / 'acceptance'
@@ -1157,7 +1172,9 @@ def finish_report(report, budget, cases, path, worker_image=None):
     report['finishedTreeDirty'] = scripted.tree_dirty()
     report['finishedScorerSha256'] = scorer_sha256()
     report['bound'] = (not report['treeDirty'] and not report['finishedTreeDirty'] and report['finishedCommit'] == report['candidateCommit']
-                       and report['finishedScorerSha256'] == report['scorerSha256'] and report.get('finishedWorkerImageId') == report.get('workerImageId'))
+                       and report['finishedScorerSha256'] == report['scorerSha256']
+                       and ('workerImageId' not in report
+                            or (report['workerImageId'] is not None and report.get('finishedWorkerImageId') == report['workerImageId'])))
     report['budget'].update({'spentUsd': budget.spent, 'remainingUsd': budget.remaining(), 'stopped': budget.stopped})
     report['notRun'] = [c['id'] for c in cases if c['id'] not in ran]
     report['summary'] = {
@@ -1185,6 +1202,9 @@ def command_lane(args):
     done = {(t['case'], t['trial']) for t in report['trials']}
     consecutive_incomplete = 0
     try:
+        # A drift found inside a trial would come after its branch and Task were written, and a resumed
+        # lane could not redo that trial under the same names: check before anything is written.
+        live.check_policy_drift()
         for entry in cases:
             case = entry['id']
             for index in range(args.trials):

@@ -237,6 +237,18 @@ class ActivateTest(unittest.TestCase):
         self.assertFalse((state / 'autonomy-policy.json').exists())
         self.assertEqual(json.loads(live.merge_policy_path(state).read_text())['baseBranch'], 'main')
 
+    def test_the_lane_start_check_finds_a_drift_before_anything_is_written(self):
+        self.ledger = 'f' * 64
+        with self.assertRaisesRegex(live.LaneStop, 'policy_file_drifted_from_ledger'):
+            self.driver.check_policy_drift()
+        self.assertFalse(any(c[:2] == ('autonomy', 'activate') for c in self.calls))
+        self.ledger = None  # a fresh ledger under a kept file is not drift
+        self.driver.check_policy_drift()
+        self.assertFalse(self.driver.drift_checked)
+        self.ledger = live.policy_plan(self.active, {**self.active, 'revision': 4})['currentSha256']
+        self.driver.check_policy_drift()
+        self.assertTrue(self.driver.drift_checked)
+
     def test_a_policy_file_that_drifted_from_the_ledger_stops_before_activating(self):
         self.ledger = 'f' * 64
         with self.assertRaisesRegex(live.LaneStop, 'policy_file_drifted_from_ledger'):
@@ -801,6 +813,7 @@ class LaneStopTest(unittest.TestCase):
             return seeded
 
         names = ('Live', 'load_authorization', 'Driver', 'driver_for', 'seed_trial', 'trial_standard')
+        Live.check_policy_drift = lambda self: None
         originals = {n: getattr(live, n) for n in names}
         live.Live, live.Driver, live.driver_for, live.seed_trial = Live, (lambda *a: None), (lambda *a: None), seed
         live.load_authorization = lambda *a: {'budgetUsd': 5, 'repository': 'o/r', 'authorizedBy': 'o', 'expiresAt': '2099-01-01T00:00:00Z', 'trustedJob': 'test'}
@@ -821,6 +834,37 @@ class LaneStopTest(unittest.TestCase):
         self.assertIn('policy_file_drifted_from_ledger', written['budget']['stopped'])
         self.assertEqual(written['workerImageId'], written['finishedWorkerImageId'])
 
+    def test_a_drift_found_at_lane_start_stops_before_any_trial_writes(self):
+        seeded = []
+
+        class Live:
+            facts = {'repository': 'o/r', 'ownerId': 1}
+            def __init__(self, state):
+                pass
+            def check_policy_drift(self):
+                raise live.LaneStop('policy_file_drifted_from_ledger: test')
+            def worker_image_id(self):
+                return 'sha256:' + 'w' * 64
+
+        names = ('Live', 'load_authorization', 'Driver', 'driver_for', 'seed_trial')
+        originals = {n: getattr(live, n) for n in names}
+        live.Live, live.Driver, live.driver_for = Live, (lambda *a: None), (lambda *a: None)
+        live.seed_trial = lambda *a: seeded.append(a)
+        live.load_authorization = lambda *a: {'budgetUsd': 5, 'repository': 'o/r', 'authorizedBy': 'o', 'expiresAt': '2099-01-01T00:00:00Z', 'trustedJob': 'test'}
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                report = Path(tmp) / 'report.json'
+                args = argparse.Namespace(state=tmp, authorization=Path(tmp) / 'a.json', staging=tmp, budget_usd=None, report=report, resume=False,
+                                          held_out=None, case=['F01'], trials=3, max_consecutive_incomplete=3)
+                with contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(SystemExit, 'policy_file_drifted_from_ledger'):
+                    live.command_lane(args)
+                written = json.loads(report.read_text())
+        finally:
+            for n, f in originals.items():
+                setattr(live, n, f)
+        self.assertEqual((seeded, written['trials']), ([], []))
+        self.assertIn('policy_file_drifted_from_ledger', written['budget']['stopped'])
+
     def test_a_report_is_bound_to_one_worker_image(self):
         commit = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True).stdout.strip()
         with tempfile.TemporaryDirectory() as tmp:
@@ -828,11 +872,12 @@ class LaneStopTest(unittest.TestCase):
             original = live.scripted.tree_dirty
             live.scripted.tree_dirty = lambda: False  # this test isolates the image rule from the checkout's state
             try:
-                for finished, bound in (('sha256:' + 'w' * 64, True), ('sha256:' + 'x' * 64, False), (None, False)):
-                    report = {'treeDirty': False, 'candidateCommit': commit, 'scorerSha256': live.scorer_sha256(), 'workerImageId': 'sha256:' + 'w' * 64,
+                for started, finished, bound in (('sha256:' + 'w' * 64, 'sha256:' + 'w' * 64, True), ('sha256:' + 'w' * 64, 'sha256:' + 'x' * 64, False),
+                                             ('sha256:' + 'w' * 64, None, False), (None, None, False)):
+                    report = {'treeDirty': False, 'candidateCommit': commit, 'scorerSha256': live.scorer_sha256(), 'workerImageId': started,
                               'budget': {}, 'trials': []}
                     live.finish_report(report, live.Budget(1.0), [], path, finished)
-                    self.assertEqual(report['bound'], bound, finished)
+                    self.assertEqual(report['bound'], bound, (started, finished))
             finally:
                 live.scripted.tree_dirty = original
 
