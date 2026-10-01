@@ -19,15 +19,18 @@ The registered baseline for `claude-sonnet-5` is [`039c43a.json`](039c43a.json).
 No record here claims a model-lane run or a live merge until one has happened under a
 written owner authorization; see [live qualification](../../docs/live-qualification.md).
 
-Before publication the candidate's history was rewritten once: the commits a rebase had stamped
-with a maintainer's personal address took the preparation identity as committer, and the local
-paths in these records became a tree-relative path or a file name, as `qualify.py` writes them
-now. Messages, authors, dates, code, fixtures and every fingerprinted file are unchanged; the
-records keep the commit identities they measured. Those commits in this history:
+Before publication the candidate's history was rewritten twice: the commits a rebase had stamped
+with a maintainer's personal address took the preparation identity as committer, the local paths
+in these records became a tree-relative path or a file name, as `qualify.py` writes them now, and
+three credential-shaped test fixture strings (a synthetic key header and two fake API keys) were
+split so that no source file holds a scannable shape; their runtime values are unchanged. Messages,
+authors, dates, code and every fingerprinted file are otherwise unchanged; the records keep the
+commit identities they measured. Those commits in this history:
 
 | Recorded commit | Commit in this history |
 | --- | --- |
-| `a3619e7` | `a3619e799a5358c674c26a31114e9335087c4022` (unchanged) |
-| `8d6434e` | `a5d82f0d3c57aa9b019e4f0903f001a7b261a7fb` |
-| `a1bbff8` | `e7507173edafdf20c79f989ac6d5b56aa63ac738` |
-| `039c43a` | `1e50f00a60c0933947035073d44a8367d47ad70f` |
+| `a3619e7` | `8b6d08e8f8f4ec4fa3a9b79d0a1e72b3df8cdfa2` |
+| `8d6434e` | `b12af1ca712678f264a26ae805ba563d67d35c86` |
+| `a1bbff8` | `d9be5504d24a29ab95145f897ef605fb132be3c9` |
+| `039c43a` | `5f5d4eaf298724b574a4aa540255bf275f552c4f` |
+| `5247e48` | `cb765bd810a65fba0583865901f5df9316d71b76` |
