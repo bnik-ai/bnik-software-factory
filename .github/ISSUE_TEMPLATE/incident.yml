@@ -1,5 +1,5 @@
 name: "Incident — production deviation"
-description: "A software-factory production deviation requiring response. Opened by humans, SREAgent (post-v0), or alerting integration."
+description: "A software-factory production deviation requiring response. Opened by humans or an alerting integration."
 title: "[Incident] "
 labels:
   - "kind:incident"
@@ -7,11 +7,11 @@ body:
   - type: markdown
     attributes:
       value: |
-        Incidents follow the FSM: `triggered → investigating → mitigated → resolved → closed` (or `false_positive`). Severity controls auto-paging behavior once the validator is live.
+        Incident is a deferred record kind: the validator runs no Incident lifecycle and nothing pages anyone automatically. Track the response in this issue.
 
         For incidents in an *application* the factory built (e.g. sample-app), open the Incident in that application's repo, not here.
 
-        **Severity label is intentionally NOT auto-applied by this form.** The dropdown below is the authoritative source for the selected severity until B3 ships and the Validator reads the dropdown answer to apply the matching `severity:*` label. Until then, the human reporter or first responder applies the correct `severity:*` label by hand from the issue UI after creation. This avoids the failure mode of every form-created incident silently carrying `severity:medium` regardless of the dropdown choice.
+        **Severity label is intentionally NOT auto-applied by this form.** The dropdown below records the selected severity; nothing reads it. The reporter or first responder applies the matching `severity:*` label by hand after creation, so no form-created incident silently carries a default severity.
 
   - type: dropdown
     id: severity
@@ -45,7 +45,7 @@ body:
     id: impact
     attributes:
       label: User-visible impact
-      placeholder: "All cross-repo Task transitions blocked; ~N Goals stalled; audit ledger has Y-second gap"
+      placeholder: "All Task transitions blocked; ~N Goals stalled; audit ledger has Y-second gap"
     validations:
       required: true
 

@@ -58,7 +58,7 @@ body:
       label: Who must approve?
       options:
         - "Repo maintainer (any)"
-        - "Repo maintainer + platform owner (platform-overlay)"
+        - "Repo maintainer + platform owner"
         - "Repo maintainer + software-factory owner"
         - "All of the above"
     validations:

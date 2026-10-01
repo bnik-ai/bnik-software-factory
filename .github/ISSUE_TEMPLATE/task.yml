@@ -33,8 +33,8 @@ body:
     id: blocked_by
     attributes:
       label: blocked-by
-      description: "Cross-repo Task reference(s) this Task depends on. Comma-separated if more than one. Validator blocks `proposed → ready` until all blocked-by Tasks are `done`."
-      placeholder: "example-owner/platform-overlay#NN"
+      description: "Node IDs of Tasks in this repository that this Task depends on, comma-separated. The runtime's dependency snapshot reports this Task as blocked until each is `done` or `abandoned` (docs/human-merge.md); nothing changes its status automatically."
+      placeholder: "I_kwDOExample1, I_kwDOExample2"
 
   - type: textarea
     id: scope

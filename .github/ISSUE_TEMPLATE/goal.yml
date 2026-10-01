@@ -53,11 +53,11 @@ body:
   - type: dropdown
     id: requires_platform_change
     attributes:
-      label: Does this likely require a paired platform-overlay change?
-      description: "If yes, the Spec/Design will fan out into a cross-repo Task chain per ADR-0003 with an infra Task in example-owner/platform-overlay."
+      label: Does this likely require an infrastructure change?
+      description: "If yes, plan the infrastructure work as its own Task (see docs/decisions/0003-cross-repo-delivery.md)."
       options:
         - "No — software-factory-only"
-        - "Yes — paired platform-overlay Task expected"
+        - "Yes — likely needs infrastructure work"
         - "Unsure — let DesignAgent decide"
     validations:
       required: true
@@ -66,7 +66,7 @@ body:
     id: deadline
     attributes:
       label: External deadline (if any)
-      description: "Format: YYYY-MM-DD. Populates `committed_end`. Agents cannot write this field; only humans can. It is a constraint, not a target."
+      description: "Format: YYYY-MM-DD. Set by humans only; it is a constraint, not a target."
       placeholder: "2026-06-15"
 
   - type: textarea
