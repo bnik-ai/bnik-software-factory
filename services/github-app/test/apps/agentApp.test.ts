@@ -96,7 +96,6 @@ describe('buildAgentApp — /agent/dispatch route removed per ADR 0011', () => {
 describe('readAgentHmacSecretFromEnv', () => {
   test('throws when env var is unset', () => {
     const original = process.env[AGENT_HMAC_SECRET_ENV];
-    // biome-ignore lint/performance/noDelete: env-var unset is the correct semantic in tests.
     delete process.env[AGENT_HMAC_SECRET_ENV];
     try {
       expect(() => readAgentHmacSecretFromEnv()).toThrow(/required/);
@@ -112,7 +111,6 @@ describe('readAgentHmacSecretFromEnv', () => {
       expect(readAgentHmacSecretFromEnv()).toBe('x');
     } finally {
       if (original === undefined) {
-        // biome-ignore lint/performance/noDelete: env-var unset is the correct semantic in tests.
         delete process.env[AGENT_HMAC_SECRET_ENV];
       } else {
         process.env[AGENT_HMAC_SECRET_ENV] = original;
