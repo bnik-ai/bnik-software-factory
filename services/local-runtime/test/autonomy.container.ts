@@ -252,7 +252,7 @@ test('sandbox timeouts and cancellation remove the container', async () => {
 });
 
 // --- Slice B: protected acceptance runner ---------------------------------------------
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadAcceptanceBundle, runAcceptance } from '../src/autonomy/acceptance.js';
@@ -565,7 +565,12 @@ import { NOW, acceptanceFor, policyFixture, requestFor, reviewFor } from './auto
 function realLockfile(manifest: Record<string, unknown>): string {
   const directory = mkdtempSync(join(tmpdir(), 'lockfile-'));
   try {
-    writeFileSync(join(directory, 'package.json'), JSON.stringify(manifest, null, 2));
+    // mkdtemp is private to the host user; the image's npm runs as uid 1000 (on Linux the
+    // runner user is another uid), so the bind-mounted directory must be open to it.
+    chmodSync(directory, 0o777);
+    writeFileSync(join(directory, 'package.json'), JSON.stringify(manifest, null, 2), {
+      mode: 0o644,
+    });
     execFileSync(
       'docker',
       [
