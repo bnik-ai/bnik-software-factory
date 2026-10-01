@@ -69,7 +69,8 @@ function countedReviewers(config: RuntimeConfig): Set<string> {
  * Queues a gate look, in the caller's transaction, at every tracked pull request a delivery
  * concerns, when the delivery can change what the gate observes: a pull-request event; a review
  * whose approval can count (`countedReviewers`), a dismissal, anyone's change request (any
- * user's latest CHANGES_REQUESTED parks, merge-policy.ts `verifyReviews`), or any review while
+ * user's latest CHANGES_REQUESTED parks; for the merger App's own merge, only one
+ * `countsChangeRequest` accepts, merge-gate.ts `reviewEvidence`), or any review while
  * the pair is parked on a change request or a look at it is running (it may have read the
  * change request the review lifts); a Task edit, label, lock or state change (the pairing
  * binds the Task); a completed check run or suite on its head (the gate reads check runs, never

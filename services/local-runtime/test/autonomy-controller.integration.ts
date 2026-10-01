@@ -552,10 +552,10 @@ test('an uncertain execution outcome keeps its reservation and stops; scope revo
   });
   await grant(paused.ledger);
   await paused.ledger.setPaused(REPOSITORY.id, true, 'incident', 'owner', now());
-  // A pause is a hold, not a refusal: the attempt keeps its state and nothing runs.
+  // A pause records no attempt and runs nothing; lifting it admits the Task.
   await assert.rejects(paused.controller.process(7, 'goal-1', signal()), /autonomy_paused/);
   assert.equal(paused.executions.length, 0);
-  assert.equal((await paused.runs.open(REPOSITORY.id, 'I_TASK_7'))?.state, 'admitted');
+  assert.equal(await paused.runs.open(REPOSITORY.id, 'I_TASK_7'), null);
   await paused.ledger.setPaused(REPOSITORY.id, false, null, 'owner', now());
   assert.equal((await paused.controller.process(7, 'goal-1', signal())).run.state, 'published');
 });
@@ -1014,3 +1014,41 @@ test('pause and revocation stop resumption of open attempts, not only admission'
   await assert.rejects(h.controller.process(7, 'goal-1', signal()), /scope_revoked/);
   assert.equal((await h.runs.open(REPOSITORY.id, 'I_TASK_7'))?.state, 'executing');
 });
+
+const halts: [string, (h: ReturnType<typeof harness>) => Promise<unknown>, string, RegExp][] = [
+  [
+    'pause',
+    (h) => h.ledger.setPaused(REPOSITORY.id, true, 'incident', 'owner', now()),
+    'goal-1',
+    /autonomy_paused/,
+  ],
+  [
+    'revocation',
+    (h) => h.ledger.revokeScope('goal-1', 'scope closed', 'owner', now()),
+    'goal-1',
+    /scope_revoked/,
+  ],
+  [
+    'expiry',
+    async () => {
+      clock += DAY;
+    },
+    'goal-1',
+    /scope_expired/,
+  ],
+  ['an unknown scope', async () => undefined, 'goal-none', /scope_missing/],
+];
+for (const [condition, halt, scopeId, reason] of halts)
+  test(`${condition} refuses a fresh Task without recording an attempt`, async () => {
+    const h = harness({
+      patch: JSON.stringify({ 'sum.js': 'module.exports = (a, b) => a + b;\n' }),
+    });
+    await grant(h.ledger);
+    await halt(h);
+    await assert.rejects(h.controller.process(7, scopeId, signal()), reason);
+    assert.equal(
+      (await admin.query('SELECT count(*)::int AS n FROM factory_autonomy_runs')).rows[0].n,
+      0,
+    );
+    assert.equal(h.executions.length, 0);
+  });

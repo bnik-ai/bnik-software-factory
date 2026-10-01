@@ -8,6 +8,7 @@ import {
   type Protection,
   type Review,
   digest,
+  latestReviews,
   requireGate,
   verifyChecks,
   verifyProtection,
@@ -230,6 +231,18 @@ export async function writeCollaborator(
     (id === undefined || permission.user.id === id)
   );
 }
+/** As on GitHub, a request for changes counts from an installed App or a human with write access. */
+export async function countsChangeRequest(
+  github: GateGitHub,
+  prefix: string,
+  review: Review,
+): Promise<boolean> {
+  return (
+    review.user.type === 'Bot' ||
+    (review.user.type === 'User' &&
+      (await writeCollaborator(github, prefix, review.user.login.toLowerCase(), review.user.id)))
+  );
+}
 async function human(github: GateGitHub, prefix: string, login: string, id?: number) {
   requireGate(
     await writeCollaborator(github, prefix, login, id),
@@ -340,13 +353,25 @@ export async function reviewEvidence(config: RuntimeConfig, github: GateGitHub, 
     pull.merged &&
     pull.merged_by?.type === 'Bot' &&
     pull.merged_by.login.toLowerCase() === `${merger.appSlug}[bot]`;
+  const listed = await github.list<Review>('reviews', String(pull.number));
+  // The merger App's merge is judged by the rule its admission used (autonomy/merge.ts): only a
+  // change request `countsChangeRequest` accepts parks it.
+  const counted = new Set<number>();
+  if (mergedByMerger)
+    for (const review of latestReviews(listed, before))
+      if (
+        review.state === 'CHANGES_REQUESTED' &&
+        (await countsChangeRequest(github, `/repos/${config.repository}`, review))
+      )
+        counted.add(review.id);
   const reviews = verifyReviews(
     config.mergePolicy,
-    await github.list<Review>('reviews', String(pull.number)),
+    listed,
     pull.head.sha,
     pull.user.id,
     before,
     mergedByMerger,
+    (review) => counted.has(review.id),
   );
   for (const review of reviews)
     if (review.user.type === 'User')

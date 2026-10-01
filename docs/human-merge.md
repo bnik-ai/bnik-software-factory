@@ -141,8 +141,10 @@ scan. Register and observe the open PR before merging it.
 A webhook delivery that can change what the gate observes about a tracked, unreconciled
 pull request queues its look at once, parked or not: a pull-request event; a review by a
 configured reviewer (or, under the automatic profile, the merger App), a dismissal, a change
-request by anyone (any user's latest change request parks it), or any review while it is parked
-on a change request or a look at it is running; an edit, label, lock or state change of its Task; a completed check run or
+request by anyone (any user's latest change request parks it, except that the merger App's own
+merge, like the automatic-merge decision, counts one only from a human with write access or an
+installed App), or any review while it is parked on a change request or a look at it is
+running; an edit, label, lock or state change of its Task; a completed check run or
 suite on its head (the gate reads check runs, not commit statuses). Comments, statuses and other
 reviews queue nothing. The reviewer list is read from the current policy file, or from the one loaded
 at startup while that file cannot be read. The control plane also scans tracked

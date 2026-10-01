@@ -381,6 +381,68 @@ test('a merge made without any earlier gate observation still reconciles through
   }
 });
 
+/** Reconciles after the merge as the CLI does: the record is reconciled only when the gate says so. */
+function reconcileThroughGate(h: Awaited<ReturnType<typeof harness>>, gate: HumanMergeGate) {
+  h.adapters.afterMerge = async (_run, merge) => {
+    await gate.queue.enqueue(`after-merge-${merge.mergeId}`, 'example/factory-demo', {
+      pull: merge.pullNumber,
+      repositoryId: REPOSITORY.id,
+      installationId: REPOSITORY.installationId,
+    });
+    while (await gate.step());
+    const settled = (await gate.status())[0];
+    if (settled?.state !== 'reconciled')
+      throw new Error(`gate_${settled?.state ?? 'unprocessed'}:${settled?.reason ?? 'queued'}`);
+  };
+}
+const changeRequest = (user: { id: number; login: string; type: string }) => ({
+  id: reviewId++,
+  user,
+  state: 'CHANGES_REQUESTED',
+  commit_id: head,
+  submitted_at: new Date(now()).toISOString(),
+});
+
+test("reconciling the merger App's merge ignores a change request by a user without write access, as the merge decision did", async () => {
+  const h = await harness();
+  const gate = new HumanMergeGate(runtimePool, h.g.config, h.g);
+  try {
+    await gate.track(1, h.g.pull.number, head);
+    reconcileThroughGate(h, gate);
+    h.g.reviews.push(changeRequest({ id: 999, login: 'stranger', type: 'User' }));
+    const result = await h.controller.merge(1);
+    assert.equal(result.merge.state, 'merged', JSON.stringify(result.merge));
+    assert.equal(result.merge.evidence.reconcileError, null);
+    assert.equal(result.merge.evidence.reconciled, true);
+    assert.equal((await gate.status())[0]?.state, 'reconciled');
+    assert.equal(h.g.task.state, 'closed');
+  } finally {
+    await gate.close();
+  }
+});
+
+test("a write collaborator's change request before the merger App's merge still parks its reconciliation", async () => {
+  const h = await harness();
+  const gate = new HumanMergeGate(runtimePool, h.g.config, h.g);
+  try {
+    await gate.track(1, h.g.pull.number, head);
+    reconcileThroughGate(h, gate);
+    const reconcile = h.adapters.afterMerge;
+    // Recorded at the merge time, after the merge decision's last observation.
+    h.adapters.afterMerge = async (run, merge) => {
+      h.g.reviews.push(changeRequest(h.g.human));
+      await reconcile?.(run, merge);
+    };
+    const result = await h.controller.merge(1);
+    assert.equal(result.merge.state, 'merged', JSON.stringify(result.merge));
+    assert.equal(result.merge.evidence.reconciled, false);
+    assert.equal(result.merge.evidence.reconcileError, 'gate_parked:changes_requested');
+    assert.equal(h.g.task.state, 'open');
+  } finally {
+    await gate.close();
+  }
+});
+
 test('a critical change holds until a configured approver reviews the exact head; other reviews never count', async () => {
   const h = await harness({
     changes: manifest(added('.github/workflows/ci.yml', 'on: push\n')),

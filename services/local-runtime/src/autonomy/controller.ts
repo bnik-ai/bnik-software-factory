@@ -374,6 +374,13 @@ export class AutonomyController {
       );
       if (latest !== null && !options.newAttempt)
         return { run: await this.pairPublication(latest), decisions };
+      // A halted ledger or scope refuses before any attempt is recorded.
+      const refusal = await this.adapters.ledger.halted(
+        this.adapters.repository.id,
+        scopeId,
+        this.now(),
+      );
+      if (refusal !== null) throw new AutonomyError(refusal);
       run = await this.adapters.runs.create({
         repositoryId: this.adapters.repository.id,
         scopeId,

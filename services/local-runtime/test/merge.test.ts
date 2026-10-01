@@ -136,6 +136,40 @@ test('trusted pairing and inspection reject changed task identity, body, scope a
   g.pull.head.repo = { id: 99 };
   await assert.rejects(inspectGate(g.config, g, pair), /paired_pull_changed/);
 });
+test("the merger App's merge counts a change request as the automatic-merge observation does; any other merge, anyone's", async () => {
+  const g = new MergeFixture();
+  g.config.mergePolicy = { ...policy, merger: { appSlug: 'factory-merger', appId: 7001 } };
+  const bot = { id: 9001, login: 'factory-merger[bot]', type: 'Bot' };
+  g.merge();
+  g.pull.merged_by = bot;
+  const approval = { ...present(g.reviews[0]), id: 9, user: bot };
+  const request = (user: { id: number; login: string; type: string }) => ({
+    id: 10,
+    user,
+    state: 'CHANGES_REQUESTED',
+    commit_id: head,
+    submitted_at: '2026-01-01T00:00:00Z',
+  });
+  const stranger = { id: 999, login: 'stranger', type: 'User' };
+  g.reviews = [approval, request(stranger)];
+  assert.equal((await reviewEvidence(g.config, g, g.pull)).reviews.length, 1);
+  g.reviews = [approval, request(g.human)];
+  g.permission = 'read';
+  assert.equal((await reviewEvidence(g.config, g, g.pull)).reviews.length, 1);
+  g.permission = 'write';
+  await assert.rejects(reviewEvidence(g.config, g, g.pull), /changes_requested/);
+  g.reviews = [approval, request({ id: 777, login: 'some-app[bot]', type: 'Bot' })];
+  await assert.rejects(reviewEvidence(g.config, g, g.pull), /changes_requested/);
+  g.reviews = [approval, request({ id: 778, login: 'someone', type: 'Organization' })];
+  assert.equal((await reviewEvidence(g.config, g, g.pull)).reviews.length, 1);
+  // A human's merge, under either profile: any user's latest change request parks.
+  g.pull.merged_by = g.human;
+  for (const mergePolicy of [g.config.mergePolicy, policy]) {
+    g.config.mergePolicy = mergePolicy;
+    g.reviews = [present(new MergeFixture().reviews[0]), request(stranger)];
+    await assert.rejects(reviewEvidence(g.config, g, g.pull), /changes_requested/);
+  }
+});
 test('merge requires prior matching protection/head/base observation and configured human merger', async () => {
   const g = new MergeFixture();
   const pair = await pairPull(g.config, g, 1, 2, head);

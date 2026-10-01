@@ -7,6 +7,7 @@ import {
   type Pull,
   assertPairTask,
   assertPull,
+  countsChangeRequest,
   headRepositoryIds,
   writeCollaborator,
 } from '../github/merge-gate.js';
@@ -140,14 +141,7 @@ export async function observeMergeGate(
   for (const review of reviews)
     if (
       review.state === 'CHANGES_REQUESTED' &&
-      (review.user.type === 'Bot' ||
-        (review.user.type === 'User' &&
-          (await writeCollaborator(
-            github,
-            prefix,
-            review.user.login.toLowerCase(),
-            review.user.id,
-          ))))
+      (await countsChangeRequest(github, prefix, review))
     ) {
       changesRequested = true;
       break;

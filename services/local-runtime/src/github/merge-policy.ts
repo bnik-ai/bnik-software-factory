@@ -174,6 +174,11 @@ export interface CheckRun {
   conclusion: string | null;
   completed_at: string | null;
 }
+/**
+ * `countsChangeRequest` applies only with `acceptMerger`: the merger App's own merge counts a
+ * change request exactly where the automatic-merge observation did (merge-gate.ts
+ * `countsChangeRequest`); any other merge parks on any user's latest change request.
+ */
 export function verifyReviews(
   policy: MergePolicy,
   reviews: Review[],
@@ -181,6 +186,7 @@ export function verifyReviews(
   authorId: number,
   before = Number.POSITIVE_INFINITY,
   acceptMerger = false,
+  countsChangeRequest: (review: Review) => boolean = () => true,
 ): Review[] {
   const latest = new Map<number, Review>();
   for (const review of reviews) {
@@ -193,7 +199,9 @@ export function verifyReviews(
     if ((latest.get(review.user.id)?.id ?? 0) < review.id) latest.set(review.user.id, review);
   }
   requireGate(
-    ![...latest.values()].some((r) => r.state === 'CHANGES_REQUESTED'),
+    ![...latest.values()].some(
+      (r) => r.state === 'CHANGES_REQUESTED' && (!acceptMerger || countsChangeRequest(r)),
+    ),
     'changes_requested',
   );
   // Automatic profile: the merger App's approval of the exact head, given after the autonomy
