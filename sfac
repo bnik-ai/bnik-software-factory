@@ -13,7 +13,7 @@ if [ "$command" = help ]; then
   echo '       ./sfac build|up|stop|down|clean-images|ps|logs|ready|demo|status|demo-status'
   echo '       ./sfac demo-source NAME | worker COMMAND ... | recovery COMMAND ...'
   echo '       ./sfac autonomy intent|pin|activate|status|grant|revoke|pause|resume|approve|reconcile|run|cancel|merge|merge-scan|recover ...'
-  echo '       ./sfac backup FILE | restore-check FILE | verify-database | prepare-result ...'
+  echo '       ./sfac backup FILE | restore-check FILE | verify-database | compact DAYS | prepare-result ...'
   echo 'Paths passed to operator commands are relative to .factory/artifacts (or /artifacts).'
   exit 0
 fi

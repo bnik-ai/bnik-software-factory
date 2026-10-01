@@ -20,8 +20,22 @@ and, with opt-in automatic merge, the merger App's admitted merges.
 The container target is Linux arm64, verified on macOS arm64 with Docker Desktop
 (Engine 28.0.4, Compose 2.34.0). Images pin official multi-platform manifest digests:
 Node 24.21.0 on Debian Bookworm slim and PostgreSQL 17.11 on Bookworm. Linux x64 database/worker integration has also run in contributor CI; other hosts
-remain unqualified. Docker, Compose and Python 3 are required for this optional native
-profile and integration exercise; `sfac` packages the language runtimes. Node source checks also ran on macOS Node 26.
+remain unqualified. `sfac` packages the language runtimes and needs none of the
+native prerequisites below. Node source checks also ran on macOS Node 26.
+
+## Native profile prerequisites
+
+The optional native profile needs Docker, Compose, Python 3, curl and Node 24.21.0
+with npm on the host. Install the locked dependencies of all five services as in
+[local checks](../CONTRIBUTING.md#local-checks); the native worker, recovery and
+autonomy commands (`runtime/worker.py`, `runtime/recovery.py`, `runtime/autonomy.py`)
+refuse to start until `services/local-runtime` is installed.
+
+Those commands reach PostgreSQL on host loopback port 55432, which only
+`runtime/compose.worker.yaml` publishes. When you use them, add
+`-f runtime/compose.worker.yaml` to every Compose command in these guides, so a later
+`up` keeps the port. To choose another port, set `FACTORY_DATABASE_PORT` in
+`runtime/.env`; Compose and the native commands both read it there.
 
 The control-plane image installs locked dependencies with lifecycle scripts
 disabled. It includes no installed Claude Agent SDK or coding worker. Installed
@@ -72,7 +86,8 @@ docker compose -f runtime/compose.yaml exec runtime node --import tsx src/operat
 ```
 
 Only the webhook port is exposed, bound to host loopback. PostgreSQL has no host
-port in this Compose profile. `read_only`, dropped capabilities, non-root identity
+port unless `runtime/compose.worker.yaml` is added (see
+[native profile prerequisites](#native-profile-prerequisites)). `read_only`, dropped capabilities, non-root identity
 and temporary `/tmp` apply to the control-plane container. They are not a coding
 sandbox; the image starts no model-executed shell.
 

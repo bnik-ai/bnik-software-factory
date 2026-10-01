@@ -41,8 +41,10 @@ An omitted test list remains `not_run`. Review source and receipts independently
 
 The trusted supervisor runs in a container with Docker daemon authority; ordinary
 operator commands have no socket. PostgreSQL is reachable on the internal Compose
-network only. The optional native profile in [local runtime](local-runtime.md)
-requires host Python/Node and a loopback database port; it is not required by `sfac`.
+network only. The optional native profile requires host Python 3, curl, Node 24.21.0 and installed
+service dependencies, plus the loopback database port that `runtime/compose.worker.yaml`
+publishes (see [native profile prerequisites](local-runtime.md#native-profile-prerequisites));
+`sfac` needs none of them.
 
 ## Live request contract
 

@@ -4,6 +4,7 @@ For Docker-only host operation, use [the container launcher](container-runtime.m
 The low-level commands below describe the optional native profile; the mapping
 covers configuration, secret paths, worker/recovery commands and sample artifacts.
 Do not mix its `runtime/` state with the launcher's `.factory/` state.
+Native commands need the host tools and the `runtime/compose.worker.yaml` database port in [native profile prerequisites](local-runtime.md#native-profile-prerequisites).
 
 The supported local profile records each explicit coding attempt in PostgreSQL.
 Inspection and cancellation do not start a model call. Run the schema migrator

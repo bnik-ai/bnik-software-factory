@@ -35,15 +35,20 @@ flowchart TD
 
 ## Type of change
 
-- [ ] Code change (`feat` / `fix` / `refactor`)
+<!-- Commit intents accepted by commitlint.config.js. -->
+
+- [ ] New capability (`add`)
+- [ ] Bug fix (`fix`)
+- [ ] Restructure without behavior change (`change`)
+- [ ] Removal (`remove`)
+- [ ] Dependency or configuration update (`update`)
+- [ ] Performance (`perf`)
+- [ ] Security (`secure`)
 - [ ] Documentation (`docs`)
-- [ ] Test (`test`)
-- [ ] CI / build (`ci` / `chore`)
-- [ ] Configuration / env (`chore`)
 
 ## Surface area
 
-- [ ] Adds a new env var (added to `.env.example`)
+- [ ] Adds a new environment variable (documented in this PR)
 - [ ] Adds a new dependency (justified in commit message body)
 
 ## Verification

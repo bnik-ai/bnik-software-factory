@@ -89,7 +89,6 @@ Source snapshot transfers into the worker still use stdin, with no host bind mou
 | `python3 examples/invoice/prepare-result.py ...` | `./sfac prepare-result ...` |
 | `runtime/.env`, `runtime/secrets/`, `runtime/merge-policy/merge-policy.json` | `.factory/.env`, `.factory/secrets/`, `.factory/merge-policy/merge-policy.json` |
 | `python3 runtime/autonomy.py …` with `autonomy-policy.json` and `acceptance/` | `./sfac autonomy …` with `.factory/autonomy-policy.json` and `.factory/acceptance/` (see [autonomy operations](autonomy-operations.md)) |
-| `/tmp/example-input`, `/tmp/example-result` | Unique names under `/artifacts/` |
 
 The native guides remain useful for explicit low-level operation. With `sfac`, do
 not add `compose.worker.yaml`, expose PostgreSQL, install host Node/Python or mix

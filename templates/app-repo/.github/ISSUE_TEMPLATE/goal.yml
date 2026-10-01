@@ -30,14 +30,14 @@ body:
       description: Non-negotiables — security, performance, compatibility, deadlines, data sensitivity. The factory uses these as Spec inputs.
       placeholder: |
         - Must preserve PII redaction defaults
-        - Stgx-only for v0; no PHI processing
+        - Staging only; no regulated data
         - Must not exceed $50/mo additional infrastructure cost
 
   - type: dropdown
     id: data_classification_changes
     attributes:
       label: Does this change touch sensitive data classification?
-      description: If yes, the factory's DesignAgent will require an updated `docs/data-classification.md` before producing the Spec.
+      description: If yes, describe the data and how it must be handled under Important constraints.
       options:
         - "No"
         - "Yes — new data type introduced or existing classification changed"
@@ -48,10 +48,10 @@ body:
     id: requires_infra_changes
     attributes:
       label: Does this likely require new platform infrastructure?
-      description: "Heuristic only — DesignAgent makes the actual determination. 'Yes' means: new database, new queue, new storage container, new external endpoint, increased compute capacity. If yes, the work will fan out into a cross-repo Task chain (per ADR 0003 in example-org/software-factory)."
+      description: "Heuristic only — DesignAgent makes the actual determination. 'Yes' means: new database, new queue, new storage container, new external endpoint, increased compute capacity."
       options:
         - "No — code/config changes only"
-        - "Yes — likely needs new platform-overlay infra"
+        - "Yes — likely needs new infrastructure"
         - "Unsure — let DesignAgent decide"
     validations:
       required: true
@@ -60,7 +60,7 @@ body:
     id: deadline
     attributes:
       label: External deadline (if any)
-      description: "Use the format YYYY-MM-DD. This populates the Goal's `committed_end` field — agents cannot write this; only humans can. It is a constraint, not a target."
+      description: "Use the format YYYY-MM-DD. It is a constraint, not a target."
       placeholder: "2026-06-15"
 
   - type: textarea
@@ -78,7 +78,7 @@ body:
     attributes:
       label: Before submitting
       options:
-        - label: "I am a human (or a human-authorized agent for v0+ bootstrap exceptions). Goals are not opened by agents in routine operation."
+        - label: "I am a human. Agents do not open Goals."
           required: true
         - label: "I have read the Outcome and Constraints back to myself and they are accurate."
           required: true

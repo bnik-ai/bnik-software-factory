@@ -117,7 +117,7 @@ export function parseAzureResources(azureMd) {
 const setsEqual = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
 
 // → array of violation strings. Empty = consistent. The generator refuses to
-// emit a diagram when this is non-empty, so the daily job fails loud on real drift.
+// emit a diagram when this is non-empty, so --check in contributor CI fails loud on real drift.
 export function verifyModelConsistency(derived) {
   const v = [];
   // Canonical agent set = the AgentRole union in types.ts (the dispatch contract;
@@ -294,7 +294,7 @@ function sourceSnapshot() {
   // date is identical whether the generator runs locally or in CI (UTC). On a
   // shallow CI checkout `git log -- <paths>` may be empty (no history for those
   // paths); fall back to HEAD so we never crash. The --check comparison ignores
-  // the snapshot line anyway; the daily full-clone job writes the accurate stamp.
+  // the snapshot line anyway.
   let out = gitLine(['log', '-1', '--format=%H %ct', '--', ...SOURCE_PATHS]);
   if (!out) out = gitLine(['log', '-1', '--format=%H %ct']);
   const sp = out.indexOf(' ');

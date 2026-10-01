@@ -29,9 +29,9 @@ agreed before submission. No separate CLA or copyright assignment is required.
 Use Node 24.21.0 and npm. From the repository root:
 
 ```sh
-for service in agents github-app orchestrator validator local-runtime; do
+(for service in agents github-app orchestrator validator local-runtime; do
   (cd "services/$service" && npm ci --ignore-scripts --no-audit --no-fund && npm test && npm run lint && npm run type-check) || exit 1
-done
+done)
 node --test scripts/*.test.mjs
 node scripts/gen-architecture-diagrams.mjs --check
 python3 runtime/cli-test.py

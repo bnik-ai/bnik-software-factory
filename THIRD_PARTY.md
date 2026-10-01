@@ -21,7 +21,7 @@ locally built worker and operator images contain the pinned vendor runtime and O
 redistribution rights, notices and inventories require a separate review. The worker
 Dockerfile installs Bash, Git, Python 3 and CA certificates through Debian apt;
 those package versions are not pinned to a repository snapshot. Capture the exact
-built-image inventory before any distribution. The operator also installs the Docker CLI, Git, Python 3 and CA certificates from Debian, and all five locked service packages. No prebuilt image is published. The local
+built-image inventory before any distribution. The operator also installs Debian's `docker.io` package (Docker Engine and CLI with containerd, runc and iptables; only the CLI is used), Git, Python 3 and CA certificates from Debian, and all five locked service packages. No prebuilt image is published. The local
 control-plane Dockerfile installs its four locked packages without lifecycle
 scripts and excludes the installed Agent SDK. Node/PostgreSQL base images pin
 manifest digests; their OS/runtime notices and the full built-image inventory need

@@ -1,5 +1,5 @@
 name: "Incident — production deviation"
-description: "A production issue requiring response. Opened by humans, SREAgent (post-v0), or alerting integration."
+description: "A production issue requiring response. Opened by humans or an alerting integration."
 title: "[Incident] "
 labels:
   - "kind:incident"
@@ -8,7 +8,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Incidents follow the FSM: `triggered → investigating → mitigated → resolved → closed`. Severity controls auto-paging behavior (configured per-repo in the software-factory Validator).
+        Record the incident and its severity for triage. The factory does not validate an Incident lifecycle or page anyone; use your own alerting and on-call tooling.
 
   - type: dropdown
     id: severity

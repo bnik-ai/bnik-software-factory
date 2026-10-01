@@ -29,7 +29,7 @@ respective providers. There is no managed hosting or on-call service.
 | Claude Agent SDK | 0.3.283 with bundled Claude Code 2.1.283; model ID explicit, never substituted. |
 | Linux x64 | Ubuntu 24.04 hosted contributor CI, database/worker integration and source artifact builds exercised; repeat checks for each release head. |
 | Linux arm64 | Local runtime and worker containers exercised on macOS arm64 Docker Desktop, Engine 28.0.4 / Compose 2.34.0. |
-| Operator | `sfac` uses a POSIX shell and local Docker/Compose; Python 3 and Node 24.21.0 run inside the operator image. Native development scripts still require host Python/Node. |
+| Operator | `sfac` uses a POSIX shell and local Docker/Compose; Python 3 and Node 24.21.0 run inside the operator image. The optional native profile needs host Python 3, curl and Node 24.21.0 with installed service dependencies ([prerequisites](docs/local-runtime.md#native-profile-prerequisites)). |
 | GitHub | GitHub.com, one selected repository; full merge profile needs an organization repository with the documented enforceable protection. |
 | Other environments | Windows native, other Node/database versions, non-Docker workers and GitHub Enterprise Server are unqualified. |
 

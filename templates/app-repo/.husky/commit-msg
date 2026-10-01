@@ -1,7 +1,4 @@
-#!/usr/bin/env sh
 # Generated from {{FACTORY_REPO}}/templates/app-repo/.husky/commit-msg
-# Validates the bnik intent vocabulary (add/fix/change/remove/update/perf/secure/docs)
-# per AGENTS.md hard constraint 6 and commitlint.config.js.tpl.
-. "$(dirname -- "$0")/_/husky.sh"
-
+# Checks the message against commitlint.config.js (intents add, fix, change, remove,
+# update, perf, secure, docs).
 npx --no -- commitlint --edit "$1"

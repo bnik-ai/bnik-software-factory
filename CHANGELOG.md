@@ -1,5 +1,13 @@
 # Release notes
 
+## 0.1.0-alpha — unreleased
+
+This candidate has not been tagged or published yet. Project-owned source uses Apache-2.0.
+Record the exact candidate SHA when reproducing behavior. The initial distribution
+proposal is project source/build instructions, with dependencies obtained separately.
+
+### Changes
+
 - Remediate every dependency advisory `npm audit` reported for the five lockfiles (1 critical,
   16 high across entries): Hono 4.13.11 and `@hono/node-server` 1.19.17 in the control plane,
   Vitest 4.1.11 in the four test-running services, and patched transitive packages within
@@ -62,12 +70,6 @@
 - Freeze worker patches before tests; exclude generated outputs and fail validation
   when tests modify proposed source. Expose demo completion receipts directly.
 - Document the trusted supervisor's Docker authority and current platform limits.
-
-## 0.1.0-alpha — unreleased
-
-This candidate has not been tagged or published yet. Project-owned source uses Apache-2.0.
-Record the exact candidate SHA when reproducing behavior. The initial distribution
-proposal is project source/build instructions, with dependencies obtained separately.
 
 ### Included local workflow
 

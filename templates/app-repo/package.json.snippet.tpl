@@ -11,8 +11,7 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "type-check": "tsc --noEmit",
-    "test": "vitest run",
-    "build": "tsc -p tsconfig.build.json"
+    "test": "vitest run"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,json,md,css}": ["biome check --write --no-errors-on-unmatched"]

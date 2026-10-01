@@ -5,8 +5,10 @@ There is no published repository/tag yet. Run these commands from the source roo
 
 ## Requirements and costs
 
-Install Docker Engine with Compose v2 and select the intended local Unix-socket
-Docker context. The launcher uses a POSIX shell and standard shell utilities;
+Install Docker Desktop (macOS) or Docker Engine with the Compose v2 plugin (Linux), and
+select the intended local Unix-socket Docker context. Your non-root user must be able
+to use that context (on Linux usually through the `docker` group); `sfac` refuses to
+run as root. The launcher uses a POSIX shell and standard shell utilities;
 **host Python, Node, npm and a PostgreSQL port are not required**. Git is needed
 only to obtain a checkout (an extracted source archive also works). Builds download
 pinned base images and locked npm packages, plus Debian packages. Allow disk and
