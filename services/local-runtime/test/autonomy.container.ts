@@ -79,6 +79,7 @@ test('collector rebuilds the candidate tree from archive and patch, deterministi
       'docs/big.txt': 'x'.repeat(70_000),
       '.env': 'TOKEN=not-a-real-secret\n',
       'notes/key.txt':
+        // Split so the source never holds a key header (scripts/build-candidate.py refuses one).
         '-----BEGIN RSA ' + 'PRIVATE KEY-----\nsynthetic\n-----END RSA ' + 'PRIVATE KEY-----\n',
       'acceptance/suite.test.mjs': 'protected\n',
       'zz/last.js': 'module.exports = 2;\n',

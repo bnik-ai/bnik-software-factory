@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, readdirSync, rmSyn
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 const builder = resolve('scripts/build-candidate.py');
 function fixture(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'candidate-test-'));
@@ -26,6 +27,19 @@ test('source archives reproduce byte-for-byte and ignore untracked credentials a
   assert.equal(body, 'Source fixture\n');
   assert.notEqual(spawnSync('python3', [builder, '--commit', 'HEAD', '--output', 'c'], { cwd: dir }).status, 0);
 }));
+test("this repository's own commit passes the builder's guards", () => {
+  // The fixtures above never package this tree; a credential-shaped literal or a private path here would fail the
+  // release build (docs/maintaining.md) without this check.
+  const repo = fileURLToPath(new URL('..', import.meta.url));
+  const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+  const out = mkdtempSync(join(tmpdir(), 'candidate-self-'));
+  try {
+    const result = spawnSync('python3', [builder, '--commit', commit, '--output', join(out, 'artifact')], { cwd: repo, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+  } finally {
+    rmSync(out, { recursive: true, force: true });
+  }
+});
 test('tracked secrets and symbolic links cannot enter a source artifact', () => {
   for (const scenario of ['path', 'state', 'key', 'symlink']) fixture((dir, git) => {
     if (scenario === 'path') writeFileSync(join(dir, '.env'), 'not-for-distribution');

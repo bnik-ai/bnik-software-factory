@@ -30,7 +30,7 @@
           "candidate": "passed"
         },
         "notTestableInLane": [
-          "merge decision: the lane observes the publish decision only; merging is live-only (OSS-19 decision contracts cover the merge hold)"
+          "merge decision: the lane observes the publish decision only; merging is live-only (the autonomy policy's decision contracts cover the merge hold)"
         ]
       }
     },
@@ -49,7 +49,7 @@
         "notPublished": true,
         "executedAttemptsAtMost": 3,
         "notTestableInLane": [
-          "merge decision: the lane observes the publish decision only; merging is live-only (OSS-19 decision contracts cover the merge hold)"
+          "merge decision: the lane observes the publish decision only; merging is live-only (the autonomy policy's decision contracts cover the merge hold)"
         ]
       }
     }
