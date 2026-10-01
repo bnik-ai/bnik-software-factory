@@ -565,7 +565,7 @@ export class AutonomyController {
                 ...run.evidence,
                 workerRunId: result.runId ?? null,
                 patchSha256: result.outcome.patchSha256,
-                // A failed attempt spent too (OSS-22 live lane: a max-turns failure cost five cents).
+                // A failed attempt spent too (a max-turns failure still consumed model calls).
                 estimatedUsd: estimated,
               },
             });
@@ -788,7 +788,7 @@ export class AutonomyController {
   /**
    * Fresh protected acceptance, review and (when manifests changed) dependency receipts for
    * the run's candidate, from the base archive and the recorded worker patch. Used once
-   * before publication and again by the merger when receipts have expired (OSS-21): the
+   * before publication and again by the merger when receipts have expired: the
    * same inputs rebuild the same tree, so the receipts bind to the same subject.
    */
   async verifyCandidate(

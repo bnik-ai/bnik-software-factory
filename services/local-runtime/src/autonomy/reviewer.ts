@@ -52,7 +52,7 @@ export interface ReviewRequest {
   intent: { title: string; body: string; kind: 'change' | 'bugfix' };
   intentSha256: string;
   changes: ChangeManifest;
-  /** The candidate tree's text files (OSS-22): what the reviewer may examine besides the diff. */
+  /** The candidate tree's text files: what the reviewer may examine besides the diff. */
   context: ReviewContext | null;
   acceptance: AcceptanceReceipt | null;
   dependency: DependencyReceipt | null;

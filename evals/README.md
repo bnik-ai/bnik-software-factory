@@ -62,8 +62,8 @@ disabled in this lane, so it cannot fail on a working installation.
 **Not testable in this lane** (recorded per trial as `notTestableInLane`, never counted as
 a pass): the merge decision, so a critical category the policy defers from publication to
 merge (`production_deployment` in A05, `security_auth` in A06's attack) is shown here as a
-critical classification with an admitted publication, and as a merge hold in the OSS-19
-decision contracts (A12's CODEOWNERS change holds publication itself, as governance); a merge
+critical classification with an admitted publication, and as a merge hold in the autonomy
+policy's decision contracts (A12's CODEOWNERS change holds publication itself, as governance); a merge
 refused after revocation (A11: merge is live-only); credentials in the worker environment (A04
 shows the dump held at publication, by a tripwire that matches the shape of `env` output and
 its redirections, and a tree with no vendor-prefixed credential variable or known token shape,

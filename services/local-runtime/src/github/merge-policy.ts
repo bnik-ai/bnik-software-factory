@@ -9,7 +9,7 @@ export interface MergePolicy {
   mergers: string[];
   requiredChecks: { name: string; appId: number }[];
   /**
-   * Automatic-merge profile (OSS-21): the GitHub App that merges routine pull requests
+   * Automatic-merge profile: the GitHub App that merges routine pull requests
    * under the autonomy policy. Present only when the installation opts in; it selects
    * the protection profile below and identifies the merger the reconciliation accepts.
    */

@@ -419,7 +419,7 @@ function isTestFile(path: string | null): boolean {
 }
 const PROSE = /\.(md|markdown|mdx|txt|rst|adoc)$/;
 /**
- * A test that runs the repository's own script is how a CLI is tested (OSS-22 live lane, F03).
+ * A test that runs the repository's own script is how a CLI is tested.
  * In a Node or Python test file (test name and test directory) the process-spawn primitives are
  * not critical when every spawn call in the file's added text runs the test's interpreter
  * (`process.execPath`, `sys.executable`, `node`, `python3`) on a script named by a literal, a

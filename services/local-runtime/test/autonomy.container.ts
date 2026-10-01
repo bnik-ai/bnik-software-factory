@@ -60,7 +60,7 @@ test('collector rebuilds the candidate tree from archive and patch, deterministi
   assert.equal(change?.newPath, 'sum.js');
   assert.equal(change?.binary, false);
   assert.match(change?.newContent ?? '', /a \+ b/);
-  // OSS-22: the snapshot the reviewer receives holds the candidate tree's text files, changed or not.
+  // The snapshot the reviewer receives holds the candidate tree's text files, changed or not.
   assert.equal(first.context.truncated, false);
   assert.ok(
     first.context.files.some((file) => file.path === 'sum.js' && /a \+ b/.test(file.content)),
@@ -68,7 +68,7 @@ test('collector rebuilds the candidate tree from archive and patch, deterministi
   assert.ok(first.context.files.length >= 2);
   assert.ok(first.context.files.every((file) => !file.path.startsWith('node_modules/')));
   assert.deepEqual(first.context, second.context);
-  // Review round 1: a text file above the per-file cap must be omitted, never fail the run; secret-shaped
+  // A text file above the per-file cap must be omitted, never fail the run; secret-shaped
   // paths and secret material never reach the reviewer; files near the change come first.
   const wide = await collectChanges({
     image,
@@ -530,7 +530,7 @@ test('model reviewer runs in a sandbox that never holds the key and returns only
   const malformed = await reviewer('claude-fixture-review-malformed').review(request, signal());
   assert.equal(malformed.receipt.status, 'error');
   assert.equal(malformed.reason, 'verdict_not_json');
-  // Review round 4: prose around the one object is handed over; two objects and a reply cut at the
+  // Prose around the one object is handed over; two objects and a reply cut at the
   // token limit are not verdicts.
   const prose = await reviewer('claude-fixture-review-prose').review(request, signal());
   assert.equal(prose.receipt.status, 'complete');

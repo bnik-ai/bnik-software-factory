@@ -41,7 +41,7 @@ x-publisher: &publisher
   target: /state/secrets/publisher_private_key
   read_only: true
   bind: {create_host_path: false}
-# OSS-21: the merger App's key; only the automatic-merge supervisor (merge, merge-scan) sees it.
+# The merger App's key; only the automatic-merge supervisor (merge, merge-scan) sees it.
 x-merger: &merger
   type: bind
   source: ${FACTORY_STATE_DIR}/secrets/merger_private_key

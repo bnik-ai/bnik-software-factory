@@ -27,7 +27,7 @@ import type { AutonomyPolicy } from './policy.js';
 import { requireAutonomy } from './schema.js';
 
 /**
- * Trusted merge-gate observation (OSS-21). Reads the pull request, its Task, the base
+ * Trusted merge-gate observation for automatic merge. Reads the pull request, its Task, the base
  * branch protection, CODEOWNERS, required check runs and reviews from GitHub and writes
  * the graded facts the policy consumes (`mergeGateReasons`). Pairing or repository
  * anomalies throw (the merge is refused with that reason); protection, checks and reviews

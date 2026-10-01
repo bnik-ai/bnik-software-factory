@@ -3,7 +3,7 @@ import type { RepositoryIdentity } from './publisher.js';
 import { AutonomyError, requireAutonomy } from './schema.js';
 
 /**
- * Merger identity (OSS-21): a GitHub App installation separate from the publisher. One
+ * Merger identity for automatic merge: a GitHub App installation separate from the publisher. One
  * token per merge action, minted with exactly these permissions on the base repository
  * only and revoked afterwards. It approves and squash-merges the exact head the policy
  * admitted; it never bypasses branch protection (the App is a restricted pusher, not a

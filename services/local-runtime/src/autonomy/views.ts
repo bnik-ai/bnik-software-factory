@@ -1,5 +1,5 @@
 /**
- * OSS-22: what an attempt cost as the SDK estimated it, and what the reviewer consumed. The
+ * What an attempt cost as the SDK estimated it, and what the reviewer consumed. The
  * model lane accounts its spend from these printed views, never from the database, and a
  * budget figure is an estimate ceiling (evals/qualification-protocol.json `limits`).
  */

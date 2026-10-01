@@ -24,7 +24,7 @@ import type { AutonomyRun, AutonomyRuns } from './runs.js';
 import { AutonomyError, requireAutonomy } from './schema.js';
 
 /**
- * Merge controller (OSS-21). For a published attempt it observes the pull request through
+ * Merge controller (automatic merge). For a published attempt it observes the pull request through
  * trusted reads, turns configured approvers' reviews on the exact head into ledger
  * approvals, asks the policy to decide `merge` on the run's tree-bound receipts and the
  * observation, admits the action once, re-validates the admission and re-observes

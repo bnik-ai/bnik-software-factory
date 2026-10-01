@@ -7,7 +7,7 @@ import type { QueueOptions } from './queue.js';
 
 type Env = Record<string, string | undefined>;
 /**
- * Bounded autonomy (OSS-19/20). Present only when `FACTORY_EXECUTION=bounded` (live)
+ * Bounded autonomy. Present only when `FACTORY_EXECUTION=bounded` (live)
  * or `FACTORY_AUTONOMY=bounded` (demo). The controller connects with its own database
  * identity; the publisher is a separate GitHub App installation.
  */
@@ -43,7 +43,7 @@ export interface AutonomyConfig {
     forkRepository: string | null;
     forkRepositoryId: number | null;
   } | null;
-  /** OSS-21: the App that merges routine pull requests; present only with FACTORY_AUTOMERGE=enabled (live). */
+  /** Automatic merge: the App that merges routine pull requests; present only with FACTORY_AUTOMERGE=enabled (live). */
   merger: {
     appId: string;
     appPrivateKey: string;
@@ -171,7 +171,7 @@ function reviewerSettings(
   const settings = {
     adapter,
     model,
-    // Prompt 2 (OSS-22): the reviewer also receives the repository snapshot; 3: the protected suite
+    // Prompt 2: the reviewer also receives the repository snapshot; 3: the protected suite
     // is never shown and the reply is one JSON object.
     promptVersion: integer(env, 'FACTORY_REVIEWER_PROMPT_VERSION', 3, 1, 1000),
     maxTokens: integer(env, 'FACTORY_REVIEWER_MAX_TOKENS', 4096, 256, 16384),
@@ -194,7 +194,7 @@ function reviewerSettings(
  * The merge policy as its file holds it now, validated as at start (parse, merger App identity).
  * The merge gate reads it before every look: a resident control plane otherwise keeps the policy it
  * started with, and a base branch changed since then parks every current pull request as
- * repository_merge_settings_unsafe while each command process sees the new file (OSS-22 live lane).
+ * repository_merge_settings_unsafe while each command process sees the new file.
  */
 export function readMergePolicy(
   file: string,

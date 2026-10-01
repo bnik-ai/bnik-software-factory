@@ -130,7 +130,7 @@ export interface GateOptions {
   /** Repositories a pull request head may live in: the base itself, plus the configured publication fork. */
   headRepositoryIds?: number[];
   /**
-   * OSS-21: a merge the autonomy ledger admitted and the merger App performed. Reconciliation
+   * Automatic merge: a merge the autonomy ledger admitted and the merger App performed. Reconciliation
    * accepts that bot as the merge actor for exactly this merge commit; humans stay the only
    * other accepted mergers.
    */

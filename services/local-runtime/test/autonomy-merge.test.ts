@@ -61,7 +61,7 @@ test('the merge-gate observation reports GitHub facts the policy can decide on',
     observedAt: NOW,
   });
   assert.equal(observed.protectionReason, null);
-  // The OSS-19 rules accept it for exactly this head, tree and base.
+  // The autonomy policy's merge-gate rules accept it for exactly this head, tree and base.
   const target = { repositoryId: 42, baseBranch: 'main', head, tree: g.headTree, base };
   assert.deepEqual(mergeGateReasons(target, observed.observation, NOW), []);
   assert.equal(

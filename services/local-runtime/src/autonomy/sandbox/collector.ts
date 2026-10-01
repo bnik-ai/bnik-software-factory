@@ -24,7 +24,7 @@ import {
 const MAX_FILES = 10_000;
 const MAX_TEXT_BYTES = 64 * 1024 * 1024;
 const MAX_FILE_BYTES = MAX_ARCHIVE_BYTES;
-// OSS-22: the reviewer sees a bounded snapshot of the candidate tree's text files, not only the
+// The reviewer sees a bounded snapshot of the candidate tree's text files, not only the
 // diff, so it can examine what a change relies on. Generated and dependency directories and the
 // protected verification assets are not context; secret-shaped paths and secret material are never
 // sent; files near the change come first; what does not fit is listed as omitted (counted beyond

@@ -314,6 +314,6 @@ recorded decisions, single-use admissions and budget reservations in PostgreSQL.
 No bypass or exception mechanism; no automatic cross-provider substitution; no
 exactly-once guarantee for external effects (ambiguous outcomes are reconciled,
 not replayed); no protection against a compromised host or operator account.
-The controller and publisher (OSS-20) collect these receipts; the merger (OSS-21)
-consumes them with a fresh merge-gate observation, admits the merge once, squash-merges
-the exact head as a separate App and reconciles the actual merge commit afterwards.
+The controller and publisher collect these receipts; the merger consumes them
+with a fresh merge-gate observation, admits the merge once, squash-merges the
+exact head as a separate App and reconciles the actual merge commit afterwards.

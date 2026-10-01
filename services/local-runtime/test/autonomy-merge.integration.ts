@@ -33,8 +33,8 @@ import { FixtureMergeHost, MERGER_APP_ID, MERGER_BOT, MERGE_COMMIT } from './mer
 
 /**
  * Merge controller contracts on a real PostgreSQL with a fixture GitHub (reads) and a fixture
- * merger identity (writes) sharing one pull request. Runs arrive `published` the way OSS-20
- * leaves them: tree-bound receipts, a publication and an intent digest.
+ * merger identity (writes) sharing one pull request. Runs arrive `published` the way the
+ * bounded-autonomy controller leaves them: tree-bound receipts, a publication and an intent digest.
  */
 let admin: Pool;
 let runtimePool: Pool;
@@ -162,7 +162,7 @@ async function harness(scenario: Scenario = {}) {
     'owner',
     now(),
   );
-  // A published attempt as OSS-20 leaves it.
+  // A published attempt as the bounded-autonomy controller leaves it.
   const changes = scenario.changes ?? manifest(ROUTINE_CHANGE);
   const bound = requestFor(policy, 'merge', changes, {
     task: { id: TASK_ID, intentSha256: intentDigest(task), intentKind: 'change' },

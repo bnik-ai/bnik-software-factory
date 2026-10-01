@@ -518,7 +518,7 @@ test('failed acceptance sends the change to repair; a failed worker run fails th
   assert.equal(Number(reservation.settled_microusd), 0);
 });
 
-test('a failed coding attempt records what it cost (OSS-22 live lane: a max-turns failure spent)', async () => {
+test('a failed coding attempt records what it cost (a max-turns failure still spent)', async () => {
   await admin.query(
     'TRUNCATE factory_autonomy_runs,factory_autonomy_reservations,factory_autonomy_decisions,factory_autonomy_scopes CASCADE',
   );

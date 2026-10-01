@@ -466,7 +466,7 @@ test('security modules, destructive data APIs and execution calls are recognized
       'data_schema_or_migration',
     ),
   );
-  // OSS-22 live lane (F03): a test that spawns the repository's own CLI is routine; shell
+  // A test that spawns the repository's own CLI is routine; shell
   // interpretation and dynamic code in a test stay critical, and the same spawn outside a test too.
   for (const line of [
     "const { execFileSync } = require('node:child_process');",
@@ -491,7 +491,7 @@ test('security modules, destructive data APIs and execution calls are recognized
     'eval(fixture);',
     'subprocess.run(cmd, shell=True)',
     'const run = new Function(body);',
-    // Review round 1: shell interpretation reached through the import line or the arguments.
+    // Shell interpretation reached through the import line or the arguments.
     "const { exec } = require('node:child_process');",
     "import { execSync } from 'node:child_process';",
     "spawnSync('sh', ['-c', cmd]);",
@@ -512,7 +512,7 @@ test('security modules, destructive data APIs and execution calls are recognized
       added('test/helpers/setup.js', "spawnSync(process.execPath, ['cli.js']);\n"),
     ).includes('code_execution_primitive'),
   );
-  // Review round 2: the exemption is decided per file, so splitting the call across lines or holding
+  // The exemption is decided per file, so splitting the call across lines or holding
   // the flag in a variable does not hide it; a shell named as the program, --print, shell=1 and a bare
   // interpreter fed on stdin are shell interpretation; a test-named file outside a test location is
   // not exempt either.
@@ -548,7 +548,7 @@ test('security modules, destructive data APIs and execution calls are recognized
     ).includes('code_execution_primitive'),
     'a test-named file outside a test location is not exempt',
   );
-  // Review round 3: the exemption is an allow-list (interpreter + the repository's own script), so
+  // The exemption is an allow-list (interpreter + the repository's own script), so
   // stdin-fed interpreters, node flags before the script, computed programs, shell options in any
   // spelling and interpreter-level injection are all critical; Ruby is not exempt at all.
   for (const snippet of [
@@ -2070,7 +2070,7 @@ test('further dependency manifests, executable manifests and verification metada
     assert.ok(classifiedCodes(added(path, 'x\n')).includes(expected), `${path} -> ${expected}`);
 });
 
-test('review evidence: an errored review is inconclusive, not inconsistent (OSS-22 run 2, A04)', async () => {
+test('review evidence: an errored review is inconclusive, not inconsistent', async () => {
   const { reviewReasons } = await import('../src/autonomy/evidence.js');
   const policy = policyFixture();
   const request = requestFor(policy, 'publish');
@@ -2115,7 +2115,7 @@ test('review evidence: an errored review is inconclusive, not inconsistent (OSS-
   );
 });
 
-test('reviewer: repository snapshot rendering and collector context validation (OSS-22)', async () => {
+test('reviewer: repository snapshot rendering and collector context validation', async () => {
   const { renderContext } = await import('../src/autonomy/reviewer.js');
   const { parseReviewContext, parseCollectorOutput } = await import('../src/autonomy/collector.js');
   // A worker image from before the snapshot answers with version 1: refused by name, not as garbage.

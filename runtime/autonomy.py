@@ -23,7 +23,7 @@ for key in [
 ]:
     if key in settings:
         env[key] = settings[key]
-# Automatic merge (OSS-21): the merger identity is configuration of the merge commands alone.
+# Automatic merge: the merger identity is configuration of the merge commands alone.
 if command in ('merge', 'merge-scan'):
     for key in ['FACTORY_AUTOMERGE', 'FACTORY_MERGER_APP_ID', 'FACTORY_MERGER_INSTALLATION_ID', 'FACTORY_MERGER_APP_SLUG']:
         if key in settings:

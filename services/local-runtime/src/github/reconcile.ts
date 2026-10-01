@@ -223,8 +223,8 @@ export class HumanMergeGate extends LeasedConsumer {
    * (anything but parked or reconciled), parked by a retryable GitHub failure (`transient`), or
    * parked PARKED_RESCAN_MINUTES ago; `includeParked` (the operator's review-scan) queues every
    * parked pair at once. A parked pull request rarely changes by itself, and each look costs
-   * GitHub reads on this serial loop; rescanning every one every minute starved fresh deliveries
-   * (OSS-22 live lane: closures missed their window behind dozens of permanently parked pairs),
+   * GitHub reads on this serial loop; rescanning every one every minute starves fresh deliveries
+   * (closures miss their window behind dozens of permanently parked pairs),
    * and queuing a pair again while its look is still queued grows the queue faster than the loop
    * drains it. A delivery concerning a tracked pull request queues a look at once
    * (`queueDeliveryLooks`, from the intake); so do `track` and the autonomy commands.
@@ -321,7 +321,7 @@ export class HumanMergeGate extends LeasedConsumer {
           'SELECT foundation FROM factory_pr_observations WHERE repository_id=$1 AND pull_number=$2 ORDER BY id DESC LIMIT 1',
           [body.repositoryId, body.pull],
         );
-        // A merge the autonomy ledger admitted and the merger App performed (OSS-21) is an
+        // A merge the autonomy ledger admitted and the merger App performed is an
         // accepted actor for exactly that merge commit; every other merge needs a configured human.
         const autonomyMerge = config.mergePolicy?.merger
           ? (
