@@ -45,9 +45,10 @@ import { InMemorySubstrateClient, type SubstrateClient } from './substrateClient
 //     consecutive empty receives, the loop exits cleanly (status 0).
 //     KEDA spawns a new execution when messages arrive. This matches
 //     the Container Apps Job model (vs Container Apps with HTTP ingress).
-//   - The Container Apps Job runs this entrypoint. v0 wires in-memory
-//     deps so the binary boots without external services; B7 swaps in
-//     Service Bus + Postgres impls behind the same interfaces.
+//   - The Container Apps Job runs this entrypoint. Without Service Bus /
+//     Postgres env it wires in-memory deps so the binary boots without
+//     external services; with it, the Service Bus + Postgres impls sit
+//     behind the same interfaces.
 
 const DEFAULT_POLL_INTERVAL_MS = 1000;
 const DEFAULT_MAX_BATCH_SIZE = 10;
@@ -72,11 +73,11 @@ export interface ConsumerLoopDeps {
   // at-least-once delivery discipline that prevents a flagged or
   // accepted transition from being recorded but never propagated.
   publisher: OutgoingPublisher;
-  // Issue #178 rev11: ACTIVATES the cross-record + review-loop assertions in
-  // processMessage (they only run when substrate is wired — previously the
-  // live loop never passed it, leaving the review-required gate dormant).
+  // ACTIVATES the cross-record + review-loop assertions in processMessage
+  // (they only run when substrate is wired; without it the review-required
+  // gate is dormant).
   substrate?: SubstrateClient;
-  // Issue #178 rev12: the per-installation substrate factory — the SAME one
+  // The per-installation substrate factory — the SAME one
   // the event consumer resolves with. In live mode the boot `substrate` is an
   // empty InMemorySubstrateClient (resolveSubstrateFromEnv) and the real
   // GithubSubstrateClient exists only per message; without this, the review
@@ -136,7 +137,7 @@ export async function runConsumerLoop(deps: ConsumerLoopDeps): Promise<void> {
     emptyPollCount = 0;
     for (const message of batch) {
       try {
-        // rev12: per-message substrate — the factory wins when the message
+        // Per-message substrate — the factory wins when the message
         // carries an installationId (mirrors serviceBusEventQueueConsumer's
         // resolution substrate selection); boot substrate is the fallback.
         const assertionSubstrate =
@@ -287,7 +288,7 @@ function resolveEventQueueConsumerFromEnv(
   // ADR 0009 §D: recognize the deployment's App `<slug>[bot]` (GITHUB_APP_SLUG)
   // in addition to the documented defaults so an explicitly configured App (example-factory[bot])
   // resolves to the App actor-resolution path instead of being treated as a
-  // third-party bot (issue #183 observational settle).
+  // third-party bot (observational settle).
   const appBotLogins = appBotLoginsFromEnv(process.env);
   if (bootConfig.kind === 'connection-string') {
     console.log(
@@ -318,9 +319,9 @@ function resolveEventQueueConsumerFromEnv(
   });
 }
 
-// Resolves the read-only substrate wiring (M2 / issue #164). Returns:
+// Resolves the read-only substrate wiring. Returns:
 //   - `substrate`: the boot fallback used when a delivery carries no
-//     installation id (non-issue events, pre-M2 payloads) — always the
+//     installation id (e.g. non-issue events) — always the
 //     in-memory client (empty, so such deliveries still defer/dead-letter,
 //     the honest posture).
 //   - `substrateFactory`: when GITHUB_APP_ID + GITHUB_APP_PRIVATE_KEY are set,
@@ -392,10 +393,10 @@ export function startConsumer(): StartConsumerHandle {
   };
 
   // Close the long-lived ServiceBusClients exactly once — the consumer's AND
-  // the publisher's (issue #182: the publisher's client was never closed, so
-  // any execution that published kept an open AMQP connection, the event
-  // loop never drained, and the Container Apps Job execution was killed at
-  // the replica timeout → 'Failed' despite correct processing). Runs
+  // the publisher's (an unclosed publisher client keeps an open AMQP
+  // connection, the event loop never drains, and the Container Apps Job
+  // execution is killed at the replica timeout → 'Failed' despite correct
+  // processing). Runs
   // whenever the loop ENDS by any path — idle-drain return, per-message-
   // failure return (which must release the session lock), OR signal abort —
   // not only on SIGTERM/SIGINT.
@@ -464,7 +465,7 @@ export function startConsumer(): StartConsumerHandle {
     process.on('unhandledRejection', (reason) => {
       // Strict: only a definitive @azure/service-bus ServiceBusError with a
       // transient code is swallowed — a process-wide handler must not mask
-      // unrelated rejections (codex PR #142).
+      // unrelated rejections.
       if (isTransientServiceBusErrorStrict(reason)) {
         const code = (reason as { code?: unknown })?.code ?? 'unknown';
         console.warn(

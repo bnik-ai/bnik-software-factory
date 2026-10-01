@@ -121,8 +121,8 @@ export function inferSingleAgentActor(
   // `system` and `human` are stripped before the single-agent check. An edge
   // that admits `system` alongside exactly one agent (e.g. deployment
   // pending→in_progress = {system, OpsAgent}; PR approved→in_review = {human,
-  // ReviewAgent, system}) still resolves to that agent. This is deliberate
-  // (codex PR #152): on such a co-authorized edge BOTH the agent and `system`
+  // ReviewAgent, system}) still resolves to that agent. This is deliberate:
+  // on such a co-authorized edge BOTH the agent and `system`
   // are FSM-authorized, so attributing the agent is never an authorization
   // escalation — at most an audit-precision nuance. Deferring instead would
   // dead-letter legitimate flows that have no other marker channel (Deployment
@@ -148,7 +148,7 @@ export function inferSingleAgentActor(
 // Comments are human-writable, so a structural marker is trusted ONLY when its
 // authorLogin is a recognized App-bot login — otherwise a user could plant
 // `<!-- sf:structural sf:agent=ops@... -->` and steal attribution for the next
-// App-sent transition (codex PR #152). undefined login = unverifiable = untrusted.
+// App-sent transition. undefined login = unverifiable = untrusted.
 export interface MarkerComment {
   body: string;
   authorLogin?: string;
@@ -169,7 +169,7 @@ export interface MarkerSurfaces {
 // CREATOR's standing stamp (the sf:agent of whoever authored the record), which
 // is the wrong actor for a *later* transition: a Spec authored by SpecAgent and
 // later ratified by the App as ReviewAgent would mis-resolve to SpecAgent and
-// flag as actor_not_authorized (codex PR #152). Each transition's actor comes
+// flag as actor_not_authorized. Each transition's actor comes
 // from the marker comment the acting agent posts on THAT action; when no such
 // comment exists the caller's single-agent FSM fallback (inferSingleAgentActor)
 // supplies it — every creation/transition edge admits exactly one agent, so the
@@ -196,7 +196,7 @@ export function resolveActorFromMarkers(
 // resolveAppActor ONLY for `__initial__→X` edges where the FSM admits MULTIPLE
 // agent authors (e.g. Decision authoring) so inferSingleAgentActor is ambiguous
 // — there the body IS the right actor (the agent that just created the record).
-// NEVER used for a later transition (codex PR #152): on a non-creation edge the
+// NEVER used for a later transition: on a non-creation edge the
 // body is the stale creator stamp.
 export function resolveActorFromBody(
   surfaces: MarkerSurfaces,
@@ -204,7 +204,7 @@ export function resolveActorFromBody(
 ): Actor | undefined {
   // Same author authentication as comments: a body marker counts only when the
   // record was authored by the App (an agent-created record). A human-opened
-  // record's body marker is forged. (codex PR #152)
+  // record's body marker is forged.
   if (surfaces.bodyAuthorLogin === undefined || !appBotLogins.has(surfaces.bodyAuthorLogin)) {
     return undefined;
   }

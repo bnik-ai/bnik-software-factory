@@ -4,10 +4,10 @@ import type {
   MintedInstallationToken,
 } from './installationTokenMinter.js';
 
-// Cache-or-mint orchestration that composes B2-PR4's `signAppJwt` +
-// `InstallationTokenCache` with B2-PR5's `mintInstallationToken` into a
-// single call surface that the substrate/agent client factories in B2-PR7
-// will call once per request.
+// Cache-or-mint orchestration that composes `signAppJwt` +
+// `InstallationTokenCache` with `mintInstallationToken` into a single call
+// surface that the substrate/agent client factories (`buildSubstrateClient` /
+// `buildAgentClient`) call once per request.
 //
 // Substrate-vs-agent permission isolation lives ONE level above this
 // function: each factory (`buildSubstrateClient` / `buildAgentClient`)
@@ -30,7 +30,7 @@ import type {
 export interface GetInstallationTokenArgs {
   installationId: number | string;
   // Optional per-token scope downgrade forwarded to `mintInstallationToken`
-  // on cache miss. The caller (factory layer in B2-PR7) supplies a fixed
+  // on cache miss. The caller (the client factory layer) supplies a fixed
   // value per scope so all calls within a scope share the same minted-
   // token shape and the cache key remains the bare installation_id.
   permissions?: InstallationPermissions;

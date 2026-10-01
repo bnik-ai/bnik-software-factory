@@ -8,7 +8,8 @@
 //     dependency).
 //   - Dispatch on envelope.eventType: issues / pull_request / deployment_status
 //     each have their own resolver branch. Every other action / event shape
-//     returns a typed failure the caller routes to follow-up PRs.
+//     returns a typed failure (dead-lettered by the consumer unless
+//     observational).
 //   - For issues.opened: toState comes from any status:* label in the
 //     issue's initial label set; if none, the per-kind default initial
 //     state (Goal/Task → proposed, Spec/Design → drafting). fromState
@@ -22,7 +23,7 @@
 //     correct v0 audit posture for non-standard reopens.
 //   - For issues.unlabeled: classifies envelope.removedLabel. status:*
 //     removal is observational (status_label_removed_observational) ONLY
-//     when it CONVERGES the substrate (issue #180, codex rounds 3–4):
+//     when it CONVERGES the substrate:
 //     fresh-ledger cleanup (removed ≠ ledgered label, ledgered label
 //     remains) OR FSM-forward stale-ledger swap (removed = ledgered label,
 //     gone, and a remaining status label is one legal per-kind FSM edge
@@ -41,10 +42,10 @@
 //     to derive fromState; if no prior transition exists, use the synthetic
 //     '__initial__' fromState.
 //   - For pull_request: ledger lookup is authoritative for fromState (we
-//     cannot infer from action alone — see PR #40 rev1 audit-bypass note
-//     about admin-merge of unapproved PRs). `opened` uses '__initial__'
-//     directly since the FSM has explicit creation rules. `labeled` (issue
-//     #178 structural review) resolves a status:* label applied to the PR —
+//     cannot infer from action alone — an admin-bypass merge of an
+//     unapproved PR must not read as compliant). `opened` uses '__initial__'
+//     directly since the FSM has explicit creation rules. `labeled`
+//     resolves a status:* label applied to the PR —
 //     a PR is an Issue, so ReviewAgent's status:in_review / status:approved
 //     labels fire pull_request action='labeled' carrying body.label, NOT
 //     issues.labeled — mirroring the issues.labeled branch (toState from the
@@ -109,7 +110,7 @@ const ISSUE_KIND_INITIAL_STATE: ReadonlyMap<Kind, string> = new Map([
 // outside the documented FSM flow). Decision DOES have a closed-completed
 // path: the Decision issue template says the ADR authoring PR may close
 // the issue, and the natural close-completed mapping is to `approved`
-// per the DECISION_TRANSITIONS table (PR #56 review caught this gap).
+// per the DECISION_TRANSITIONS table.
 // The dispatcher routes the resulting transition through the
 // HARD-REJECT decisionFsm — invalid prior states (e.g. closing a
 // `proposed` Decision without going through `drafting → proposed →
@@ -139,38 +140,38 @@ export type ResolutionFailureReason =
   | 'review_no_prior_pr_state'
   | 'review_not_in_review'
   // A status:* label/close that resolves fromState === toState (no FSM
-  // transition). Observational (issue #181): settled cleanly, NOT dead-lettered
+  // transition). Observational: settled cleanly, NOT dead-lettered
   // — OpsAgent's post-merge close fires this on every completed Task, and the
   // close/label whose session-FIFO order lands second is benign bookkeeping.
   | 'transition_no_op'
-  // Issue #178 P2: a status:* label REMOVED from a PR, observational ONLY
-  // under the converging rule in isConvergingStatusRemoval (codex rounds 3–4:
-  // fresh-ledger cleanup OR FSM-forward stale-ledger swap). Settled cleanly
+  // A status:* label REMOVED from a PR, observational ONLY under the
+  // converging rule in isConvergingStatusRemoval (fresh-ledger cleanup OR
+  // FSM-forward stale-ledger swap). Settled cleanly
   // (the consumer completeMessage()s rather than dead-lettering). Anything
   // else — true reversal with no legal FSM edge, ledgered label absent with
   // no forward edge, no prior ledger row — stays the status_label_removed
   // violation.
   | 'pr_status_label_removed_observational'
-  // Issue #180: the same converging tolerance for ISSUES (OpsAgent's
+  // The same converging tolerance for ISSUES (OpsAgent's
   // post-merge apply-then-remove Task swap is the driving case; see
   // isConvergingStatusRemoval for the full rule). A removal that would let
   // the planner re-derive a REVERSED state (e.g. ready over a done ledger,
   // no legal done→ready edge) stays the status_label_removed violation.
   | 'status_label_removed_observational'
-  // Issue #180 codex round 4 (P2a): issues action='edited'. Body/title edits
+  // issues action='edited'. Body/title edits
   // carry NO FSM transition — SF state is label-driven (status:*). Every
   // agent appendToBody PATCH (BuildAgent's `pr-ref:` backlink write) and
   // every human body edit fires it; without this reason each one would
   // dead-letter as unsupported_action. Observational — settled cleanly.
   | 'issue_edited_observational'
-  // Issue #182: pull_request actions `synchronize` + `edited` carry NO FSM
+  // pull_request actions `synchronize` + `edited` carry NO FSM
   // transition — PR state is native-event (opened/closed/ready_for_review) +
   // status-label driven. `synchronize` fires on EVERY push to a PR branch
   // (including BuildAgent's own pushes) and `edited` on every PR body/title
   // edit; without this reason each one dead-letters as unsupported_action.
   // Observational — settled cleanly. detail = the action.
   | 'pr_event_observational'
-  // Issue #178/#181: issues.closed(state_reason=completed) on a record that
+  // issues.closed(state_reason=completed) on a record that
   // ALREADY carries its terminal status:<toState> label. OpsAgent's post-merge
   // bookkeeping applies status:done THEN closes the issue; the close webhook can
   // resolve in the SAME validator batch as the label apply (the batch reads every
@@ -199,8 +200,8 @@ export interface ResolveDependencies {
   // markers during App-actor resolution. MUST be the SAME set the parser used to
   // recognize the App sender (ServiceBusEventQueueConsumerConfig.appBotLogins) —
   // otherwise a deployment that configures its slug via config rather than
-  // GITHUB_APP_SLUG would parse the sender but reject its own markers (codex
-  // PR #152). Falls back to appBotLoginsFromEnv() when omitted (tests/boot).
+  // GITHUB_APP_SLUG would parse the sender but reject its own markers.
+  // Falls back to appBotLoginsFromEnv() when omitted (tests/boot).
   appBotLogins?: ReadonlySet<string>;
 }
 
@@ -228,7 +229,7 @@ function makeTransition(
     // Undefined for non-PR envelopes (parser does not populate).
     ...(envelope.headBranch !== undefined ? { headBranch: envelope.headBranch } : {}),
     ...(envelope.baseBranch !== undefined ? { baseBranch: envelope.baseBranch } : {}),
-    // M2: propagate the target repo slug + installation id so the
+    // Propagate the target repo slug + installation id so the
     // orchestrator + agents authenticate as the right installation.
     ...(envelope.repoFullName !== undefined ? { repoFullName: envelope.repoFullName } : {}),
     ...(envelope.installationId !== undefined ? { installationId: envelope.installationId } : {}),
@@ -240,8 +241,8 @@ async function priorToStateOrInitial(ledger: AuditLedgerReader, recordId: string
   return prior?.toState ?? INITIAL_STATE;
 }
 
-// Kind-aware fromState fallback for the issues.labeled STEADY-STATE branch
-// (issue #176 / #177 P1). When an agent (PlannerAgent's in-run root promotion)
+// Kind-aware fromState fallback for the issues.labeled STEADY-STATE branch.
+// When an agent (PlannerAgent's in-run root promotion)
 // applies `status:ready` to a freshly-created Task before its
 // issues.opened→proposed ledger row has landed, the plain
 // priorToStateOrInitial would fall back to __initial__ → yielding
@@ -267,7 +268,7 @@ async function resolveIssuesOpenedTransition(
   // for labeled events). Use envelope.labels — the webhook-fire-time
   // label set passed through by the parser. Reading substrate at decision
   // time would race against any labels applied between webhook fire and
-  // validator run (PR #43 rev1 codex finding).
+  // validator run.
   const initialLabels = envelope.labels ?? [];
   const statusLabels = initialLabels.filter((name) => name.startsWith(STATUS_LABEL_PREFIX));
   if (statusLabels.length >= 2) {
@@ -330,7 +331,7 @@ async function resolveIssuesClosedTransition(
       detail: reason === undefined ? `kind=${envelope.kind}` : `${envelope.kind}:${reason}`,
     };
   }
-  // Issue #178/#181 batch-stale-ledger guard. If the record ALREADY carries its
+  // Batch-stale-ledger guard. If the record ALREADY carries its
   // terminal status:<toState> label, the close is observational bookkeeping
   // regardless of ledger timing — robust where the fromState===toState guard
   // below (which trusts the ledger) misses the same-batch apply+close race.
@@ -351,7 +352,7 @@ async function resolveIssuesClosedTransition(
   // already moved to `approved` by ReviewAgent), the close is observational
   // bookkeeping — there's no FSM transition to record. Without the guard
   // the dispatcher emits `approved → approved` which the (HARD-REJECT)
-  // Decision FSM treats as illegal_transition (PR #60 codex finding).
+  // Decision FSM treats as illegal_transition.
   // The same guard helps any future kind where close-completed races with
   // the documented success-path transition.
   if (fromState === toState) {
@@ -359,9 +360,9 @@ async function resolveIssuesClosedTransition(
       ok: false,
       reason: 'transition_no_op',
       detail: `${envelope.kind}:${fromState}`,
-      // Observational (issue #181): a close that no-ops against an
+      // Observational: a close that no-ops against an
       // already-terminal ledger is benign bookkeeping, not a transition — and
-      // OpsAgent now closes EVERY completed Task (reason=completed), so this
+      // OpsAgent closes EVERY completed Task (reason=completed), so this
       // fires on the normal success path. Settle cleanly instead of DLQ-ing.
       observational: true,
     };
@@ -396,7 +397,7 @@ function hasLegalEdge(kind: Kind, fromState: string, toState: string): boolean {
 }
 
 // CONVERGING-REMOVAL rule for status:* label removals, shared by the issues +
-// PR unlabeled branches (issue #180 codex round 3, extended round 4 P2b).
+// PR unlabeled branches.
 // A removal is observational (benign swap cleanup; settled, not dead-lettered)
 // iff one of:
 //   (A) FRESH-LEDGER CLEANUP: the removed label is NOT the ledgered state's
@@ -515,11 +516,11 @@ async function resolveIssuesTransition(
     return resolveIssuesUnlabeledTransition(envelope, deps);
   }
   if (envelope.action === 'edited') {
-    // Issue #180 codex round 4 (P2a): body/title edits carry NO FSM
+    // Body/title edits carry NO FSM
     // transition — SF state is label-driven (status:*). Every agent
     // appendToBody PATCH (BuildAgent's `pr-ref:` backlink write) and every
     // human issue edit fires issues.edited; settling observationally keeps
-    // each one out of the DLQ (previously unsupported_action → dead-letter).
+    // each one out of the DLQ (instead of unsupported_action → dead-letter).
     return {
       ok: false,
       reason: 'issue_edited_observational',
@@ -569,12 +570,12 @@ async function resolveIssuesTransition(
     // first-labeling case). Consult the audit ledger; an ABSENT prior row
     // resolves to the per-kind initial state (NOT __initial__) so an agent's
     // status-label write that races ahead of the issues.opened ledger row
-    // still resolves the legitimate `<kind-initial>→<to>` edge (issue #176 /
-    // #177 P1 — PlannerAgent's in-run root promotion of a freshly-created Task).
+    // still resolves the legitimate `<kind-initial>→<to>` edge (e.g.
+    // PlannerAgent's in-run root promotion of a freshly-created Task).
     fromState = await priorToStateOrKindDefault(deps.ledger, envelope.recordId, envelope.kind);
   }
 
-  // Transition no-op guard (issue #181, symmetry with resolveIssuesClosedTransition):
+  // Transition no-op guard (symmetry with resolveIssuesClosedTransition):
   // a status:* label re-applied with no state change (fromState === toState)
   // carries no FSM transition. This arises on the post-merge completion path —
   // OpsAgent BOTH applies status:done AND closes the Task (state_reason=completed),
@@ -620,7 +621,7 @@ async function resolvePullRequestTransition(
       // legitimate review-entry state — otherwise GitHub's review_requested
       // is just "add another reviewer" on an already-reviewing PR and
       // is NOT a state transition. Emitting prior → in_review for
-      // prior=approved would regress an approved PR (PR #46 rev3 codex).
+      // prior=approved would regress an approved PR.
       const fromState = await priorToStateOrInitial(deps.ledger, envelope.recordId);
       if (fromState !== 'open' && fromState !== 'draft') {
         return {
@@ -634,7 +635,7 @@ async function resolvePullRequestTransition(
     case 'closed': {
       // Ledger-resolved fromState: prior.toState is the actual PR state at
       // the moment of close. Without this, fabricated `approved → merged`
-      // would silently launder admin-bypass merges as compliant (PR #40 rev1).
+      // would silently launder admin-bypass merges as compliant.
       // No prior → __initial__ → {merged,closed}: FSM rules for __initial__
       // only allow draft/open, so the dispatcher will flag illegal_transition,
       // which is the right audit posture (we missed the opened event).
@@ -643,7 +644,7 @@ async function resolvePullRequestTransition(
       return { ok: true, transition: makeTransition(envelope, fromState, toState) };
     }
     case 'labeled':
-      // Issue #178 structural review: ReviewAgent drives the PR review FSM by
+      // ReviewAgent drives the PR review FSM by
       // applying status:* labels (status:in_review / status:approved) on the
       // PR. Because a PR is an Issue, this fires `pull_request` action='labeled'
       // carrying `body.label`. Resolution mirrors the issues.labeled branch:
@@ -654,18 +655,18 @@ async function resolvePullRequestTransition(
       // `pr:open→in_review` edge.
       return resolvePullRequestLabeledTransition(envelope, deps);
     case 'unlabeled':
-      // Issue #178 P2 (rev5): a status:* removal on a PR is OBSERVATIONAL only
-      // when another status:* label remains (swap cleanup — the applied label
-      // drove the transition). A lone removal is a violation, like the issues
-      // path. The helper checks the PR's current labels to distinguish.
+      // A status:* removal on a PR is OBSERVATIONAL only under the converging
+      // rule (isConvergingStatusRemoval: fresh-ledger cleanup OR FSM-forward
+      // stale-ledger swap); anything else is the status_label_removed
+      // violation, like the issues path.
       return resolvePullRequestUnlabeledTransition(envelope, deps);
     case 'synchronize':
     case 'edited':
-      // Issue #182: neither carries an FSM transition (PR state is native
+      // Neither carries an FSM transition (PR state is native
       // events + status:* labels). `synchronize` fires on every push to the
       // PR branch — BuildAgent's own pushes included — and `edited` on every
       // PR body/title edit. Settle observationally instead of dead-lettering
-      // (mirrors issue_edited_observational on the issues path, #180 rev5).
+      // (mirrors issue_edited_observational on the issues path).
       return {
         ok: false,
         reason: 'pr_event_observational',
@@ -759,8 +760,7 @@ async function resolvePullRequestUnlabeledTransition(
 // deployment GitHub-side state with no clean FSM mapping; defer until
 // the deployment ingest design specifies it. 'waiting' maps to
 // awaiting_approval per validator-bot.md's `pending → awaiting_approval
-// → in_progress` path for GitHub Environments with required reviewers
-// (PR #43 rev1 codex finding).
+// → in_progress` path for GitHub Environments with required reviewers.
 const DEPLOYMENT_STATE_MAP: ReadonlyMap<string, string> = new Map([
   ['pending', 'pending'],
   ['in_progress', 'in_progress'],
@@ -851,7 +851,7 @@ async function resolvePullRequestReviewTransition(
     // PR_TRANSITIONS: in_review → approved (human, ReviewAgent). Only emit
     // when prior.toState === 'in_review'; other priors (open without
     // review_requested first, draft, terminal states) defer rather than
-    // emitting an FSM-illegal open → approved (PR #46 rev3 codex finding).
+    // emitting an FSM-illegal open → approved.
     // The bridge case where ad-hoc approval implies open → in_review →
     // approved is v0+ scope (single-event-two-transitions design gap).
     if (prior.toState !== 'in_review') {
@@ -868,14 +868,14 @@ async function resolvePullRequestReviewTransition(
   }
   if (reviewState === 'changes_requested') {
     // PR_TRANSITIONS: approved → in_review (system) is the changes-after-approval
-    // loop. From in_review, a native CHANGES_REQUESTED review is DEFERRED (issue
-    // #198): although pr:in_review→changes_requested is a legal FSM edge, the
-    // #182 revision loop is driven by the status:changes_requested LABEL + a
+    // loop. From in_review, a native CHANGES_REQUESTED review is DEFERRED:
+    // although pr:in_review→changes_requested is a legal FSM edge, the
+    // revision loop is driven by the status:changes_requested LABEL + a
     // structural verdict=request-changes findings comment (ReviewAgent's path).
     // A native review applies NEITHER, so accepting the edge here would advance
     // the ledger + dispatch BuildAgent while runRevision skips (no label) / fails
     // (no findings) — stranding the PR. Supporting human native request-changes
-    // needs the downstream evidence bridge first (tracked in #198); until then,
+    // needs the downstream evidence bridge first; until then,
     // deferring leaves the record cleanly at in_review.
     if (prior.toState === 'approved') {
       return { ok: true, transition: makeTransition(envelope, 'approved', 'in_review') };
@@ -907,8 +907,8 @@ async function resolveAppActor(
   //    stale markers: an older App comment from a *different* action (e.g. the
   //    BuildAgent stamp left when the PR opened) must NOT win over a later
   //    review-loop transition whose edge admits exactly ReviewAgent. Resolving
-  //    the edge first also skips a substrate read on the common path. (codex
-  //    PR #152 — a possibly-stale comment must never beat the unambiguous edge.)
+  //    the edge first also skips a substrate read on the common path. A
+  //    possibly-stale comment must never beat the unambiguous edge.
   const inferred = inferSingleAgentActor(transition.kind, transition.fromState, transition.toState);
   if (inferred !== undefined) return inferred;
   // The edge is ambiguous (≥2 candidate agents) or agent-less. Recover the
@@ -963,7 +963,7 @@ export async function resolveTransition(
   // placeholder actor never reaches the FSM unless we resolve or defer here.
   if (envelope.appActorUnresolved === true) {
     // Use the SAME App-bot login set the parser used (deps.appBotLogins),
-    // falling back to env only when the caller didn't thread one (codex PR #152).
+    // falling back to env only when the caller didn't thread one.
     const appBotLogins = deps.appBotLogins ?? appBotLoginsFromEnv();
     const actor = await resolveAppActor(result.transition, deps.substrate, appBotLogins);
     if (actor === undefined) {

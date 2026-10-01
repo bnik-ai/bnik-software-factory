@@ -186,7 +186,7 @@ async function structuralReviewerModelFromMarkers(
     return undefined;
   }
   if (surfaces === undefined) return undefined;
-  // rev11: trust the SAME login set the parser/resolver were configured with;
+  // Trust the SAME login set the parser/resolver were configured with;
   // env fallback only when the caller didn't thread one (tests/boot).
   const appBotLogins = configuredAppBotLogins ?? appBotLoginsFromEnv();
   for (let i = surfaces.comments.length - 1; i >= 0; i--) {
@@ -195,7 +195,7 @@ async function structuralReviewerModelFromMarkers(
     if (comment.authorLogin === undefined || !appBotLogins.has(comment.authorLogin)) continue;
     const resolved = resolveActorFromComment(comment.body);
     if (!resolved.ok || resolved.actor !== 'ReviewAgent') continue;
-    // Issue #178 rev6+rev7: ONLY the NEWEST ReviewAgent marker counts, and
+    // ONLY the NEWEST ReviewAgent marker counts, and
     // only when it carries verdict=approve. A newer claim (no verdict) or
     // request-changes marker means the CURRENT review round has not approved
     // — an older approve marker from a previous round must never satisfy the
@@ -210,8 +210,8 @@ async function structuralReviewerModelFromMarkers(
   return undefined;
 }
 
-// getPullRequest is GraphQL-wired on the live GithubSubstrateClient (issue
-// #170), but a transient substrate failure can still throw. Tolerate:
+// getPullRequest is GraphQL-wired on the live GithubSubstrateClient,
+// but a transient substrate failure can still throw. Tolerate:
 // undefined = author model unknown → the caller stays silent on author-relative
 // inequalities (the documented crossRecordAssertions posture).
 async function tolerantGetPullRequest(
@@ -239,7 +239,7 @@ export async function runReviewLoopAssertions(
     return { ok: true };
   }
 
-  // STRUCTURAL review evidence (issue #178): under the single App identity
+  // STRUCTURAL review evidence: under the single App identity
   // (ADR 0009 §1) the App cannot create a native approved Review on its own PR
   // (GitHub 422), so ReviewAgent's verdict rides an App-authenticated
   // structural findings COMMENT (`sf:agent=review@<model> run=<ulid>`) +
@@ -247,7 +247,7 @@ export async function runReviewLoopAssertions(
   // enforce Rule 1 against ITS reviewer model and skip the native-Review
   // lookup. Newest-first, App-author-authenticated scan — same trust rule as
   // actorResolution.resolveActorFromMarkers (markers are forgeable otherwise).
-  // rev11: the structural path applies ONLY to ReviewAgent-actor approvals.
+  // The structural path applies ONLY to ReviewAgent-actor approvals.
   // ReviewAgent applies status:approved in the SAME run that posts the
   // verdict=approve marker, so actor=ReviewAgent ⇒ the newest marker is THIS
   // round's evidence. A human-actor approval (native review or label apply)
@@ -259,7 +259,7 @@ export async function runReviewLoopAssertions(
       : undefined;
   if (structuralReviewerModel !== undefined) {
     const prView = await tolerantGetPullRequest(substrate, message.recordId);
-    // rev13: the live getPullRequest is GraphQL-wired (#170) but tolerant
+    // The live getPullRequest is GraphQL-wired but tolerant
     // (undefined on a transient substrate failure); the labeled PR webhook also
     // carries the head branch on the message — parse the author model from it
     // (preferring the substrate read) so Rule 1 is ENFORCED for
@@ -287,11 +287,10 @@ export async function runReviewLoopAssertions(
     return { ok: true };
   }
 
-  // NATIVE Review path (human approvals / pre-#178 flows). The live
-  // GithubSubstrateClient now GraphQL-wires getReviewsForPr/getPullRequest
-  // (issue #170), but a transient substrate failure can still throw. A thrown
-  // read must not crash the consumer into a redelivery loop — but it must NOT
-  // pass either (rev10):
+  // NATIVE Review path (human approvals; no structural approve marker). The
+  // live GithubSubstrateClient GraphQL-wires getReviewsForPr/getPullRequest,
+  // but a transient substrate failure can still throw. A thrown read must not
+  // crash the consumer into a redelivery loop — but it must NOT pass either:
   // with no structural approve marker AND unreadable native evidence, an
   // evidence-less status:approved (human label-apply, misbehaving agent)
   // would otherwise satisfy the gate. FAIL CLOSED: soft-flag
@@ -333,8 +332,8 @@ export async function runReviewLoopAssertions(
   // Rule 1 catch-all: if the approved Review's stamps cannot be parsed at
   // all (no reviewer model recovered), the model-independence invariant
   // cannot be checked and the Review is non-compliant by construction. The
-  // adjudicator stamp may legitimately be missing in v0 (external codex
-  // operator-run loop, ADR 0010 §"Field evidence") — we tolerate that and
+  // adjudicator stamp may legitimately be missing in v0 (external
+  // operator-run review loop, ADR 0010 §"Field evidence") — we tolerate that and
   // only fail the catch-all when the reviewer stamp itself is missing.
   if (stamps.reviewerModel === undefined) {
     return fail(

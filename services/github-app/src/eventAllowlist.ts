@@ -14,7 +14,7 @@
 //    install — see https://docs.github.com/en/webhooks/webhook-events-and-payloads#ping.
 //    Downstream consumers (SB enqueue) decide whether to act on it.
 //
-// NOISE ISOLATION (issue #174, proven during the M4 live run): on an
+// NOISE ISOLATION: on an
 // actively-developed target repo (e.g. sample-app), CI/dev events carry NO
 // factory FSM transition — every commit/CI run would otherwise flood the
 // session-ordered `validator-events` queue, contend with the factory's own

@@ -43,7 +43,7 @@ export interface ProcessMessageDeps {
   dispatcher: typeof evaluateTransition;
   ledger: AuditLedgerWriter;
   substrate?: SubstrateClient;
-  // Issue #178 rev11: the configured App-bot login set used to authenticate
+  // The configured App-bot login set used to authenticate
   // structural markers in the review-loop assertions. MUST be the same set the
   // parser/resolver use (GITHUB_APP_SLUG threading); falls back to env inside
   // the assertion when omitted.

@@ -10,10 +10,10 @@ import type { Actor } from './types.js';
 // Invariants:
 //   - parsePayload is pure: no I/O, no clock except the caller-supplied
 //     receivedAt for determinism.
-//   - This PR ships ONLY the envelope: deliveryId, eventType, kind,
+//   - The parser emits ONLY the envelope: deliveryId, eventType, kind,
 //     actor, recordType, recordKind, recordId, payloadHash, statusLabel,
 //     action. fromState / toState require substrate lookup (previous
-//     label set or audit_ledger history) and ship in a later PR.
+//     label set or audit_ledger history); transitionResolver derives them.
 //   - Unknown event types or unparseable payloads return a ParseFailure
 //     with a typed reason. The consumer deadletters on failure.
 //   - Sender → Actor mapping under ADR 0009 §1 (single SF App):
@@ -39,11 +39,11 @@ import type { Actor } from './types.js';
 //       * Documented agent bot logins → their Actor. Forward-compatible
 //         with ADR 0009 Option B (per-role Apps); GitHub does NOT
 //         currently send these logins under Option A+D.
-//       * Every other bot login (issue #183) → non-App bot: NO actor is
+//       * Every other bot login → non-App bot: NO actor is
 //         resolved (no silent `system` fallback — that would be a privilege
 //         escalation since `system` authorizes Goal `in_progress → achieved`
-//         and similar system-only edges). VISIBLE-BY-DEFAULT (codex P2 on PR
-//         #186): only a provably-INERT action (`isBenignThirdPartyBotEvent` —
+//         and similar system-only edges). VISIBLE-BY-DEFAULT:
+//         only a provably-INERT action (`isBenignThirdPartyBotEvent` —
 //         PR synchronize + assignment churn, or a cosmetic (non-status/kind/policy) label) settles
 //         OBSERVATIONALLY (`third_party_bot_observational`, observational:true);
 //         every TRANSITION-CAPABLE action (status/kind mutation, close/reopen,
@@ -56,8 +56,8 @@ import type { Actor } from './types.js';
 const KIND_LABEL_PREFIX = 'kind:';
 const STATUS_LABEL_PREFIX = 'status:';
 // Validator-only enforcement label (Decision/Deployment FSM policy:violation).
-// A non-App bot writing it is an untrusted forgery of validator state (issue
-// #183 codex P2 round 5) — never inert.
+// A non-App bot writing it is an untrusted forgery of validator state —
+// never inert.
 const POLICY_LABEL_PREFIX = 'policy:';
 
 // The recognized SF App `<slug>[bot]` logins. Default set (the three
@@ -83,12 +83,11 @@ const BOT_LOGIN_TO_ACTOR: ReadonlyMap<string, Actor> = new Map([
 // github-actions[bot] is the standard GitHub Actions runner identity.
 // validator-bot.md calls deployment events from CI runners "system
 // (CI / runner reports)". The mapping is SCOPED to deployment_status
-// events only — applying it broadly (PR #40 rev2's original) lets
-// ANY workflow with issues:write permission apply status:* labels and
-// be FSM-accepted as system, bypassing the closed allow-list for
-// system-only transitions like Goal in_progress → achieved (PR #47
-// review caught this). For issue/PR/review events, github-actions[bot]
-// gets no actor and is treated like any other non-App bot (issue #183) —
+// events only — applying it broadly would let ANY workflow with
+// issues:write permission apply status:* labels and be FSM-accepted as
+// system, bypassing the closed allow-list for system-only transitions like
+// Goal in_progress → achieved. For issue/PR/review events, github-actions[bot]
+// gets no actor and is treated like any other non-App bot —
 // never `system`: only provably-inert actions settle observationally, every
 // transition-capable action stays a visible failure (untrusted_bot_event).
 const GITHUB_ACTIONS_BOT_LOGIN = 'github-actions[bot]';
@@ -125,7 +124,7 @@ export interface RawWebhookDelivery {
   // The exact raw bytes received. payloadHash is computed over these so
   // any in-transit mutation is detected by the hash chain.
   rawBody: Buffer;
-  // Parsed JSON. The caller (Service Bus consumer in B7) is responsible
+  // Parsed JSON. The caller (the Service Bus consumer) is responsible
   // for JSON-decoding the body; this parser inspects the structure.
   parsedBody: unknown;
   receivedAt: Date;
@@ -167,7 +166,7 @@ export interface ParsedWebhookEnvelope {
   // issues.opened resolution rather than substrate.getCurrentLabels(),
   // which returns the substrate-at-decision-time view and can be stale
   // (the queue consumer can be delayed; agents can apply labels in the
-  // meantime). PR #43 rev1 codex finding.
+  // meantime).
   labels?: readonly string[];
   // GitHub's issue.state_reason verbatim — only set for `issues` events
   // that have a state_reason field on the issue. Values include
@@ -190,10 +189,10 @@ export interface ParsedWebhookEnvelope {
   // / `body.pull_request.base.ref` — only set for `pull_request` and
   // `pull_request_review` events. ADR 0012 §"Activation status"
   // activation gate (a): the orchestrator's pre-review branch-sync gate
-  // (PR #101) reads these fields off the republished message; without
+  // reads these fields off the republished message; without
   // population the gate skips for real traffic and the re-sync
-  // protection is inert. The orchestrator-side wire-deserializer (PR
-  // #110) already accepts both fields and propagates them on the
+  // protection is inert. The orchestrator-side wire-deserializer
+  // accepts both fields and propagates them on the
   // synthetic BuildAgent rebase-intent message. Non-PR webhooks
   // (Goal/Spec/Design/Task/Decision issues, Deployment status) leave
   // these undefined — the orchestrator gate skips when absent.
@@ -204,7 +203,7 @@ export interface ParsedWebhookEnvelope {
   // webhook body. The validator's read-only GithubSubstrateClient mints an
   // installation token from `installationId` to re-read the record's current
   // labels at decision time (the "canonical state is always re-read from
-  // substrate" contract). Optional — non-issue events or pre-M2 payloads may
+  // substrate" contract). Optional — non-issue events may
   // lack an `installation` block; the consumer falls back to the in-memory
   // substrate and the resolver dead-letters as before. Threaded onward to the
   // orchestrator + agents so multi-repo dispatch targets the right repo.
@@ -243,7 +242,7 @@ export type ParseFailureReason =
   | 'unknown_kind'
   | 'ambiguous_kind'
   | 'unknown_actor_shape'
-  // Issue #183: a genuinely third-party bot author (dependabot[bot] and any
+  // A genuinely third-party bot author (dependabot[bot] and any
   // other non-App, non-agent `[bot]` login). Benign — it can NEVER drive a
   // target-repo transition (no resolved actor) — so it SETTLES observationally
   // (observational:true) instead of dead-lettering, removing validator-events
@@ -251,7 +250,7 @@ export type ParseFailureReason =
   // forgery guard: an App-login sender (appBotLogins) still routes to the App
   // path → resolver `actor_unresolved_app_sender` (fail-closed), unchanged.
   | 'third_party_bot_observational'
-  // Issue #183 (codex P2): a non-App bot (github-actions[bot] off-scope,
+  // A non-App bot (github-actions[bot] off-scope,
   // renovate, any installed App) on a TRANSITION-CAPABLE event — a status:/kind:
   // label mutation, a close/reopen, a review submission, a deployment_status, a
   // PR open/close, anything NOT on the provably-inert allowlist. Stays VISIBLE
@@ -259,13 +258,13 @@ export type ParseFailureReason =
   // third_party_bot_observational above.
   | 'untrusted_bot_event'
   | 'malformed_body'
-  // Issue #178 rev5: a recognized event type that carries NO FSM transition
+  // A recognized event type that carries NO FSM transition
   // (issue_comment — structural attribution markers ride it; actor resolution
   // reads markers via the substrate, never from comment webhooks). The
   // consumer settles these cleanly (completeMessage) instead of dead-lettering
   // one row per agent comment.
   | 'observational_event_type'
-  // Issue #178 rev6: an App/agent-sent issue_comment WITHOUT the leading
+  // An App/agent-sent issue_comment WITHOUT the leading
   // sf:structural marker — an agent used comments as a channel (validator-bot
   // hard rule). Dead-letters visibly for policy handling; never observational.
   | 'nonstructural_agent_comment';
@@ -296,7 +295,7 @@ function asNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isInteger(value) ? value : null;
 }
 
-// M2: extract `repository.full_name` + `installation.id` from any webhook
+// Extract `repository.full_name` + `installation.id` from any webhook
 // body. Both top-level on every GitHub webhook delivery for an installed App.
 // Returns undefined fields when absent/wrong-typed (the substrate falls back
 // to in-memory). Shared across every event parser.
@@ -367,11 +366,11 @@ type ActorResolution =
   // resolver finishes resolution (comments + single-agent fallback) or defers.
   | { ok: true; actor: Actor; appActorUnresolved: true }
   | { ok: false; reason: 'unknown_actor_shape' }
-  // Issue #183: a non-App bot (dependabot[bot], renovate[bot], github-actions[bot]
+  // A non-App bot (dependabot[bot], renovate[bot], github-actions[bot]
   // off its trusted scope, any installed App) on a BENIGN non-mutating event.
   // Carried up as an observational settle — see resolveSenderOrFail.
   | { ok: false; reason: 'third_party_bot_observational'; login: string }
-  // Issue #183 (codex P2): a non-App bot on a TRANSITION-CAPABLE event (anything
+  // A non-App bot on a TRANSITION-CAPABLE event (anything
   // not on the provably-inert allowlist — a status:/kind: label mutation, a
   // close/reopen, a review submission, a deployment_status, …). VISIBLE failure
   // (dead-letters); an untrusted actor can never silently drive SF state.
@@ -389,7 +388,7 @@ function resolveActorFromSender(
   if (type !== 'Bot') return { ok: false, reason: 'unknown_actor_shape' };
   const login = asString(sender.login);
   if (login === null) return { ok: false, reason: 'unknown_actor_shape' };
-  // Issue #183 (codex P2): VISIBLE-by-default for a non-App bot. Only an
+  // VISIBLE-by-default for a non-App bot. Only an
   // explicitly INERT action (isBenignThirdPartyBotEvent — PR synchronize,
   // assignment churn, a non-status/kind label) settles observationally; every
   // TRANSITION-CAPABLE action (status/kind mutation, close/reopen, review
@@ -410,26 +409,26 @@ function resolveActorFromSender(
     // merged by OpsAgent → BuildAgent). So ALWAYS defer to resolveAppActor
     // (transitionResolver), which reads body+comments (most-recent-wins) then
     // the single-agent edge fallback. The placeholder actor is non-authorizing
-    // (see UNRESOLVED_APP_ACTOR). (codex PR #152)
+    // (see UNRESOLVED_APP_ACTOR).
     return { ok: true, actor: UNRESOLVED_APP_ACTOR, appActorUnresolved: true };
   }
   if (login === GITHUB_ACTIONS_BOT_LOGIN) {
     // Scoped to specific event types — see GITHUB_ACTIONS_BOT_LOGIN
-    // header. Unscoped mapping is a privilege escalation (PR #47 review).
+    // header. Unscoped mapping is a privilege escalation.
     if (GITHUB_ACTIONS_TRUSTED_EVENT_TYPES.has(eventType)) {
       return { ok: true, actor: 'system' };
     }
     // Off its trusted (deployment_status) scope github-actions[bot] is just
-    // another non-App bot: NO actor (no privilege escalation; PR #47 invariant),
+    // another non-App bot: NO actor (no privilege escalation),
     // visible iff it mutates a status:/kind: label, else observational.
     return nonAppBotOutcome(login);
   }
   const actor = BOT_LOGIN_TO_ACTOR.get(login);
-  // Issue #183: any other bot login (dependabot[bot], renovate[bot], a near-App
+  // Any other bot login (dependabot[bot], renovate[bot], a near-App
   // look-alike, …) is genuinely third-party — NOT the App (handled above) and
   // not a recognized agent — so it cannot drive a transition. Benign events
   // settle observationally (DLQ-noise removal); a status:/kind: label mutation
-  // stays visible (untrusted substrate-state write; codex P2).
+  // stays visible (untrusted substrate-state write).
   if (actor === undefined) return nonAppBotOutcome(login);
   return { ok: true, actor };
 }
@@ -442,17 +441,17 @@ type ResolvedSender =
   | { ok: true; actor: Actor; appActorUnresolved: boolean }
   | { ok: false; failure: ParseFailure };
 
-// Issue #183 (codex P2): provably-INERT webhook actions — they carry NO FSM
+// Provably-INERT webhook actions — they carry NO FSM
 // transition AND do not touch a trusted attribution surface, so a non-App bot
 // performing one is genuinely benign (dependabot pushing to its PR, assignment
 // churn). EVERYTHING ELSE a non-App bot does is transition-capable / trust-
 // affecting and stays a VISIBLE failure (untrusted_bot_event) — visible-by-
 // default is the safe posture for an untrusted actor. labeled/unlabeled is inert
 // ONLY when the label is not a status:/kind: state label (in
-// isBenignThirdPartyBotEvent). EXCLUSIONS (each a codex P2 round): `edited`
-// (round 4 — a body edit alters the structural-marker attribution surface);
-// `review_requested`/`review_request_removed` (round 5 — resolvePullRequest maps
-// review_requested on an open/draft PR to a real →in_review transition). The
+// isBenignThirdPartyBotEvent). EXCLUSIONS: `edited` (a body edit alters the
+// structural-marker attribution surface); `review_requested`/
+// `review_request_removed` (resolvePullRequest maps review_requested on an
+// open/draft PR to a real →in_review transition). The
 // inert set is intentionally tiny: pushes + assignment churn only.
 const INERT_BOT_ACTIONS: ReadonlySet<string> = new Set(['synchronize', 'assigned', 'unassigned']);
 
@@ -494,7 +493,7 @@ function resolveSenderOrFail(
   );
   if (!resolution.ok) {
     if (resolution.reason === 'untrusted_bot_event') {
-      // Issue #183 (codex P2): VISIBLE failure — NO observational flag, so the
+      // VISIBLE failure — NO observational flag, so the
       // consumer dead-letters it. A non-App bot on a transition-capable event
       // (state mutation, close/reopen, review submission, …) must never be
       // silently hidden.
@@ -508,8 +507,8 @@ function resolveSenderOrFail(
       };
     }
     if (resolution.reason === 'third_party_bot_observational') {
-      // Issue #183: benign non-App bot (dependabot[bot] et al.) — mirror the
-      // #178/#182 observational-settle contract (observational:true → the
+      // Benign non-App bot (dependabot[bot] et al.) — the observational-settle
+      // contract (observational:true → the
       // consumer completeMessage's instead of dead-lettering). Forgery guard
       // intact: an App-login sender never reaches here (App path returns
       // appActorUnresolved above → resolver `actor_unresolved_app_sender`).
@@ -569,10 +568,10 @@ function parseIssuesEvent(
   const kindExtraction = extractKindFromLabels(labels);
   // ADR 0006 invariant-violation case: issues.unlabeled where the just-
   // removed label IS a kind:* label AND post-removal labels have none.
-  // The resolver's kind_label_removed branch (B3-PR19) needs envelope.kind
+  // The resolver's kind_label_removed branch needs envelope.kind
   // to fire, so derive it from the REMOVED label rather than failing
   // unknown_kind here. Without this hook the typed policy signal never
-  // reaches the consumer (PR #45 rev0 codex P2).
+  // reaches the consumer.
   let kind: Kind | undefined;
   if (kindExtraction.tag === 'one') {
     kind = kindExtraction.kind;
@@ -699,8 +698,8 @@ function parsePullRequestEvent(
   // merged is the load-bearing field for `closed` actions (disambiguates
   // approved → merged from any-state → closed in the PR FSM). For closed
   // actions it MUST be present; missing → fail fast at parse so the
-  // resolver can't silently downgrade a merged PR to a closed transition
-  // (PR #44 rev0 codex finding). For non-closed actions GitHub still
+  // resolver can't silently downgrade a merged PR to a closed transition.
+  // For non-closed actions GitHub still
   // ships the field but its value is informational; we parse it
   // optimistically and only require it for closed.
   const merged = asBoolean(pullRequest.merged);
@@ -710,7 +709,7 @@ function parsePullRequestEvent(
 
   // ADR 0012 §"Activation status" activation gate (a): populate
   // head/base branch names from the webhook so the orchestrator's
-  // pre-review branch-sync gate (PR #101) can resolve sync state for
+  // pre-review branch-sync gate can resolve sync state for
   // real traffic. Both refs are present on every standard
   // `pull_request` action per GitHub's webhook spec
   // (docs.github.com/.../webhook-events-and-payloads#pull_request).
@@ -721,7 +720,7 @@ function parsePullRequestEvent(
   const { headBranch, baseBranch } = extractHeadBaseBranches(pullRequest);
   const { repoFullName, installationId } = extractRepoAndInstallation(body);
 
-  // Issue #178 structural review: a PR is an Issue in GitHub's API, so
+  // A PR is an Issue in GitHub's API, so
   // applying a `status:*` label to a PR fires `pull_request` action='labeled'
   // (NOT issues.labeled) carrying `body.label`. ReviewAgent drives the PR
   // review FSM by labels (status:in_review / status:approved), so the parser
@@ -927,7 +926,7 @@ export function parsePayload(raw: RawWebhookDelivery, options?: ParsePayloadOpti
     return parseDeploymentStatusEvent(raw, body, appBotLogins);
   }
 
-  // issue_comment (issue #178 rev6): three sender/shape classes —
+  // issue_comment: three sender/shape classes —
   //   * App-sent STRUCTURAL marker comment (ADR 0009 §D — ReviewAgent
   //     claim/findings, agent attribution stamps): carries no FSM transition
   //     (markers are read via substrate.getStructuralMarkers during actor
@@ -957,12 +956,12 @@ export function parsePayload(raw: RawWebhookDelivery, options?: ParsePayloadOpti
     };
   }
 
-  // installation + installation_repositories (issue #182): App-installation
+  // installation + installation_repositories: App-installation
   // lifecycle events — the un-suspended installation fires them on install /
   // suspend / repo-scope changes. The github-app allowlist forwards both
   // (services/github-app/src/eventAllowlist.ts); neither carries an FSM
   // transition (no SF record is involved). Observational — settled cleanly,
-  // same posture as issue_comment above (#178 rev5).
+  // same posture as issue_comment above.
   if (raw.eventType === 'installation' || raw.eventType === 'installation_repositories') {
     return {
       ok: false,
@@ -972,7 +971,7 @@ export function parsePayload(raw: RawWebhookDelivery, options?: ParsePayloadOpti
     };
   }
 
-  // Other event types (push, create, etc.) ship in later PRs; until
-  // then return a typed failure so the consumer deadletters cleanly.
+  // Other event types (push, create, etc.) are unsupported: return a typed
+  // failure so the consumer deadletters cleanly.
   return { ok: false, reason: 'unknown_event_type', detail: raw.eventType };
 }

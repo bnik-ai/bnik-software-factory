@@ -82,10 +82,9 @@ export const DECISION_TRANSITIONS: Readonly<
   proposed: {
     // Per spec table at validator-bot.md:149-154, proposed has EXACTLY
     // two outgoing edges: approved or rejected. Abandoned is NOT in the
-    // proposed row (removed in PR22 rev1 per codex P2 — admitting it
-    // would let "human closes as not_planned" slip in as abandon
-    // instead of the documented reject path, weakening hard-reject
-    // lifecycle enforcement).
+    // proposed row: admitting it would let "human closes as not_planned"
+    // slip in as abandon instead of the documented reject path, weakening
+    // hard-reject lifecycle enforcement.
     approved: { allowedActors: APPROVAL_ACTORS },
     rejected: { allowedActors: ['human'] },
   },

@@ -4,9 +4,9 @@
 // from GitHub are valid for 1 hour. We cache them under
 // `inst:<installation_id>` with TTL = 50 minutes — a 10-minute safety
 // margin under GitHub's expiry so callers don't race a token that GitHub
-// rejects mid-request. Production (B7) will swap in an Azure Cache for
-// Redis implementation; this PR ships the interface and an in-memory
-// implementation used by tests and v0 boot.
+// rejects mid-request. redisInstallationTokenCache.ts is the Azure Cache
+// for Redis implementation; this file defines the interface and an
+// in-memory implementation used by tests and v0 boot.
 //
 // The cache exposes two operations: `get` returns the cached token if it
 // hasn't expired, `null` otherwise (eviction-at-read — there is no

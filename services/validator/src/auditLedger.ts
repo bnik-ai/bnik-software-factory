@@ -10,7 +10,7 @@ import { createHash } from 'node:crypto';
 //     throws DuplicateLedgerEntryError. (Service Bus is at-least-once;
 //     a duplicate is possible if the consumer crashes between SB ACK
 //     and ledger write.)
-//   - The github-app PR3 ledger (services/github-app/src/auditLedger.ts)
+//   - The github-app ledger (services/github-app/src/auditLedger.ts)
 //     and this validator audit_ledger are SEPARATE Postgres tables: the
 //     github-app's is functionally the delivery-status / idempotency
 //     table; this is the hash-chained event log. delivery_id uniqueness
@@ -18,8 +18,9 @@ import { createHash } from 'node:crypto';
 //   - append-only: internal rows are never mutated. Returned rows are
 //     defensive copies (Buffers and Dates are duplicated) so caller-side
 //     mutation cannot corrupt the chain or the stored row.
-//   - in-memory implementation is for tests and v0 boot; B7 swaps in
-//     Postgres with the same schema. The hash-chain math is identical.
+//   - in-memory implementation is for tests and v0 boot;
+//     PostgresAuditLedgerWriter uses the same schema. The hash-chain math is
+//     identical.
 
 const GENESIS_PREV_HASH: Buffer = Buffer.alloc(32);
 const SEQ_BYTE_LENGTH = 8;
@@ -63,12 +64,13 @@ export interface AuditLedgerWriter {
 }
 
 // Read-side counterpart to AuditLedgerWriter. The transitionResolver
-// (B3-PR12+) uses this to resolve fromState for events where the
+// uses this to resolve fromState for events where the
 // substrate-current-labels view is insufficient or unreachable (steady-
 // state single-status-label resolution for issues; PR closed-without-
 // merge; deployment_status follow-up events). v0 boot uses the
-// in-memory impl below; B7 wires the Postgres-backed implementation
-// with an index on (recordId, processedAt DESC).
+// in-memory impl below; PostgresAuditLedgerWriter is the Postgres-backed
+// implementation (index audit_ledger_record_lookup on record_id,
+// processed_at DESC).
 export interface AuditLedgerReader {
   // Returns the most recent row for recordId where toState is set and
   // the verdict was accept or flag (i.e. a state transition was committed

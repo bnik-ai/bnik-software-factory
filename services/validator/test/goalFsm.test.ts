@@ -45,8 +45,8 @@ describe('evaluateGoalTransition — allowed transitions', () => {
 // Goal off-policy transitions emit `flag`, NOT `reject`. The semantic
 // difference matters: `reject` triggers auto-revert + circuit-breaker
 // per validator-bot.md:224; `flag` records the violation, labels it, and
-// opens a Decision for human review per line 225. Hard-reject FSMs
-// (Incident / Release / Deployment / Decision) ship in later B3 PRs.
+// opens a Decision for human review per line 225. The hard-reject FSMs
+// (Deployment / Decision) are covered in their own test files.
 
 describe('evaluateGoalTransition — illegal transitions emit soft flag', () => {
   test('proposed → in_progress flags (must go through accepted first)', () => {

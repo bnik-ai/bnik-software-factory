@@ -12,10 +12,10 @@ import type { Actor, FsmRejectReason, Verdict } from './types.js';
 //   - "any → closed" covers draft / open / in_review / changes_requested /
 //     syncing / approved (NOT merged — merged is terminal). Author OR human closes.
 //   - "approved → in_review" loop is system-driven on new commits after approval.
-//   - in_review ↔ changes_requested is the changes-requested REVISION loop
-//     (issue #182), mirroring GitHub's native CHANGES_REQUESTED review state.
-//   - in_review → syncing → in_review is the re-sync RE-REVIEW bounce (issue
-//     #192/#119): BuildAgent rebases a behind PR before review, then bounces
+//   - in_review ↔ changes_requested is the changes-requested REVISION loop,
+//     mirroring GitHub's native CHANGES_REQUESTED review state.
+//   - in_review → syncing → in_review is the re-sync RE-REVIEW bounce:
+//     BuildAgent rebases a behind PR before review, then bounces
 //     through `syncing` so the status:in_review re-apply is a real labeled event
 //     that re-fires the (now-current) review-trigger to ReviewAgent.
 //     ReviewAgent drives in_review→changes_requested (a request-changes verdict);
@@ -73,9 +73,8 @@ export const PR_TRANSITIONS: Readonly<
   draft: {
     open: { allowedActors: ['BuildAgent'] },
     // draft → in_review: requesting a review on a draft PR (GitHub
-    // allows this). PR #47 review surfaced that prior code emitted
-    // draft → in_review from the resolver but the FSM had no rule,
-    // causing soft-flag on every draft-PR review request.
+    // allows this). The resolver emits draft → in_review; without this
+    // rule every draft-PR review request would soft-flag.
     in_review: { allowedActors: REVIEW_REQUESTERS },
     closed: { allowedActors: AUTHOR_OR_HUMAN },
   },
@@ -85,15 +84,15 @@ export const PR_TRANSITIONS: Readonly<
   },
   in_review: {
     approved: { allowedActors: ['human', 'ReviewAgent'] },
-    // Changes-requested revision loop (issue #182): ReviewAgent's request-changes
+    // Changes-requested revision loop: ReviewAgent's request-changes
     // verdict drives the PR to changes_requested; the orchestrator dispatches
     // BuildAgent off pr:in_review→changes_requested to revise. ReviewAgent-only:
-    // a human native CHANGES_REQUESTED review is DEFERRED at the resolver (issue
-    // #198 — the downstream revision loop needs the label + findings evidence a
-    // native review doesn't produce), so `human` is intentionally NOT admitted
+    // a human native CHANGES_REQUESTED review is DEFERRED at the resolver (the
+    // downstream revision loop needs the label + findings evidence a native
+    // review doesn't produce), so `human` is intentionally NOT admitted
     // here until that bridge exists.
     changes_requested: { allowedActors: ['ReviewAgent'] },
-    // Re-sync micro-state bounce (issue #192/#119). When the branch-sync gate
+    // Re-sync micro-state bounce. When the branch-sync gate
     // rebases a behind PR before review, the force-push's synchronize event is
     // observational, so it can't re-fire the review-trigger. BuildAgent bounces
     // in_review→syncing→in_review: the transient syncing state makes the
@@ -112,14 +111,14 @@ export const PR_TRANSITIONS: Readonly<
   syncing: {
     // BuildAgent completes the re-sync bounce: apply status:in_review (removing
     // status:syncing) → emits pr:syncing→in_review, the now-current re-review
-    // trigger the orchestrator routes to ReviewAgent (issue #192). Single-actor.
+    // trigger the orchestrator routes to ReviewAgent. Single-actor.
     in_review: { allowedActors: ['BuildAgent'] },
     closed: { allowedActors: AUTHOR_OR_HUMAN },
   },
   approved: {
     merged: { allowedActors: ['OpsAgent'] },
     // The approved → in_review loop is driven by a reviewer submitting
-    // changes_requested AFTER an approval (per PR #46 rev1). system stays
+    // changes_requested AFTER an approval. system stays
     // in the list to cover programmatic dismissal flows; ReviewAgent /
     // human are the natural reviewer drivers.
     in_review: { allowedActors: ['human', 'ReviewAgent', 'system'] },

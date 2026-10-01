@@ -3,14 +3,14 @@
 // an App JWT (signed by `signAppJwt`) and optional per-token scope
 // downgrade (`permissions`, `repository_ids`). See
 // docs/design/github-app.md "Authentication model" — substrateClient()
-// and agentClient() factories (PR6+) request different `permissions`
+// and agentClient() factories request different `permissions`
 // against the same App JWT so a compromised honest code path cannot
 // accidentally mint a substrate-write token.
 //
 // This module owns ONE concern: the HTTP exchange. It does NOT sign the
-// JWT (PR4's `signAppJwt` does), does NOT cache the result (PR4's
-// `InstallationTokenCache` does), and does NOT decide which permissions
-// to request (PR6's factories do). Tests inject a mocked `fetch`; the
+// JWT (`signAppJwt` does), does NOT cache the result
+// (`InstallationTokenCache` does), and does NOT decide which permissions
+// to request (the client factories do). Tests inject a mocked `fetch`; the
 // real implementation passes Node 20's global `fetch`.
 
 const GITHUB_API_HOST = 'https://api.github.com';
@@ -19,7 +19,7 @@ const ACCEPT_HEADER = 'application/vnd.github+json';
 
 // GitHub's permission shape. The set of valid permission keys is large
 // and version-dependent (per docs.github.com/en/rest/apps/apps); we keep
-// the type as a string-keyed map so the factory layer in PR6 can request
+// the type as a string-keyed map so the factory layer can request
 // any documented permission without this layer needing updates.
 export type InstallationPermission = 'read' | 'write' | 'admin';
 export type InstallationPermissions = Record<string, InstallationPermission>;

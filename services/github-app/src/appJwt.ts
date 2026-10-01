@@ -13,8 +13,8 @@ import { createSign } from 'node:crypto';
 // This module is intentionally pure: it takes the App ID, the PEM string,
 // and an optional `now` for deterministic tests, and returns the encoded
 // JWT. It does NOT read the PEM from the environment or Key Vault; the
-// caller resolves the secret. It does NOT call the GitHub API; that lands
-// in a later PR alongside the Octokit client factories.
+// caller resolves the secret. It does NOT call the GitHub API; the client
+// factories do.
 //
 // The signature path uses Node's built-in `crypto.createSign('RSA-SHA256')`
 // rather than a third-party JWT library, so the package picks up no new

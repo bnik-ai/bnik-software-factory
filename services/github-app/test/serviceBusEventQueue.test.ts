@@ -37,7 +37,7 @@ describe('ServiceBusEventQueue.enqueue', () => {
     });
   });
 
-  test('M2: includes repoFullName + installationId in the body when supplied', async () => {
+  test('includes repoFullName + installationId in the body when supplied', async () => {
     const { sender, sent } = makeSender();
     const queue = new ServiceBusEventQueue({ senderFactory: () => sender });
 

@@ -1,8 +1,8 @@
 // Spec: docs/design/validator-bot.md:292 ("canonical state is always
 // re-read from the substrate (GitHub) or the mirror at decision time").
 // The transition resolver uses this to derive fromState by reading the
-// record's current label set; B7 wires the real GraphQL implementation,
-// v0 boot uses InMemorySubstrateClient.
+// record's current label set; GithubSubstrateClient is the GraphQL
+// implementation, v0 boot uses InMemorySubstrateClient.
 // Invariants:
 //   - SubstrateClient is READ-ONLY. The MUTATING substrate client lives
 //     in services/github-app/src/ as `substrateClient()` (writes are
@@ -14,10 +14,10 @@
 //     from the current set.
 //   - getIssue returns the issue's full body + labels view (undefined if
 //     the record is not in the substrate). Used by cross-record
-//     assertions (B3-PR25+) to verify body-carried references per ADR
+//     assertions to verify body-carried references per ADR
 //     0003 (parent-goal / spec-ref / design-ref). Body is the v0 carrier
-//     for those linking fields per ADR 0007; B7 GraphQL impl reads
-//     `issue(id) { body, labels { name } }` in one query.
+//     for those linking fields per ADR 0007; GithubSubstrateClient reads
+//     body + labels in one GraphQL node query.
 
 export interface IssueView {
   readonly body: string;
@@ -33,8 +33,8 @@ export interface IssueView {
 // from getStructuralMarkers means the record is absent from the substrate.
 // One marker-bearing comment: body + authoring login. The actor resolver trusts
 // a structural marker ONLY when authorLogin is a recognized App-bot login —
-// comments/bodies are human-writable, so an unauthenticated marker is forgeable
-// (codex PR #152). Mirrors actorResolution.MarkerSurfaces (structurally typed).
+// comments/bodies are human-writable, so an unauthenticated marker is forgeable.
+// Mirrors actorResolution.MarkerSurfaces (structurally typed).
 export interface MarkerComment {
   readonly body: string;
   readonly authorLogin?: string;

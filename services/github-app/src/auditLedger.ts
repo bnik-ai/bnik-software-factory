@@ -3,7 +3,7 @@
 // The route handler must NOT use a single "insert → return 200 on conflict"
 // pattern: if the insert succeeds but the downstream enqueue fails, the
 // next retry sees a conflict and returns 200 without enqueueing — silently
-// dropping the webhook. (See PR #17 rev0 → rev1 Codex P1 finding.) Instead
+// dropping the webhook. Instead
 // the ledger exposes a two-phase contract:
 //
 //   1. `beginDelivery({ deliveryId, event })` reserves a row keyed by
@@ -25,12 +25,12 @@
 //   2. `confirmEnqueued(deliveryId)` marks the row as fully processed.
 //      Called only AFTER the queue write succeeds.
 //
-// The real Postgres implementation that ships in B7 will store the status
-// flag in a column on `audit_ledger`. `beginDelivery` does
-// `INSERT … ON CONFLICT (delivery_id) DO NOTHING RETURNING seq` then, on
-// conflict, a follow-up `SELECT seq, enqueued FROM audit_ledger WHERE
-// delivery_id = $1`. `confirmEnqueued` does
-// `UPDATE audit_ledger SET enqueued = true WHERE delivery_id = $1`.
+// The Postgres implementation (postgresAuditLedger.ts) stores the status
+// flag in a column on `webhook_deliveries`. `beginDelivery` does
+// `INSERT … ON CONFLICT (delivery_id) DO NOTHING RETURNING seq, enqueued`
+// then, on conflict, a follow-up `SELECT seq, enqueued FROM
+// webhook_deliveries WHERE delivery_id = $1`. `confirmEnqueued` does
+// `UPDATE webhook_deliveries SET enqueued = true WHERE delivery_id = $1`.
 // The in-memory implementation below has identical observable behaviour
 // and is used by tests and v0 boot until the Postgres-backed
 // implementation lands.

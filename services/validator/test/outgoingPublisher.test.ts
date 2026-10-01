@@ -65,7 +65,7 @@ describe('serializePublishedMessage — wire shape', () => {
 
   test('headBranch + baseBranch carry onto the wire when set (ADR 0012 §"Activation status" gate (a))', () => {
     // Without these on the wire the orchestrator's pre-review branch-sync
-    // gate (PR #101) stays inert — the field is the activation surface
+    // gate stays inert — the field is the activation surface
     // between validator and orchestrator.
     const wire = serializePublishedMessage(
       makeMessage({
@@ -93,7 +93,7 @@ describe('serializePublishedMessage — wire shape', () => {
     expect('baseBranch' in wire.message).toBe(false);
   });
 
-  test('M2: repoFullName + installationId carry onto the wire when set (issue #164)', () => {
+  test('repoFullName + installationId carry onto the wire when set', () => {
     const wire = serializePublishedMessage(
       makeMessage({ repoFullName: 'example-org/software-factory', installationId: 42 }),
       ACCEPT,
@@ -102,7 +102,7 @@ describe('serializePublishedMessage — wire shape', () => {
     expect(wire.message.installationId).toBe(42);
   });
 
-  test('M2: repoFullName + installationId omitted from wire when unset (shape unchanged)', () => {
+  test('repoFullName + installationId omitted from wire when unset (shape unchanged)', () => {
     const wire = serializePublishedMessage(makeMessage(), ACCEPT);
     expect('repoFullName' in wire.message).toBe(false);
     expect('installationId' in wire.message).toBe(false);
@@ -176,12 +176,12 @@ describe('ServiceBusOutgoingPublisher — via senderFactory test seam', () => {
     expect(() => new ServiceBusOutgoingPublisher({})).toThrow(/senderFactory or auth/);
   });
 
-  // Issue #182: an unclosed publisher keeps its AMQP handles open after the
+  // An unclosed publisher keeps its AMQP handles open after the
   // consumer loop returns — the event loop never drains and the Container
   // Apps Job execution is killed at the replica timeout ('Failed' despite
   // correct processing). close() must release the sender (and, in auth mode,
   // the ServiceBusClient behind it).
-  test('close() closes the sender created by senderFactory (issue #182 idle-exit leak)', async () => {
+  test('close() closes the sender created by senderFactory (idle-exit leak)', async () => {
     let senderClosed = 0;
     const sender: SenderLike = {
       sendMessages: async () => undefined,

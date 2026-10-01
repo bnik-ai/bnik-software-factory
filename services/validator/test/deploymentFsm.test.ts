@@ -136,7 +136,7 @@ describe('evaluateDeploymentTransition — env-approval gate', () => {
     ).toEqual({ verdict: 'accept' });
   });
 
-  test('awaiting_approval → in_progress by system accepts (PR45 rev2: runner reports POST-approval state; the GATE is enforced by GitHub Environments substrate-side, not validator FSM. GitHub stops the deploy if no human approves so no webhook reaches this resolver in that case)', () => {
+  test('awaiting_approval → in_progress by system accepts (runner reports POST-approval state; the GATE is enforced by GitHub Environments substrate-side, not validator FSM. GitHub stops the deploy if no human approves so no webhook reaches this resolver in that case)', () => {
     expect(
       evaluateDeploymentTransition({
         fromState: 'awaiting_approval',
@@ -235,7 +235,7 @@ describe('DEPLOYMENT_TRANSITIONS table', () => {
     expect(Object.keys(DEPLOYMENT_TRANSITIONS.error)).toEqual([]);
   });
 
-  test('awaiting_approval has exactly ONE outgoing edge: in_progress (by human OR system runner POST-approval per PR45 rev2)', () => {
+  test('awaiting_approval has exactly ONE outgoing edge: in_progress (by human OR system runner POST-approval)', () => {
     expect(Object.keys(DEPLOYMENT_TRANSITIONS.awaiting_approval)).toEqual(['in_progress']);
     // biome-ignore lint/style/noNonNullAssertion: just asserted exists.
     const actors = [...DEPLOYMENT_TRANSITIONS.awaiting_approval.in_progress!.allowedActors].sort();

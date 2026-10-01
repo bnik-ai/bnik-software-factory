@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { GITHUB_WEBHOOK_EVENTS, NOISE_DROP_EVENTS } from '../src/eventAllowlist.js';
 
-describe('eventAllowlist — noise isolation (issue #174)', () => {
+describe('eventAllowlist — noise isolation', () => {
   test('noise events stay ALLOWED (subscribed — a 400 would mark deliveries failed) but classified for drop', () => {
     for (const noisy of NOISE_DROP_EVENTS) {
       expect(GITHUB_WEBHOOK_EVENTS.has(noisy), `${noisy} must stay in the allowlist`).toBe(true);

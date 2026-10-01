@@ -10,7 +10,7 @@ describe('buildAdminApp', () => {
     expect(body).toEqual({ ok: true, service: 'ca-admin', version: '1.2.3' });
   });
 
-  test('GET /admin/install/status returns 503 not_implemented_v0 (deferred to B7)', async () => {
+  test('GET /admin/install/status returns 503 not_implemented_v0', async () => {
     const app = buildAdminApp();
     const res = await app.request('http://test.local/admin/install/status');
     expect(res.status).toBe(503);
@@ -19,7 +19,7 @@ describe('buildAdminApp', () => {
     expect(body.detail).toContain('B7');
   });
 
-  test('POST /admin/replay returns 503 not_implemented_v0 (deferred to B7)', async () => {
+  test('POST /admin/replay returns 503 not_implemented_v0', async () => {
     const app = buildAdminApp();
     const res = await app.request('http://test.local/admin/replay', { method: 'POST' });
     expect(res.status).toBe(503);

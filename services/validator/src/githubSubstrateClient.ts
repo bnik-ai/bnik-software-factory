@@ -1,4 +1,4 @@
-// / issue #164). Implements the SubstrateClient interface
+// Implements the SubstrateClient interface
 // (services/validator/src/substrateClient.ts) against GitHub's GraphQL API so
 // the transition resolver can re-read a record's CURRENT label set at decision
 // time (validator-bot.md:292 "canonical state is always re-read from the
@@ -6,14 +6,14 @@
 // issues.labeled events to dead-letter as applied_label_no_longer_present.
 //
 // Auth: an installation token minted from the installation id threaded off the
-// webhook (Part 1). The client is PER-MESSAGE constructed via
+// webhook. The client is PER-MESSAGE constructed via
 // createGithubSubstrateClient({ env, installationId }) — the installation id
 // varies per delivery, so a single boot-time client can't serve every record.
 // The minted token is cached for the client's (per-message) lifetime.
 //
 // Scope of this client: getCurrentLabels + getIssue + getStructuralMarkers
 // (the resolver's issue-event + actor paths), and the review-loop surface
-// getReviewsForPr + getPullRequest (issue #170) the validator's review-loop
+// getReviewsForPr + getPullRequest the validator's review-loop
 // assertions consume to enforce ADR 0010 model-independence on a native
 // `pr:in_review→approved`. All reads share one GraphQL transport (queryNode);
 // a missing/non-matching node maps to [] (getReviewsForPr) / undefined
@@ -102,7 +102,7 @@ const RECENT_COMMENTS_PAGE = 20;
 // Both Issue and PullRequest node IDs flow through here (pr/pull_request_review
 // events carry PullRequest node IDs). PullRequest is a distinct GraphQL type, so
 // it needs its own inline fragment — without it, PR nodes match nothing and the
-// fields come back null. (codex PR #152)
+// fields come back null.
 const ISSUE_NODE_QUERY =
   'query($id:ID!){node(id:$id){... on Issue{number title body state labels(first:100){nodes{name}}} ... on PullRequest{number title body state labels(first:100){nodes{name}}}}}';
 
@@ -111,8 +111,7 @@ const ISSUE_NODE_QUERY =
 // App-sent transition from the most recent `sf:agent=<role@model>` structural
 // marker (ADR 0009 §D).
 // Each surface carries `author{login}` so the resolver can reject markers NOT
-// posted by the SF App (comments/bodies are human-writable → forgeable). (codex
-// PR #152)
+// posted by the SF App (comments/bodies are human-writable → forgeable).
 const MARKER_NODE_QUERY = `query($id:ID!){node(id:$id){... on Issue{body author{login __typename} comments(last:${RECENT_COMMENTS_PAGE}){nodes{body author{login __typename}}}} ... on PullRequest{body author{login __typename} comments(last:${RECENT_COMMENTS_PAGE}){nodes{body author{login __typename}}}}}}`;
 
 // ADR 0010 review-loop surface. getReviewsForPr reads the PR's native Reviews
@@ -166,8 +165,8 @@ function mapReviewState(state: string | undefined): ReviewView['state'] | undefi
 // REST/webhook form (`example-factory[bot]`). Normalize at the substrate boundary
 // — keyed on __typename so only genuine Bot authors gain the suffix (a human
 // account can never become `[bot]`-suffixed, preserving the forgery check).
-// Found live in M5: the ReviewAgent claim marker was treated as forged and the
-// pr:open→in_review transition dead-lettered as actor_unresolved_app_sender.
+// Without it, an App-authored ReviewAgent claim marker reads as forged and
+// pr:open→in_review dead-letters as actor_unresolved_app_sender.
 function normalizeAuthorLogin(
   author: { login?: string | null; __typename?: string | null } | null | undefined,
 ): string | undefined {
@@ -238,7 +237,7 @@ export class GithubSubstrateClient implements SubstrateClient {
     };
   }
 
-  // ADR 0010 review-loop assertion surface (issue #170). Reads the PR's native
+  // ADR 0010 review-loop assertion surface. Reads the PR's native
   // Reviews; maps each merge-relevant review to a ReviewView whose body carries
   // the reviewer/adjudicator stamps. An absent/non-PR node → [] (the PR has no
   // readable Reviews, the documented "approved-without-review" fail-closed input).
@@ -255,7 +254,7 @@ export class GithubSubstrateClient implements SubstrateClient {
     return reviews;
   }
 
-  // ADR 0008 §2 / ADR 0009 §2 (issue #170): recover the author-model source
+  // ADR 0008 §2 / ADR 0009 §2: recover the author-model source
   // from the PR head — branch name + head commit message. Undefined for an
   // absent/non-PR node (PR unseen by the substrate → author model unknown →
   // the assertion stays silent on author-relative inequalities, same posture

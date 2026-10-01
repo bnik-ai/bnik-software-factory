@@ -43,7 +43,7 @@ describe('isTransientServiceBusErrorStrict (process-wide guard predicate)', () =
     );
   });
   test('does NOT swallow generic shapes from non-Service-Bus code', () => {
-    // The exact masking risk codex flagged: generic retryable / AbortError
+    // The masking risk: generic retryable / AbortError
     // from unrelated code must still fail-fast at the process level.
     expect(isTransientServiceBusErrorStrict({ retryable: true })).toBe(false);
     expect(isTransientServiceBusErrorStrict({ name: 'AbortError' })).toBe(false);
@@ -82,7 +82,7 @@ function makeLabeledIssueBody(): Record<string, unknown> {
   };
 }
 
-// SB body the github-app B1 producer enqueues: { deliveryId, event, payload }.
+// SB body the github-app producer enqueues: { deliveryId, event, payload }.
 function makeSbBody(
   overrides: Partial<{ deliveryId: string; event: string; payload: unknown }> = {},
 ): unknown {
@@ -216,7 +216,7 @@ describe('ServiceBusEventQueueConsumer — receive → parse → ack', () => {
     expect(receiver.closed).toBe(1); // lock released despite the error
   });
 
-  test('issue #183: a BENIGN dependabot[bot] event (issues.assigned, inert) settles observationally — completeMessage, NOT dead-lettered (no validator-events DLQ noise)', async () => {
+  test('a BENIGN dependabot[bot] event (issues.assigned, inert) settles observationally — completeMessage, NOT dead-lettered (no validator-events DLQ noise)', async () => {
     const body = makeLabeledIssueBody();
     body.action = 'assigned';
     (body.sender as unknown) = { login: 'dependabot[bot]', type: 'Bot' };
@@ -238,7 +238,7 @@ describe('ServiceBusEventQueueConsumer — receive → parse → ack', () => {
     expect(receiver.deadlettered).toHaveLength(0);
   });
 
-  test('issue #183 (codex P2): a non-App bot applying a status:* label (dependabot[bot] labeled status:accepted) is DEAD-LETTERED, not silently settled — untrusted substrate-state mutation stays visible', async () => {
+  test('a non-App bot applying a status:* label (dependabot[bot] labeled status:accepted) is DEAD-LETTERED, not silently settled — untrusted substrate-state mutation stays visible', async () => {
     const body = makeLabeledIssueBody(); // action: 'labeled', label status:accepted
     (body.sender as unknown) = { login: 'dependabot[bot]', type: 'Bot' };
     const sbMessage: ReceivedMessageLike = {
@@ -321,7 +321,7 @@ describe('ServiceBusEventQueueConsumer — receive → parse → ack', () => {
     expect(batch[0]?.payloadHash.equals(Buffer.alloc(32, 9))).toBe(true);
   });
 
-  test('M2: a transient substrate throw is contained (no crash) and leaves the message UNSETTLED for redelivery (codex #139 [P1])', async () => {
+  test('a transient substrate throw is contained (no crash) and leaves the message UNSETTLED for redelivery', async () => {
     // A labeled-issue body carrying an installation id routes through the
     // substrateFactory. A throwing factory simulates a GitHub 500 / token
     // mint failure. receive() must NOT propagate the throw (which would

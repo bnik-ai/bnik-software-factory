@@ -199,7 +199,7 @@ describe('buildApp — POST /webhook (injected ledger + queue, ledger/queue side
         headers: {
           'X-Hub-Signature-256': sig,
           'X-GitHub-Delivery': OTHER_DELIVERY_ID,
-          // issue #174: `push` is noise-dropped at the allowlist; use a
+          // `push` is noise-dropped at the allowlist; use a
           // second FSM-bearing event type.
           'X-GitHub-Event': 'pull_request',
         },
@@ -248,10 +248,10 @@ describe('buildApp — POST /webhook (injected ledger + queue, ledger/queue side
 });
 
 describe('buildApp — dual-write resilience when the queue fails', () => {
-  // Codex P1 (B2-PR3 rev0): if recordDelivery inserts but enqueue throws and
-  // we then return 5xx, GitHub redelivers — the old code returned 200
-  // idempotent without re-enqueueing, silently dropping the webhook. The
-  // 2-phase ledger + 503-on-enqueue-failure pattern fixes this.
+  // If recordDelivery inserts but enqueue throws, the route returns 5xx and
+  // GitHub redelivers; the redelivery must re-enqueue, not return 200
+  // idempotent (which would silently drop the webhook). The 2-phase ledger +
+  // 503-on-enqueue-failure pattern guarantees this.
 
   class FailingEventQueue implements EventQueue {
     public failuresRemaining: number;
@@ -425,7 +425,7 @@ describe('readWebhookSecretFromEnv', () => {
   });
 });
 
-describe('parseRepoAndInstallation — M2 repo + installation extraction (issue #164)', () => {
+describe('parseRepoAndInstallation — repo + installation extraction', () => {
   test('extracts repository.full_name + installation.id', () => {
     const raw = Buffer.from(
       JSON.stringify({
@@ -455,7 +455,7 @@ describe('parseRepoAndInstallation — M2 repo + installation extraction (issue 
     expect(parseRepoAndInstallation(Buffer.from('not json'))).toEqual({});
   });
 
-  // codex PR #150 — the record node id becomes the per-record SB session key.
+  // The record node id becomes the per-record SB session key.
   test('extracts issue.node_id as recordNodeId', () => {
     const raw = Buffer.from(JSON.stringify({ action: 'labeled', issue: { node_id: 'I_abc' } }));
     expect(parseRepoAndInstallation(raw)).toEqual({ recordNodeId: 'I_abc' });
@@ -481,7 +481,7 @@ describe('parseRepoAndInstallation — M2 repo + installation extraction (issue 
   });
 });
 
-describe('buildApp — M2 enqueues repoFullName + installationId when present', () => {
+describe('buildApp — enqueues repoFullName + installationId when present', () => {
   test('a delivery carrying repository + installation threads both onto EnqueueArgs', async () => {
     const ledger = new InMemoryAuditLedger();
     const queue = new InMemoryEventQueue();
@@ -513,7 +513,7 @@ describe('buildApp — M2 enqueues repoFullName + installationId when present', 
     ]);
   });
 
-  // codex PR #150 — a record-bearing delivery sets sessionId to the record node
+  // A record-bearing delivery sets sessionId to the record node
   // id so all of one record's deliveries serialize (FIFO) in the validator,
   // preventing the auto-advance creation race.
   test('a delivery carrying an issue node_id threads sessionId onto EnqueueArgs', async () => {
@@ -538,7 +538,7 @@ describe('buildApp — M2 enqueues repoFullName + installationId when present', 
   });
 });
 
-describe('buildApp — POST /webhook noise drop (issue #174)', () => {
+describe('buildApp — POST /webhook noise drop', () => {
   test('subscribed noise event (push) → 202 acknowledged + dropped: no ledger row, no enqueue', async () => {
     const ledger = new InMemoryAuditLedger();
     const queue = new InMemoryEventQueue();

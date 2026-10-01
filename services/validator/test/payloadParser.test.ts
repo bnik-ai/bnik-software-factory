@@ -203,7 +203,7 @@ describe('parsePayload — sender → actor mapping', () => {
     if (result.ok) expect(result.envelope.actor).toBe('BuildAgent');
   });
 
-  test('github-actions[bot] applying a status:* label (default labeled body) → untrusted_bot_event, VISIBLE (codex P2): an untrusted substrate-state write is never silently settled — still NOT mapped to system (no privilege escalation)', () => {
+  test('github-actions[bot] applying a status:* label (default labeled body) → untrusted_bot_event, VISIBLE: an untrusted substrate-state write is never silently settled — still NOT mapped to system (no privilege escalation)', () => {
     const result = parsePayload(
       makeRaw(makeIssueBody({ sender: { login: 'github-actions[bot]', type: 'Bot' } })),
     );
@@ -216,7 +216,7 @@ describe('parsePayload — sender → actor mapping', () => {
     }
   });
 
-  test('github-actions[bot] on a BENIGN inert event (issues.assigned) → third_party_bot_observational (codex P2: only status:/kind: mutations stay visible)', () => {
+  test('github-actions[bot] on a BENIGN inert event (issues.assigned) → third_party_bot_observational (only status:/kind: mutations stay visible)', () => {
     const result = parsePayload(
       makeRaw(
         makeIssueBody({
@@ -232,7 +232,7 @@ describe('parsePayload — sender → actor mapping', () => {
     }
   });
 
-  test('a third-party bot (renovate[bot]) applying a status:* label → untrusted_bot_event, VISIBLE (codex P2: ANY non-App bot state mutation, not just github-actions)', () => {
+  test('a third-party bot (renovate[bot]) applying a status:* label → untrusted_bot_event, VISIBLE (ANY non-App bot state mutation, not just github-actions)', () => {
     const result = parsePayload(
       makeRaw(makeIssueBody({ sender: { login: 'renovate[bot]', type: 'Bot' } })),
     );
@@ -269,7 +269,7 @@ describe('parsePayload — sender → actor mapping', () => {
     });
   }
 
-  test('SF App login + body structural marker → DEFERS (codex PR #152: body=creator stamp, not this transition actor)', () => {
+  test('SF App login + body structural marker → DEFERS (body=creator stamp, not this transition actor)', () => {
     const result = parsePayload(
       makeRaw(
         makeIssueBody({
@@ -303,7 +303,7 @@ describe('parsePayload — sender → actor mapping', () => {
     if (result.ok) expect(result.envelope.appActorUnresolved).toBe(true);
   });
 
-  test('example-factory[bot] is NOT a default slug → third_party_bot_observational, observational:true when no configured slug (issue #183; still NOT the App path — no appActorUnresolved, no App actor)', () => {
+  test('example-factory[bot] is NOT a default slug → third_party_bot_observational, observational:true when no configured slug (still NOT the App path — no appActorUnresolved, no App actor)', () => {
     const result = parsePayload(
       makeRaw(
         makeIssueBody({
@@ -319,7 +319,7 @@ describe('parsePayload — sender → actor mapping', () => {
     }
   });
 
-  test('dash-form software-factory[bot] (NOT a documented slug; an App look-alike) → third_party_bot_observational, observational:true — denied App treatment (no actor resolved), settles benignly (issue #183)', () => {
+  test('dash-form software-factory[bot] (NOT a documented slug; an App look-alike) → third_party_bot_observational, observational:true — denied App treatment (no actor resolved), settles benignly', () => {
     const result = parsePayload(
       makeRaw(
         makeIssueBody({
@@ -335,7 +335,7 @@ describe('parsePayload — sender → actor mapping', () => {
     }
   });
 
-  test('unknown third-party Bot login → third_party_bot_observational (NOT system — that would be privilege escalation), observational:true, detail carries the login (issue #183)', () => {
+  test('unknown third-party Bot login → third_party_bot_observational (NOT system — that would be privilege escalation), observational:true, detail carries the login', () => {
     const result = parsePayload(
       makeRaw(
         makeIssueBody({ action: 'assigned', sender: { login: 'renovate[bot]', type: 'Bot' } }),
@@ -349,7 +349,7 @@ describe('parsePayload — sender → actor mapping', () => {
     }
   });
 
-  test('external bots not in the allow-list get NO actor — system-only FSM transitions cannot be claimed by random strangers — and settle observationally (issue #183: dependabot[bot] DLQ noise removed)', () => {
+  test('external bots not in the allow-list get NO actor — system-only FSM transitions cannot be claimed by random strangers — and settle observationally (no dependabot[bot] DLQ noise)', () => {
     for (const stranger of ['dependabot[bot]', 'foreign-bot[bot]']) {
       const result = parsePayload(
         makeRaw(makeIssueBody({ action: 'assigned', sender: { login: stranger, type: 'Bot' } })),
@@ -362,7 +362,7 @@ describe('parsePayload — sender → actor mapping', () => {
     }
   });
 
-  // Issue #183 forgery-guard invariant: the new third-party observational
+  // Forgery-guard invariant: the third-party observational
   // settle MUST NOT swallow an App-login sender. An App-login sender whose
   // agent actor is unresolvable takes the App path (appActorUnresolved=true,
   // ok:true) so the transitionResolver still fails closed
@@ -381,7 +381,7 @@ describe('parsePayload — sender → actor mapping', () => {
     }
   });
 
-  test('human (User) sender still resolves normally → actor human (unchanged by issue #183)', () => {
+  test('human (User) sender still resolves normally → actor human', () => {
     const result = parsePayload(
       makeRaw(makeIssueBody({ sender: { login: 'a-human', type: 'User' } })),
     );
@@ -531,7 +531,7 @@ describe('parsePayload — kind extraction', () => {
 });
 
 describe('parsePayload — failure modes', () => {
-  test('unknown event type → unknown_event_type (issues, pull_request, pull_request_review, and deployment_status are handled; e.g. push ships in a later PR)', () => {
+  test('unknown event type → unknown_event_type (issues, pull_request, pull_request_review, and deployment_status are handled; e.g. push is not)', () => {
     const result = parsePayload(makeRaw(makeIssueBody(), 'push'));
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -669,7 +669,7 @@ describe('parsePayload — pull_request event happy path', () => {
   });
 });
 
-describe('parsePayload — pull_request labeled/unlabeled (issue #178 structural review)', () => {
+describe('parsePayload — pull_request labeled/unlabeled', () => {
   // A PR is an Issue in GitHub's API, so applying a status:* label to a PR
   // fires `pull_request` action='labeled' carrying body.label — NOT
   // issues.labeled. The parser surfaces statusLabel for the resolver's
@@ -724,9 +724,9 @@ describe('parsePayload — pull_request labeled/unlabeled (issue #178 structural
 
 describe('parsePayload — pull_request head/base branch population (ADR 0012 §"Activation status" gate (a))', () => {
   // Without these on the envelope, the orchestrator's pre-review
-  // branch-sync gate (PR #101) skips for real traffic and the re-sync
-  // protection ships inert. The orchestrator side already accepts both
-  // fields on the wire (PR #110 sister serializer).
+  // branch-sync gate skips for real traffic and the re-sync
+  // protection ships inert. The orchestrator side accepts both
+  // fields on the wire (sister serializer).
 
   test('opened → headBranch + baseBranch populated from pull_request.head.ref / .base.ref', async () => {
     const result = parsePayload(makeRaw(makePrBody(), 'pull_request'));
@@ -833,7 +833,7 @@ describe('parsePayload — pull_request sender resolution', () => {
     if (result.ok) expect(result.envelope.appActorUnresolved).toBe(true);
   });
 
-  test('SF App login + PR body marker → DEFERS (codex PR #152: body=creator stamp; resolver attributes the transition)', async () => {
+  test('SF App login + PR body marker → DEFERS (body=creator stamp; resolver attributes the transition)', async () => {
     const result = parsePayload(
       makeRaw(
         makePrBody(
@@ -851,7 +851,7 @@ describe('parsePayload — pull_request sender resolution', () => {
     }
   });
 
-  test('third-party bot on an INERT PR event (synchronize) → third_party_bot_observational (issue #183: dependabot PR-branch pushes settle cleanly, no DLQ noise)', async () => {
+  test('third-party bot on an INERT PR event (synchronize) → third_party_bot_observational (dependabot PR-branch pushes settle cleanly, no DLQ noise)', async () => {
     const result = parsePayload(
       makeRaw(
         makePrBody({ action: 'synchronize', sender: { login: 'dependabot[bot]', type: 'Bot' } }),
@@ -865,7 +865,7 @@ describe('parsePayload — pull_request sender resolution', () => {
     }
   });
 
-  test('third-party bot on a TRANSITION-CAPABLE PR event (opened, no status label) → untrusted_bot_event, VISIBLE (codex P2: non-label transition-capable actions are NOT silently settled)', async () => {
+  test('third-party bot on a TRANSITION-CAPABLE PR event (opened, no status label) → untrusted_bot_event, VISIBLE (non-label transition-capable actions are NOT silently settled)', async () => {
     const result = parsePayload(
       makeRaw(
         makePrBody({ action: 'opened', sender: { login: 'dependabot[bot]', type: 'Bot' } }),
@@ -880,7 +880,7 @@ describe('parsePayload — pull_request sender resolution', () => {
     }
   });
 
-  test('third-party bot review_requested on an open PR → untrusted_bot_event, VISIBLE (codex P2 r5: maps to a real →in_review transition, not inert)', async () => {
+  test('third-party bot review_requested on an open PR → untrusted_bot_event, VISIBLE (maps to a real →in_review transition, not inert)', async () => {
     const result = parsePayload(
       makeRaw(
         makePrBody({
@@ -897,7 +897,7 @@ describe('parsePayload — pull_request sender resolution', () => {
     }
   });
 
-  test('third-party bot applying a policy:* label → untrusted_bot_event, VISIBLE (codex P2 r5: policy:violation is the validator-only enforcement label)', () => {
+  test('third-party bot applying a policy:* label → untrusted_bot_event, VISIBLE (policy:violation is the validator-only enforcement label)', () => {
     const result = parsePayload(
       makeRaw(
         makeIssueBody({
@@ -913,7 +913,7 @@ describe('parsePayload — pull_request sender resolution', () => {
     }
   });
 
-  test('third-party bot applying a COSMETIC label (dependencies) → third_party_bot_observational (issue #183: non-state labels settle cleanly)', () => {
+  test('third-party bot applying a COSMETIC label (dependencies) → third_party_bot_observational (non-state labels settle cleanly)', () => {
     const result = parsePayload(
       makeRaw(
         makeIssueBody({
@@ -1180,7 +1180,7 @@ describe('parsePayload — pull_request_review failure modes', () => {
   });
 });
 
-describe('parsePayload — M2 repo + installation threading (issue #164)', () => {
+describe('parsePayload — repo + installation threading', () => {
   test('issues event with repository + installation → repoFullName + installationId populated', () => {
     const body = makeIssueBody({
       repository: { full_name: 'example-org/software-factory' },
@@ -1240,7 +1240,7 @@ describe('parsePayload — M2 repo + installation threading (issue #164)', () =>
   });
 });
 
-describe('parsePayload — issue_comment is observational (issue #178 rev5)', () => {
+describe('parsePayload — issue_comment is observational', () => {
   test('issue_comment event → observational_event_type, observational:true (settled cleanly, not DLQ)', () => {
     const result = parsePayload(makeRaw({ action: 'created' }, 'issue_comment'));
     expect(result.ok).toBe(false);
@@ -1261,7 +1261,7 @@ describe('parsePayload — issue_comment is observational (issue #178 rev5)', ()
   });
 });
 
-describe('parsePayload — installation lifecycle events are observational (issue #182)', () => {
+describe('parsePayload — installation lifecycle events are observational', () => {
   test('installation_repositories (repo-scope change on the installation) → observational_event_type, observational:true (settled cleanly, not DLQ)', () => {
     const result = parsePayload(
       makeRaw({ action: 'added', installation: { id: 9001 } }, 'installation_repositories'),
@@ -1287,7 +1287,7 @@ describe('parsePayload — installation lifecycle events are observational (issu
   });
 });
 
-describe('parsePayload — issue_comment sender gating (issue #178 rev6)', () => {
+describe('parsePayload — issue_comment sender gating', () => {
   test('App-sent NON-structural comment → nonstructural_agent_comment violation, NOT observational', () => {
     const result = parsePayload(
       makeRaw(

@@ -12,9 +12,8 @@
 //     caj-agent-review). Agents POST to /agent/tool/github/<verb> when
 //     they want centralized, rate-limit-aware, audit-logged GitHub API
 //     access instead of minting their own installation tokens from
-//     sf-app-private-key. v0 stub returns 503; real implementations
-//     of the per-verb GitHub adapters land in follow-up PRs when the
-//     centralization trade-off is exercised.
+//     sf-app-private-key. v0 stub returns 503; the per-verb GitHub
+//     adapters are not implemented.
 //   - Centralization is OPTIONAL — per VHQ's factory/dev/application
 //     Terraform, every caj-agent-* Job already has sf-app-private-key
 //     bound as an env_var_from_kv, so agents CAN mint installation
@@ -25,10 +24,9 @@
 //
 // What this surface IS NOT (post-ADR 0011 approval):
 //   - The orchestrator's dispatch target. ADR 0011 retired that role
-//     when it chose Option B (per-role Service Bus fan-out). The
-//     HttpAgentDispatcher in services/orchestrator/ that called this
-//     surface's old /agent/dispatch route is being removed in B4-PR6,
-//     so /agent/dispatch itself is removed here in the same wave.
+//     when it chose Option B (per-role Service Bus fan-out); the
+//     orchestrator dispatches via Service Bus, so this surface registers
+//     no /agent/dispatch route.
 //
 // Invariants:
 //   - AGENT_HMAC_SECRET MUST be set at boot via readAgentHmacSecretFromEnv;
@@ -53,8 +51,7 @@ export interface AgentAppConfig {
   // Optional GitHub App agent-scoped client (JWT→installation-token minting).
   // Injected at boot via buildGitHubAppDeps when GITHUB_APP_* env is set.
   // Optional so the existing test suite (HMAC-only) keeps working. The
-  // per-verb routes that currently 503 swap from stub to this client in a
-  // follow-up PR (per plan scope-limit).
+  // per-verb routes return 503 and do not use this client in v0.
   agentClient?: AgentClient;
 }
 
@@ -96,7 +93,7 @@ export function buildAgentApp(config: AgentAppConfig): Hono<AgentAppEnv> {
   //   issue.applyLabel | issue.removeLabel | issue.comment | issue.create
   //   issue.read       | pull.open         | pull.close   | pull.submitReview
   //   pull.merge       | git.branch        | git.commit   | git.push
-  // Real per-verb GitHub adapters land in a follow-up PR.
+  // v0: every verb returns 503 (no per-verb GitHub adapters).
   app.post('/agent/tool/github/:verb', (c) => {
     const verb = c.req.param('verb');
     return c.json(

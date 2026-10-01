@@ -22,16 +22,18 @@ export interface AppConfig {
   // the canonical set in `eventAllowlist.ts`.
   allowedEvents?: ReadonlySet<string>;
   // Audit-ledger implementation. Defaults to an in-memory implementation
-  // suitable for tests and v0 boot; B7 swaps in a Postgres-backed one.
+  // suitable for tests and v0 boot; postgresAuditLedger.ts is the
+  // Postgres-backed one.
   auditLedger?: AuditLedger;
   // Event-queue implementation. Defaults to an in-memory implementation
-  // suitable for tests and v0 boot; B7 swaps in an Azure Service Bus one.
+  // suitable for tests and v0 boot; serviceBusEventQueue.ts is the Azure
+  // Service Bus one.
   eventQueue?: EventQueue;
 }
 
 // Build a Hono app bound to the given config. Exported as a factory so that
 // tests can inject a fixture secret without touching process.env; production
-// boot (PR5+) calls `buildApp({ webhookSecret: readWebhookSecretFromEnv() })`.
+// boot (mainWebhook.ts) calls `buildApp({ webhookSecret, eventQueue, auditLedger })`.
 export function buildApp(config: AppConfig): Hono {
   const {
     webhookSecret,
@@ -69,7 +71,7 @@ export function buildApp(config: AppConfig): Hono {
 
     const { deliveryId, event } = verification.body;
 
-    // Issue #174 noise isolation: subscribed CI/dev events carry no FSM
+    // Noise isolation: subscribed CI/dev events carry no FSM
     // transition. Signature-verified above; ACKNOWLEDGE (2xx, so GitHub does
     // not mark the delivery failed) and DROP — no ledger row, no enqueue.
     if (NOISE_DROP_EVENTS.has(event)) {
@@ -77,8 +79,8 @@ export function buildApp(config: AppConfig): Hono {
     }
 
     // `installation.id` off the raw body so the validator's read-only
-    // SubstrateClient can mint an installation token for the target repo
-    // (issue #164). Both are optional — a malformed body or a delivery
+    // SubstrateClient can mint an installation token for the target repo.
+    // Both are optional — a malformed body or a delivery
     // without an `installation` block simply omits them and the validator
     // falls back to the in-memory substrate. Parsing here is best-effort and
     // never fails the webhook (the raw payload is the canonical carrier).
@@ -135,7 +137,7 @@ export function buildApp(config: AppConfig): Hono {
         ...(repoFullName !== undefined ? { repoFullName } : {}),
         ...(installationId !== undefined ? { installationId } : {}),
         // Per-record session so all of one record's deliveries are FIFO-ordered
-        // (prevents the auto-advance creation race; codex PR #150). Falls back to
+        // (prevents the auto-advance creation race). Falls back to
         // the delivery id inside the queue when no record id is present.
         ...(recordNodeId !== undefined ? { sessionId: recordNodeId } : {}),
       });
@@ -153,7 +155,7 @@ export function buildApp(config: AppConfig): Hono {
   return app;
 }
 
-// M2: best-effort extraction of `repository.full_name` + `installation.id`
+// Best-effort extraction of `repository.full_name` + `installation.id`
 // from the raw webhook body. Returns undefined fields when the body is
 // unparseable or the keys are absent/wrong-typed — never throws, so a
 // malformed body still flows through the existing parse-failure path
@@ -190,7 +192,7 @@ export function parseRepoAndInstallation(rawBody: Buffer): {
   // key so every delivery for ONE record is processed in FIFO order (issues.opened
   // before issues.labeled, etc.). Without it the validator can resolve a label
   // change against a not-yet-written creation ledger row and dead-letter a valid
-  // transition (the hands-off auto-advance race; codex PR #150). issue/PR/
+  // transition (the hands-off auto-advance race). issue/PR/
   // deployment cover every FSM-bearing event; `pull_request_review` carries the
   // reviewed `pull_request`, so PR-lifecycle events all share one session. When
   // absent (e.g. non-record events), the enqueue falls back to the delivery id.

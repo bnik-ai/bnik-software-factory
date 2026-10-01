@@ -59,7 +59,7 @@ describe('evaluateDecisionTransition — allowed transitions', () => {
     ).toEqual({ verdict: 'accept' });
   });
 
-  test('proposed → abandoned REJECTS (NOT in spec table — proposed → rejected is the documented close path; PR22 rev1 codex P2 fix)', () => {
+  test('proposed → abandoned REJECTS (NOT in spec table — proposed → rejected is the documented close path)', () => {
     expect(
       evaluateDecisionTransition({ fromState: 'proposed', toState: 'abandoned', actor: 'human' }),
     ).toEqual({ verdict: 'reject', reason: 'illegal_transition' });
@@ -210,7 +210,7 @@ describe('evaluateDecisionTransition — __initial__ creation', () => {
     ).toEqual({ verdict: 'accept' });
   });
 
-  test('__initial__ → drafting by BuildAgent accepts (PR22 rev2: any agent except ReviewAgent can author Decisions; ReviewAgent EXCLUDED here to enforce no-self-approval at the FSM layer)', () => {
+  test('__initial__ → drafting by BuildAgent accepts (any agent except ReviewAgent can author Decisions; ReviewAgent EXCLUDED here to enforce no-self-approval at the FSM layer)', () => {
     expect(
       evaluateDecisionTransition({
         fromState: '__initial__',
@@ -220,7 +220,7 @@ describe('evaluateDecisionTransition — __initial__ creation', () => {
     ).toEqual({ verdict: 'accept' });
   });
 
-  test('__initial__ → drafting by ReviewAgent REJECTS (PR22 rev3 codex P1: ReviewAgent is the designated approver; excluding it from authoring enforces "never the proposing agent" rule at FSM layer without a cross-record check)', () => {
+  test('__initial__ → drafting by ReviewAgent REJECTS (ReviewAgent is the designated approver; excluding it from authoring enforces "never the proposing agent" rule at FSM layer without a cross-record check)', () => {
     expect(
       evaluateDecisionTransition({
         fromState: '__initial__',

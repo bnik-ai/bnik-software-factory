@@ -40,7 +40,7 @@ function stamp(model: string, run: string): string {
   return `<!-- sf:structural sf:agent=review@${model} run=${run} -->`;
 }
 
-// Issue #178 rev6: the verdict=approve marker — the ONLY structural shape the
+// The verdict=approve marker — the ONLY structural shape the
 // review-required assertion accepts as evidence.
 function approveStamp(model: string, run: string): string {
   return `<!-- sf:structural sf:agent=review@${model} run=${run} verdict=approve -->`;
@@ -350,7 +350,7 @@ describe('runReviewLoopAssertions — structuralComments split surface', () => {
   });
 });
 
-describe('runReviewLoopAssertions — structural review evidence (issue #178 rev5)', () => {
+describe('runReviewLoopAssertions — structural review evidence', () => {
   test('App-authored review@<model> marker comment + distinct author model → ok (no native Review needed)', async () => {
     const substrate = new InMemorySubstrateClient();
     substrate.seedPullRequest('PR_kwAOPR_1', {
@@ -389,7 +389,7 @@ describe('runReviewLoopAssertions — structural review evidence (issue #178 rev
     if (!result.ok) expect(result.assertion).toBe('pr_approved_without_review');
   });
 
-  test('claim/request-changes marker WITHOUT verdict=approve never satisfies the assertion (rev6)', async () => {
+  test('claim/request-changes marker WITHOUT verdict=approve never satisfies the assertion', async () => {
     const substrate = new InMemorySubstrateClient();
     substrate.setComments('PR_kwAOPR_1', [
       `${stamp('sonnet-4-6', RUN_REVIEWER)}\nReview claimed.`, // claim: no verdict attr
@@ -400,7 +400,7 @@ describe('runReviewLoopAssertions — structural review evidence (issue #178 rev
     if (!result.ok) expect(result.assertion).toBe('pr_approved_without_review');
   });
 
-  test('no marker + native getReviewsForPr THROWS (live #164 deferral) → FAIL CLOSED, never a crash (rev10)', async () => {
+  test('no marker + native getReviewsForPr THROWS → FAIL CLOSED, never a crash', async () => {
     const substrate = new InMemorySubstrateClient();
     const throwing = new Proxy(substrate, {
       get(target, prop, receiver) {
@@ -421,7 +421,7 @@ describe('runReviewLoopAssertions — structural review evidence (issue #178 rev
   });
 });
 
-describe('runReviewLoopAssertions — stale approve markers never satisfy (issue #178 rev7)', () => {
+describe('runReviewLoopAssertions — stale approve markers never satisfy', () => {
   test('older verdict=approve + NEWER claim/request-changes marker → no structural evidence (falls to native Rule 2)', async () => {
     const substrate = new InMemorySubstrateClient();
     substrate.setComments('PR_kwAOPR_1', [
@@ -434,7 +434,7 @@ describe('runReviewLoopAssertions — stale approve markers never satisfy (issue
   });
 });
 
-describe('runReviewLoopAssertions — structural path is ReviewAgent-actor-only (issue #178 rev11)', () => {
+describe('runReviewLoopAssertions — structural path is ReviewAgent-actor-only', () => {
   test('human-actor approval ignores even a fresh approve marker → native evidence required', async () => {
     const substrate = new InMemorySubstrateClient();
     substrate.setComments('PR_kwAOPR_1', [
@@ -472,7 +472,7 @@ describe('runReviewLoopAssertions — structural path is ReviewAgent-actor-only 
   });
 });
 
-describe('runReviewLoopAssertions — author model from message.headBranch (issue #178 rev13)', () => {
+describe('runReviewLoopAssertions — author model from message.headBranch', () => {
   test('substrate PR view unavailable + same-model headBranch on the message → reviewer_model_equals_author', async () => {
     const substrate = new InMemorySubstrateClient(); // no seedPullRequest
     substrate.setComments('PR_kwAOPR_1', [`${approveStamp('opus-4-7', RUN_REVIEWER)}\nApproved.`]);

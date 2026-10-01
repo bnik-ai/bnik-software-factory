@@ -16,7 +16,7 @@ describe('evaluatePrTransition — allowed transitions', () => {
     ).toEqual({ verdict: 'accept' });
   });
 
-  test('open → in_review by ReviewAgent (issue #178 structural review applies status:in_review)', () => {
+  test('open → in_review by ReviewAgent (structural review applies status:in_review)', () => {
     // ReviewAgent advancing the PR to in_review via a status label is FSM-valid:
     // open → in_review admits REVIEW_REQUESTERS, which includes ReviewAgent.
     expect(
@@ -24,7 +24,7 @@ describe('evaluatePrTransition — allowed transitions', () => {
     ).toEqual({ verdict: 'accept' });
   });
 
-  test('in_review → approved by ReviewAgent (issue #178 structural review applies status:approved)', () => {
+  test('in_review → approved by ReviewAgent (structural review applies status:approved)', () => {
     expect(
       evaluatePrTransition({
         fromState: 'in_review',
@@ -52,7 +52,7 @@ describe('evaluatePrTransition — allowed transitions', () => {
     ).toEqual({ verdict: 'accept' });
   });
 
-  test('approved → in_review by ReviewAgent (changes_requested AFTER approval — PR #46 rev1)', () => {
+  test('approved → in_review by ReviewAgent (changes_requested AFTER approval)', () => {
     expect(
       evaluatePrTransition({ fromState: 'approved', toState: 'in_review', actor: 'ReviewAgent' }),
     ).toEqual({ verdict: 'accept' });
@@ -64,7 +64,7 @@ describe('evaluatePrTransition — allowed transitions', () => {
     ).toEqual({ verdict: 'accept' });
   });
 
-  test('in_review → changes_requested by ReviewAgent (issue #182 request-changes verdict)', () => {
+  test('in_review → changes_requested by ReviewAgent (request-changes verdict)', () => {
     expect(
       evaluatePrTransition({
         fromState: 'in_review',
@@ -74,7 +74,7 @@ describe('evaluatePrTransition — allowed transitions', () => {
     ).toEqual({ verdict: 'accept' });
   });
 
-  test('in_review → changes_requested by human → actor_not_authorized (issue #198: native human request-changes deferred at the resolver — only ReviewAgent drives this edge until the downstream bridge exists)', () => {
+  test('in_review → changes_requested by human → actor_not_authorized (native human request-changes deferred at the resolver — only ReviewAgent drives this edge until the downstream bridge exists)', () => {
     expect(
       evaluatePrTransition({
         fromState: 'in_review',
@@ -94,7 +94,7 @@ describe('evaluatePrTransition — allowed transitions', () => {
     ).toEqual({ verdict: 'flag', reason: 'actor_not_authorized' });
   });
 
-  test('changes_requested → in_review by BuildAgent (issue #182 revision pushed → re-review)', () => {
+  test('changes_requested → in_review by BuildAgent (revision pushed → re-review)', () => {
     expect(
       evaluatePrTransition({
         fromState: 'changes_requested',
@@ -114,13 +114,13 @@ describe('evaluatePrTransition — allowed transitions', () => {
     ).toEqual({ verdict: 'accept' });
   });
 
-  test('in_review → syncing by BuildAgent (issue #192 re-sync bounce step 1)', () => {
+  test('in_review → syncing by BuildAgent (re-sync bounce step 1)', () => {
     expect(
       evaluatePrTransition({ fromState: 'in_review', toState: 'syncing', actor: 'BuildAgent' }),
     ).toEqual({ verdict: 'accept' });
   });
 
-  test('syncing → in_review by BuildAgent (issue #192 re-sync bounce step 2 → re-fires review)', () => {
+  test('syncing → in_review by BuildAgent (re-sync bounce step 2 → re-fires review)', () => {
     expect(
       evaluatePrTransition({ fromState: 'syncing', toState: 'in_review', actor: 'BuildAgent' }),
     ).toEqual({ verdict: 'accept' });
@@ -163,7 +163,7 @@ describe('evaluatePrTransition — illegal transitions emit soft flag', () => {
     ).toEqual({ verdict: 'flag', reason: 'illegal_transition' });
   });
 
-  test('draft → in_review by system accepts (PR #47 review: GitHub allows requesting reviewers on draft PRs; FSM now has draft → in_review row matching open → in_review)', () => {
+  test('draft → in_review by system accepts (GitHub allows requesting reviewers on draft PRs; draft → in_review row matches open → in_review)', () => {
     expect(
       evaluatePrTransition({ fromState: 'draft', toState: 'in_review', actor: 'system' }),
     ).toEqual({ verdict: 'accept' });
@@ -216,7 +216,7 @@ describe('evaluatePrTransition — unauthorized actor emits soft flag', () => {
     ).toEqual({ verdict: 'flag', reason: 'actor_not_authorized' });
   });
 
-  test('in_review → changes_requested by BuildAgent flags (issue #182: only ReviewAgent requests changes)', () => {
+  test('in_review → changes_requested by BuildAgent flags (only ReviewAgent requests changes)', () => {
     expect(
       evaluatePrTransition({
         fromState: 'in_review',
@@ -226,7 +226,7 @@ describe('evaluatePrTransition — unauthorized actor emits soft flag', () => {
     ).toEqual({ verdict: 'flag', reason: 'actor_not_authorized' });
   });
 
-  test('changes_requested → in_review by ReviewAgent flags (issue #182: only BuildAgent drives the revision back)', () => {
+  test('changes_requested → in_review by ReviewAgent flags (only BuildAgent drives the revision back)', () => {
     expect(
       evaluatePrTransition({
         fromState: 'changes_requested',
@@ -246,7 +246,7 @@ describe('evaluatePrTransition — unauthorized actor emits soft flag', () => {
     ).toEqual({ verdict: 'flag', reason: 'illegal_transition' });
   });
 
-  test('open → in_review by PlannerAgent flags (PlannerAgent is not on the review-requester allow-list per PR #46 rev2)', () => {
+  test('open → in_review by PlannerAgent flags (PlannerAgent is not on the review-requester allow-list)', () => {
     expect(
       evaluatePrTransition({ fromState: 'open', toState: 'in_review', actor: 'PlannerAgent' }),
     ).toEqual({ verdict: 'flag', reason: 'actor_not_authorized' });

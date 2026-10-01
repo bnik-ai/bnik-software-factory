@@ -167,7 +167,7 @@ describe('GithubSubstrateClient — token caching', () => {
   });
 });
 
-describe('GithubSubstrateClient — getReviewsForPr (issue #170)', () => {
+describe('GithubSubstrateClient — getReviewsForPr', () => {
   test('maps a PullRequest reviews node to ReviewView[], dropping non-gating states', async () => {
     const node = {
       reviews: {
@@ -219,7 +219,7 @@ describe('GithubSubstrateClient — getReviewsForPr (issue #170)', () => {
   });
 });
 
-describe('GithubSubstrateClient — getPullRequest (issue #170)', () => {
+describe('GithubSubstrateClient — getPullRequest', () => {
   test('maps headRefName + head commit message to PrView', async () => {
     const node = {
       headRefName: 'sf/T-230/01HZXYZ123456789ABCDEFGHJK/build@deepseek-chat',
@@ -260,7 +260,7 @@ describe('GithubSubstrateClient — getPullRequest (issue #170)', () => {
   });
 });
 
-describe('getStructuralMarkers — GraphQL Bot login normalization (M5 fix)', () => {
+describe('getStructuralMarkers — GraphQL Bot login normalization', () => {
   test('Bot author login gains the [bot] suffix; User authors stay as-is', async () => {
     const fetchImpl = makeFetch({
       node: {

@@ -13,7 +13,7 @@ function makeDeps(substrate?: InMemorySubstrateClient, ledger?: InMemoryAuditLed
 }
 
 // Seed a prior ledger row so getLastTransitionForRecord resolves toState —
-// the unlabeled branches' LEDGER-CONVERGING rule (issue #180 codex round 3)
+// the unlabeled branches' LEDGER-CONVERGING rule
 // keys observational-vs-violation off the ledgered state's label.
 async function seedLedgerRow(
   ledger: InMemoryAuditLedgerWriter,
@@ -131,8 +131,8 @@ describe('resolveTransition — issues steady-state single-status-label (ledger-
     }
   });
 
-  test('substrate has only the just-applied label + no prior in ledger → fromState=per-kind initial (Goal → proposed; issue #176)', async () => {
-    // KIND-AWARE FALLBACK (issue #176 / #177 P1): an absent prior ledger row
+  test('substrate has only the just-applied label + no prior in ledger → fromState=per-kind initial (Goal → proposed)', async () => {
+    // KIND-AWARE FALLBACK: an absent prior ledger row
     // on a labeled steady-state event resolves to the kind's initial state,
     // NOT the synthetic __initial__. For a Goal that is `proposed` (the
     // goal:proposed→accepted promote edge), so an agent/human status-label
@@ -150,7 +150,7 @@ describe('resolveTransition — issues steady-state single-status-label (ledger-
     }
   });
 
-  test('Task status:ready labeled with NO prior ledger row → task:proposed→ready (NOT __initial__→ready; closes #176, #177 P1)', async () => {
+  test('Task status:ready labeled with NO prior ledger row → task:proposed→ready (NOT __initial__→ready)', async () => {
     // PlannerAgent's in-run root promotion applies status:ready to a freshly-
     // created Task immediately after issues.create — before the
     // issues.opened→proposed ledger row is guaranteed written. The kind-aware
@@ -179,7 +179,7 @@ describe('resolveTransition — issues steady-state single-status-label (ledger-
   });
 });
 
-describe('resolveTransition — issues.labeled transition no-op (issue #181 close-race symmetry)', () => {
+describe('resolveTransition — issues.labeled transition no-op (close-race symmetry)', () => {
   test('status:done re-applied to an already-done Task → transition_no_op, observational (no self-loop flag)', async () => {
     // The post-merge completion path: OpsAgent applied status:done (ledger
     // already has *→done) AND closed the Task; the labeled half landing after
@@ -210,7 +210,7 @@ describe('resolveTransition — issues.labeled transition no-op (issue #181 clos
   });
 
   test('close-completed on a Task already labeled status:done, ledger STALL ready (same-batch race) → issue_close_completed_observational, no duplicate transition', async () => {
-    // Issue #178/#181 batch race: OpsAgent applied status:done then closed the
+    // Batch race: OpsAgent applied status:done then closed the
     // Task; both webhooks resolve in one validator batch, so the close reads the
     // ledger fromState BEFORE the label's →done row lands (stale `ready`). The
     // fromState===toState guard would MISS this (ready !== done) and emit a
@@ -512,7 +512,7 @@ describe('resolveTransition — issues.closed', () => {
     if (result.ok) expect(result.transition.toState).toBe('abandoned');
   });
 
-  test('Decision closed with state_reason=completed → approved (PR #56 review fix: Decision template says ADR PR closes the issue; close-completed maps to the approved terminal per DECISION_TRANSITIONS)', async () => {
+  test('Decision closed with state_reason=completed → approved (Decision template says ADR PR closes the issue; close-completed maps to the approved terminal per DECISION_TRANSITIONS)', async () => {
     const ledger = new InMemoryAuditLedgerWriter();
     await ledger.append({
       deliveryId: 'd-prior',
@@ -544,7 +544,7 @@ describe('resolveTransition — issues.closed', () => {
     }
   });
 
-  test('Decision close-completed when prior=approved → transition_no_op (PR #60 codex: ADR PR auto-close after ReviewAgent already approved; close is observational, not a transition)', async () => {
+  test('Decision close-completed when prior=approved → transition_no_op (ADR PR auto-close after ReviewAgent already approved; close is observational, not a transition)', async () => {
     const ledger = new InMemoryAuditLedgerWriter();
     await ledger.append({
       deliveryId: 'd-prior',
@@ -574,8 +574,8 @@ describe('resolveTransition — issues.closed', () => {
     if (!result.ok) {
       expect(result.reason).toBe('transition_no_op');
       expect(result.detail).toBe('decision:approved');
-      // Issue #181: a close that no-ops against the ledger settles cleanly,
-      // not DLQ — OpsAgent now closes every completed Task on the success path.
+      // A close that no-ops against the ledger settles cleanly,
+      // not DLQ — OpsAgent closes every completed Task on the success path.
       expect(result.observational).toBe(true);
     }
   });
@@ -744,7 +744,7 @@ describe('resolveTransition — issues.unlabeled', () => {
     }
   });
 
-  test('unlabeled status:ready with LEDGERED status:done remaining → observational ledger-converging cleanup (issue #180: OpsAgent post-merge apply-then-remove)', async () => {
+  test('unlabeled status:ready with LEDGERED status:done remaining → observational ledger-converging cleanup (OpsAgent post-merge apply-then-remove)', async () => {
     const substrate = new InMemorySubstrateClient();
     substrate.setLabels('I_kwAOA', ['kind:task', 'status:done']);
     const ledger = new InMemoryAuditLedgerWriter();
@@ -767,7 +767,7 @@ describe('resolveTransition — issues.unlabeled', () => {
     }
   });
 
-  test('REVERSAL: unlabeled the LEDGERED status:done while a leftover status:ready remains → status_label_removed violation (codex round 3 — the old remaining-label rule acked this)', async () => {
+  test('REVERSAL: unlabeled the LEDGERED status:done while a leftover status:ready remains → status_label_removed violation (a remaining-label rule would ack this)', async () => {
     const substrate = new InMemorySubstrateClient();
     substrate.setLabels('I_kwAOA', ['kind:task', 'status:ready']);
     const ledger = new InMemoryAuditLedgerWriter();
@@ -790,7 +790,7 @@ describe('resolveTransition — issues.unlabeled', () => {
     }
   });
 
-  test('same-batch swap (codex round 4 P2b): ledger stale at ready, unlabeled status:ready with status:done remaining → observational (legal task edge ready→done)', async () => {
+  test('same-batch swap: ledger stale at ready, unlabeled status:ready with status:done remaining → observational (legal task edge ready→done)', async () => {
     // The apply+remove pair arrived in ONE Service Bus batch: the consumer
     // resolves the whole batch BEFORE processMessage appends rows, so the
     // removal still sees ledger=ready while status:done was applied earlier
@@ -838,7 +838,7 @@ describe('resolveTransition — issues.unlabeled', () => {
     }
   });
 
-  test('unlabeled the ONLY status label on an issue → status_label_removed violation, NOT observational (issue #180)', async () => {
+  test('unlabeled the ONLY status label on an issue → status_label_removed violation, NOT observational', async () => {
     const substrate = new InMemorySubstrateClient();
     substrate.setLabels('I_kwAOA', ['kind:task', 'priority:p1']);
     const ledger = new InMemoryAuditLedgerWriter();
@@ -902,7 +902,7 @@ describe('resolveTransition — issues.unlabeled', () => {
   });
 });
 
-describe('resolveTransition — issues.edited (codex round 4 P2a: observational, never DLQ)', () => {
+describe('resolveTransition — issues.edited (observational, never DLQ)', () => {
   test('human-sent body edit → issue_edited_observational, settled cleanly (state is label-driven; an edit is not a transition)', async () => {
     const result = await resolveTransition(
       makeEnvelope({ action: 'edited', statusLabel: undefined, actor: 'human' }),
@@ -1161,7 +1161,7 @@ describe('resolveTransition — pull_request', () => {
     if (!result.ok) expect(result.reason).toBe('unsupported_action');
   });
 
-  test('synchronize → pr_event_observational, settled cleanly (fires on EVERY push to the PR branch, BuildAgent pushes included — issue #182)', async () => {
+  test('synchronize → pr_event_observational, settled cleanly (fires on EVERY push to the PR branch, BuildAgent pushes included)', async () => {
     const result = await resolveTransition(makePrEnvelope({ action: 'synchronize' }), makeDeps());
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -1171,7 +1171,7 @@ describe('resolveTransition — pull_request', () => {
     }
   });
 
-  test('edited → pr_event_observational, settled cleanly (PR body/title edits carry no FSM transition; state is native-event + status-label driven — issue #182)', async () => {
+  test('edited → pr_event_observational, settled cleanly (PR body/title edits carry no FSM transition; state is native-event + status-label driven)', async () => {
     const result = await resolveTransition(makePrEnvelope({ action: 'edited' }), makeDeps());
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -1181,7 +1181,7 @@ describe('resolveTransition — pull_request', () => {
     }
   });
 
-  test('review_requested with no prior → unsupported_action (we missed the opened event; prior=__initial__ is not a legit review-entry state per PR #46 rev3)', async () => {
+  test('review_requested with no prior → unsupported_action (we missed the opened event; prior=__initial__ is not a legit review-entry state)', async () => {
     const result = await resolveTransition(
       makePrEnvelope({ action: 'review_requested' }),
       makeDeps(),
@@ -1190,7 +1190,7 @@ describe('resolveTransition — pull_request', () => {
     if (!result.ok) expect(result.reason).toBe('unsupported_action');
   });
 
-  test('review_requested with prior=in_review → unsupported_action (additional reviewer requested on already-reviewing PR; not a state transition — PR #46 rev3)', async () => {
+  test('review_requested with prior=in_review → unsupported_action (additional reviewer requested on already-reviewing PR; not a state transition)', async () => {
     const ledger = new InMemoryAuditLedgerWriter();
     await ledger.append({
       deliveryId: 'd-prior',
@@ -1266,7 +1266,7 @@ describe('resolveTransition — pull_request', () => {
   });
 });
 
-describe('resolveTransition — pull_request labeled (issue #178 structural review)', () => {
+describe('resolveTransition — pull_request labeled', () => {
   const REVIEW_MARKER =
     '<!-- sf:structural sf:agent=review@opus-4-7 run=006F92T1MF2FBRG8T9Q321YMHN -->';
 
@@ -1341,7 +1341,7 @@ describe('resolveTransition — pull_request labeled (issue #178 structural revi
     }
   });
 
-  test('labeled status:changes_requested on an in_review PR → in_review → changes_requested, actor=ReviewAgent (issue #182, single-agent FSM fallback)', async () => {
+  test('labeled status:changes_requested on an in_review PR → in_review → changes_requested, actor=ReviewAgent (single-agent FSM fallback)', async () => {
     const substrate = new InMemorySubstrateClient();
     substrate.setLabels('PR_kwAOA', ['status:changes_requested']);
     const ledger = await ledgerWithPrState('in_review');
@@ -1366,7 +1366,7 @@ describe('resolveTransition — pull_request labeled (issue #178 structural revi
     }
   });
 
-  test('labeled status:in_review on a changes_requested PR → changes_requested → in_review, actor=BuildAgent (issue #182 revision pushed)', async () => {
+  test('labeled status:in_review on a changes_requested PR → changes_requested → in_review, actor=BuildAgent (revision pushed)', async () => {
     const substrate = new InMemorySubstrateClient();
     substrate.setLabels('PR_kwAOA', ['status:in_review']);
     const ledger = await ledgerWithPrState('changes_requested');
@@ -1391,7 +1391,7 @@ describe('resolveTransition — pull_request labeled (issue #178 structural revi
     }
   });
 
-  test('unlabeled status:in_review with status:changes_requested remaining (ReviewAgent swap) → observational FSM-forward swap (issue #182)', async () => {
+  test('unlabeled status:in_review with status:changes_requested remaining (ReviewAgent swap) → observational FSM-forward swap', async () => {
     const substrate = new InMemorySubstrateClient();
     // ReviewAgent applied status:changes_requested then removed status:in_review;
     // the ledger is still at in_review (same-batch window) and the remaining label
@@ -1411,7 +1411,7 @@ describe('resolveTransition — pull_request labeled (issue #178 structural revi
     }
   });
 
-  test('unlabeled status:changes_requested with status:in_review remaining (BuildAgent swap) → observational FSM-forward swap (issue #182)', async () => {
+  test('unlabeled status:changes_requested with status:in_review remaining (BuildAgent swap) → observational FSM-forward swap', async () => {
     const substrate = new InMemorySubstrateClient();
     // BuildAgent applied status:in_review then removed status:changes_requested;
     // ledger still at changes_requested, remaining status:in_review is a legal pr
@@ -1471,7 +1471,7 @@ describe('resolveTransition — pull_request labeled (issue #178 structural revi
     if (!result.ok) expect(result.reason).toBe('no_status_label');
   });
 
-  test('unlabeled status:in_review with LEDGERED status:approved remaining → observational ledger-converging cleanup (issue #178 rev5 + codex round 3)', async () => {
+  test('unlabeled status:in_review with LEDGERED status:approved remaining → observational ledger-converging cleanup', async () => {
     const substrate = new InMemorySubstrateClient();
     // The swap window: ReviewAgent applied status:approved BEFORE removing
     // status:in_review, the approved transition is already ledgered, so the
@@ -1491,9 +1491,9 @@ describe('resolveTransition — pull_request labeled (issue #178 structural revi
     }
   });
 
-  test('PR nuance (codex round 4): unlabeled the LEDGERED status:approved with status:in_review remaining → observational (prFsm HAS approved→in_review, changes-after-approval)', async () => {
-    // Round 3 flagged this shape as a reversal violation; round 4's
-    // FSM-forward case recognizes approved→in_review as a genuinely LEGAL
+  test('PR nuance: unlabeled the LEDGERED status:approved with status:in_review remaining → observational (prFsm HAS approved→in_review, changes-after-approval)', async () => {
+    // Not a reversal violation: the FSM-forward case recognizes
+    // approved→in_review as a genuinely LEGAL
     // regression direction for PRs — and the labeled half of the same swap
     // ledgers the actual approved→in_review transition.
     const substrate = new InMemorySubstrateClient();
@@ -1512,7 +1512,7 @@ describe('resolveTransition — pull_request labeled (issue #178 structural revi
     }
   });
 
-  test('same-batch swap (codex round 4 P2b): ledger stale at in_review, unlabeled status:in_review with status:approved remaining → observational (legal pr edge in_review→approved)', async () => {
+  test('same-batch swap: ledger stale at in_review, unlabeled status:in_review with status:approved remaining → observational (legal pr edge in_review→approved)', async () => {
     // The apply+remove pair arrived in ONE Service Bus batch — the removal is
     // resolved before the apply's approved ledger row lands, so the ledger
     // still says in_review. status:approved remains, one legal pr FSM edge
@@ -1548,7 +1548,7 @@ describe('resolveTransition — pull_request labeled (issue #178 structural revi
     }
   });
 
-  test('unlabeled the ONLY status label on a PR → status_label_removed violation, NOT observational (issue #178 rev5)', async () => {
+  test('unlabeled the ONLY status label on a PR → status_label_removed violation, NOT observational', async () => {
     const substrate = new InMemorySubstrateClient();
     substrate.setLabels('PR_kwAOA', ['area:webhook']); // no status:* remains
     const ledger = new InMemoryAuditLedgerWriter();
@@ -1618,7 +1618,7 @@ describe('resolveTransition — pull_request_review', () => {
     }
   });
 
-  test('HUMAN native review (actor=human, no appActorUnresolved) approving the App PR still resolves in_review → approved (issue #178: humans CAN approve via native review)', async () => {
+  test('HUMAN native review (actor=human, no appActorUnresolved) approving the App PR still resolves in_review → approved (humans CAN approve via native review)', async () => {
     const ledger = new InMemoryAuditLedgerWriter();
     await ledger.append({
       deliveryId: 'd-prior',
@@ -1674,9 +1674,9 @@ describe('resolveTransition — pull_request_review', () => {
     }
   });
 
-  test('submitted state=changes_requested with prior=in_review → DEFERRED unsupported_review_state (issue #198: needs the downstream label+findings bridge, else the PR strands)', async () => {
+  test('submitted state=changes_requested with prior=in_review → DEFERRED unsupported_review_state (needs the downstream label+findings bridge, else the PR strands)', async () => {
     // A native CHANGES_REQUESTED review on an in_review PR is intentionally NOT
-    // advanced: pr:in_review→changes_requested is a legal edge, but the #182
+    // advanced: pr:in_review→changes_requested is a legal edge, but the
     // revision loop is label+findings-driven and a native review supplies
     // neither — accepting it would dispatch BuildAgent (which then skips/fails)
     // and strand the PR. Deferring leaves the record cleanly at in_review.
@@ -2088,7 +2088,7 @@ describe('resolveTransition — ADR 0009 §D App-actor resolution (appActorUnres
     if (result.ok) expect(result.transition.actor).toBe('BuildAgent');
   });
 
-  test('SINGLE-AGENT edge ignores a stale unrelated comment marker → resolves via FSM (codex PR #152)', async () => {
+  test('SINGLE-AGENT edge ignores a stale unrelated comment marker → resolves via FSM', async () => {
     const substrate = new InMemorySubstrateClient();
     substrate.setLabels('I_spec', ['kind:spec', 'status:drafting', 'status:ready_for_review']);
     // A stale BuildAgent stamp lingers on the record from an earlier action; the
@@ -2201,7 +2201,7 @@ describe('resolveTransition — ADR 0009 §D App-actor resolution (appActorUnres
     if (result.ok) expect(result.transition.actor).toBe('SpecAgent');
   });
 
-  // codex PR #152 P2 — marker author authentication. Comments/bodies are
+  // Marker author authentication. Comments/bodies are
   // human-writable, so a structural marker is trusted ONLY when posted by the
   // App; a forged marker must NOT steal attribution.
   test('SECURITY: a marker in a NON-App-authored comment is forged → ignored → defer', async () => {
@@ -2239,7 +2239,7 @@ describe('resolveTransition — ADR 0009 §D App-actor resolution (appActorUnres
     if (!result.ok) expect(result.reason).toBe('actor_unresolved_app_sender');
   });
 
-  // codex PR #152 — the resolver MUST authenticate markers against the same
+  // The resolver MUST authenticate markers against the same
   // configured App-bot login set the parser used (deps.appBotLogins), not just
   // the env-derived default; otherwise a config-supplied slug parses the sender
   // but its own markers are rejected.
@@ -2264,7 +2264,7 @@ describe('resolveTransition — ADR 0009 §D App-actor resolution (appActorUnres
     if (withConfig.ok) expect(withConfig.transition.actor).toBe('BuildAgent');
   });
 
-  // codex PR #152 — an unmarked App transition on a {system, single-agent} edge
+  // An unmarked App transition on a {system, single-agent} edge
   // RESOLVES that agent (it is NOT deferred): both actors are FSM-authorized, so
   // attributing the agent is no escalation, and the review-loop / deployment
   // flows that ride such edges have no other marker channel. Here PR
@@ -2322,7 +2322,7 @@ describe('resolveTransition — ADR 0009 §D App-actor resolution (appActorUnres
     if (result.ok) expect(result.transition.actor).toBe('SpecAgent');
   });
 
-  // codex PR #152 P2 — the creation-edge body path is ALSO author-authenticated:
+  // The creation-edge body path is ALSO author-authenticated:
   // a human-opened Decision body marker is forged → must NOT resolve → defer.
   test('SECURITY: a creation-edge body marker from a NON-App author is forged → defer', async () => {
     const substrate = new InMemorySubstrateClient();

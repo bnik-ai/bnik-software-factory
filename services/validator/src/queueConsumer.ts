@@ -2,8 +2,8 @@
 // Invariants:
 //   - The validator package defines its OWN consumer contract. The
 //     producer-side interface lives in services/github-app/src/eventQueue.ts
-//     and is symmetric but independent. B7 wires both to one Service Bus
-//     namespace; tests use in-memory impls.
+//     and is symmetric but independent. Production wires both to one
+//     Service Bus namespace; tests use in-memory impls.
 //   - Messages are pulled in batches; the consumer is responsible for
 //     ACKing or dead-lettering each one by lock token.
 //   - Order is per-session (record_node_id) per the design's session-lock
@@ -14,7 +14,7 @@ import type { Kind } from './kinds.js';
 import type { Actor } from './types.js';
 
 // One unit of work the validator processes. Constructed by the
-// payloadParser (B3-PR11) + transitionResolver (B3-PR12) from a raw
+// payloadParser + transitionResolver from a raw
 // GitHub webhook delivery, with the lockToken stitched in at the
 // Service Bus boundary.
 //
@@ -24,8 +24,8 @@ import type { Actor } from './types.js';
 // run the FSM yet); at the orchestrator-input boundary the field is present.
 // Orchestrator MUST gate dispatch on verdict==='accept' — flagged/rejected
 // transitions were recorded by the validator but do not authorize agent work
-// (B4-PR4 codex finding: routingTable claimed FSM-accepted-only without an
-// actual filter, so a HARD-REJECT outcome could still trigger an agent run).
+// (without that filter a HARD-REJECT outcome could still trigger an agent
+// run).
 export type TransitionVerdict = 'accept' | 'flag' | 'reject';
 
 export interface ParsedTransitionMessage {
@@ -53,7 +53,7 @@ export interface ParsedTransitionMessage {
   // (`repository.full_name`) + GitHub App installation id from the webhook,
   // populated by payloadParser. Threaded onward to the orchestrator + agents
   // so multi-repo dispatch authenticates as the right installation. Optional
-  // — non-issue/PR events or pre-M2 messages lack them.
+  // — non-issue/PR events lack them.
   repoFullName?: string;
   installationId?: number;
 }
@@ -66,7 +66,7 @@ export interface EventQueueConsumer {
 
 // In-memory consumer for tests and v0 boot. Enqueue messages via
 // `enqueue` (test helper); the validator main loop calls `receive`.
-// Real Service Bus impl ships in B7.
+// The Service Bus impl is serviceBusEventQueueConsumer.ts.
 export class InMemoryEventQueueConsumer implements EventQueueConsumer {
   private readonly pending: ParsedTransitionMessage[] = [];
   private readonly inflight: Map<string, ParsedTransitionMessage> = new Map();

@@ -6,7 +6,7 @@ export interface HandleWebhookArgs {
   rawBody: Buffer | Uint8Array;
   secret: string;
   // Optional whitelist of allowed `X-GitHub-Event` values. When omitted, any
-  // non-empty event is accepted (preserves B2-PR1 behaviour). When provided,
+  // non-empty event is accepted. When provided,
   // events outside the set return 400 `event_not_allowed`.
   allowedEvents?: ReadonlySet<string>;
 }

@@ -6,8 +6,9 @@ import type { Actor, FsmRejectReason, Verdict } from './types.js';
 // Invariants:
 //   - GOAL_TRANSITIONS is deep-frozen; nested transition entries cannot be
 //     reassigned at runtime (Object.freeze on its own is shallow).
-//   - Goal off-policy transitions emit `flag`, NOT `reject`. The Incident /
-//     Release / Deployment / Decision FSMs (later PRs) will emit `reject`.
+//   - Goal off-policy transitions emit `flag`, NOT `reject`. The hard-reject
+//     FSMs (Deployment / Decision; Incident / Release when shipped) emit
+//     `reject`.
 //   - No self-loops; the audit-ledger 2-phase contract handles
 //     duplicate-delivery idempotency one layer up.
 //   - Pure function: no I/O, no clock, no env reads.

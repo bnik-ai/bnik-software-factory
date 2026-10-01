@@ -2,16 +2,16 @@
 // Routes: GET /admin/install/status, GET /admin/health, POST /admin/replay.
 // Auth: Microsoft Entra ID via Container Apps built-in authentication
 // (Easy Auth). The application code does NOT enforce auth — the platform
-// rejects unauthenticated requests before they reach Hono. v0 skeleton
-// ships the routes with stub responses; B7+ wires real install-status
-// reads from the audit_ledger + Postgres tenants table and admin replay
-// from the Service Bus dead-letter queue.
+// rejects unauthenticated requests before they reach Hono. v0 ships
+// install-status and replay as 503 not_implemented_v0 stubs; the real
+// routes read the audit_ledger + Postgres tenants table and replay from the
+// Service Bus dead-letter queue.
 
 import { Hono } from 'hono';
 
 export interface AdminAppConfig {
   // Service version exposed via /admin/health. Defaults to '0.0.0' (v0
-  // boot has no real version yet; B7 wires git-sha-at-build).
+  // boot passes no version).
   version?: string;
 }
 

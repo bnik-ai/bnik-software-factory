@@ -4,12 +4,10 @@ import { InMemoryInstallationTokenCache } from '../src/installationTokenCache.js
 import type { MintedInstallationToken } from '../src/installationTokenMinter.js';
 import { SUBSTRATE_PERMISSIONS, buildSubstrateClient } from '../src/substrateClient.js';
 
-// PR #21 rev0 → rev1 Codex P1 finding: when both factories are configured
-// with the same backing cache instance, the rev0 implementation would let
-// the second factory's `getToken` hit the first factory's cached token
-// because both used the bare installation_id as the cache key. The fix
-// namespaces each factory's cache keys (`substrate:<id>` vs `agent:<id>`)
-// so a shared backing cache is safe. These tests pin that property.
+// When both factories share one backing cache instance, each namespaces its
+// cache keys (`substrate:<id>` vs `agent:<id>`); with the bare installation_id
+// as the key, the second factory's `getToken` would hit the first factory's
+// cached token and cross permission scopes. These tests pin that isolation.
 
 const INSTALLATION_ID = 987654;
 const APP_JWT_SUBSTRATE = 'eyJhbGciOiJSUzI1NiJ9.signed.substrate';
@@ -55,8 +53,8 @@ describe('cross-factory cache isolation', () => {
     expect(substrateMint).toHaveBeenCalledTimes(1);
 
     // Agent runs second with the SAME backing cache. If the cache key were
-    // the bare installation_id (rev0 bug), agent.getToken would return the
-    // substrate token without minting. With the rev1 namespacing fix, agent
+    // the bare installation_id, agent.getToken would return the substrate
+    // token without minting. With per-factory namespacing, agent
     // sees a cache miss and mints its own agent-scoped token.
     const agentToken = await agent.getToken(INSTALLATION_ID);
     expect(agentToken).toBe(AGENT_TOKEN);

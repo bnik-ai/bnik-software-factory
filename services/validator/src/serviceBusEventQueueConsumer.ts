@@ -5,8 +5,8 @@
 //     session via acceptNextSession(), drains up to maxMessages, and the
 //     session receiver is close()'d in a finally so the session lock is
 //     released before the next receive(). Leaving a session receiver open
-//     across receive() calls leaks session locks (plan risk B2).
-//   - The github-app B1 producer serializes the SB body as
+//     across receive() calls leaks session locks.
+//   - The github-app producer (serviceBusEventQueue.ts) serializes the SB body as
 //     { deliveryId, event, payload } where `payload` is the raw webhook
 //     body JSON string. The consumer rebuilds a RawWebhookDelivery, runs
 //     payloadParser → transitionResolver, stitches lockToken = msg.lockToken,
@@ -41,17 +41,17 @@ export const SERVICE_BUS_CONSUME_QUEUE_ENV = 'SERVICE_BUS_CONSUME_QUEUE';
 
 const DEFAULT_SESSION_WAIT_MS = 5000;
 
-// Issue #178 P2: sentinel returned by toTransitionMessage for a benign,
+// Sentinel returned by toTransitionMessage for a benign,
 // non-transition event (e.g. a PR status-label removal — the cleanup half of
 // ReviewAgent's status:in_review→status:approved label swap). The receive loop
 // completeMessage()s it cleanly instead of dead-lettering: it is "nothing to
 // record", not a substrate-invariant violation.
 const OBSERVATIONAL_SETTLE = Symbol('observational_settle');
 
-// Typed dead-letter detail (M5 finding): the generic
-// 'unparseable_or_unresolvable' reason erased WHICH parse/resolve failure
-// occurred, costing live debugging time. toTransitionMessage now returns the
-// typed reason; the receive loop threads it into deadLetterErrorDescription.
+// Typed dead-letter detail: toTransitionMessage returns the typed
+// parse/resolve failure reason (a generic 'unparseable_or_unresolvable' would
+// erase WHICH failure occurred); the receive loop threads it into
+// deadLetterErrorDescription.
 interface ResolutionFailure {
   failureDetail: string;
 }
@@ -238,7 +238,7 @@ export class ServiceBusEventQueueConsumer {
         try {
           message = await this.toTransitionMessage(sbMessage, lockToken);
         } catch (err) {
-          // M2: the real GithubSubstrateClient throws on transient GitHub
+          // The real GithubSubstrateClient throws on transient GitHub
           // failures (token mint / GraphQL 5xx / network). Containing the
           // throw HERE is critical: it happens inside receive(), BEFORE
           // runConsumerLoop's per-message try, so an uncaught throw would
@@ -257,7 +257,7 @@ export class ServiceBusEventQueueConsumer {
           return parsed;
         }
         if (message === OBSERVATIONAL_SETTLE) {
-          // Issue #178 P2: benign non-transition event (PR status-label
+          // Benign non-transition event (PR status-label
           // removal) — settle cleanly, never dead-letter.
           await receiver.completeMessage(sbMessage);
           continue;
@@ -280,7 +280,7 @@ export class ServiceBusEventQueueConsumer {
       keepOpen = parsed.length > 0;
       return parsed;
     } finally {
-      // CRITICAL (plan risk B2): release the session lock unless the caller
+      // CRITICAL: release the session lock unless the caller
       // still has inflight messages to settle on this receiver. ack()/
       // deadletter() close the receiver once its last message is settled.
       if (!keepOpen) {
@@ -332,8 +332,8 @@ export class ServiceBusEventQueueConsumer {
   // Rebuild a RawWebhookDelivery from the SB body, parse + resolve, stitch
   // the lockToken. Returns:
   //   - a ParsedTransitionMessage on a resolvable transition (caller processes),
-  //   - OBSERVATIONAL_SETTLE for a benign non-transition event (issue #178 P2:
-  //     a PR status-label removal) — the caller completeMessage()s it cleanly,
+  //   - OBSERVATIONAL_SETTLE for a benign non-transition event (e.g. a PR
+  //     status-label removal) — the caller completeMessage()s it cleanly,
   //   - undefined when the delivery is unparseable / unresolvable (caller
   //     dead-letters).
   private async toTransitionMessage(
@@ -365,7 +365,7 @@ export class ServiceBusEventQueueConsumer {
       this.appBotLogins !== undefined ? { appBotLogins: this.appBotLogins } : undefined,
     );
     if (!parseResult.ok) {
-      // Issue #178 rev5: observational parse outcomes (issue_comment — the
+      // Observational parse outcomes (issue_comment — the
       // structural-marker carrier) settle cleanly; real parse failures
       // dead-letter as before, carrying the typed reason.
       return parseResult.observational === true
@@ -386,7 +386,7 @@ export class ServiceBusEventQueueConsumer {
       return this.replayRecorded(envelope, recorded, lockToken);
     }
 
-    // M2: select the per-message substrate. When the envelope carries an
+    // Select the per-message substrate. When the envelope carries an
     // installationId AND a factory is wired (GITHUB_APP env present), build a
     // real GithubSubstrateClient that mints a token for that installation;
     // otherwise fall back to the boot substrate (in-memory). Construction is
@@ -401,12 +401,12 @@ export class ServiceBusEventQueueConsumer {
       substrate,
       ledger: this.ledgerReader,
       // Authenticate markers against the SAME App-bot login set used to parse
-      // the sender, so a config-supplied slug isn't rejected by the resolver
-      // (codex PR #152). undefined → resolver falls back to env.
+      // the sender, so a config-supplied slug isn't rejected by the resolver.
+      // undefined → resolver falls back to env.
       ...(this.appBotLogins !== undefined ? { appBotLogins: this.appBotLogins } : {}),
     });
     if (!resolveResult.ok) {
-      // Issue #178 P2: observational events (PR status-label removal) settle
+      // Observational events (PR status-label removal) settle
       // cleanly — signal the receive loop to completeMessage rather than
       // dead-letter. All other failures dead-letter as before.
       return resolveResult.observational === true
@@ -437,7 +437,7 @@ export class ServiceBusEventQueueConsumer {
       // non-authorizing placeholder (resolveTransition replaces it on the first
       // pass, but this replay path short-circuits before that). Using the
       // placeholder would re-evaluate an agent-only transition as `human` and
-      // republish a spurious actor_not_authorized flag. (codex PR #152)
+      // republish a spurious actor_not_authorized flag.
       actor: recorded.actor as ParsedTransitionMessage['actor'],
       recordType: recorded.recordType,
       ...(recorded.recordKind !== undefined ? { recordKind: recorded.recordKind } : {}),
@@ -448,7 +448,7 @@ export class ServiceBusEventQueueConsumer {
       receivedAt: recorded.receivedAt,
       ...(envelope.headBranch !== undefined ? { headBranch: envelope.headBranch } : {}),
       ...(envelope.baseBranch !== undefined ? { baseBranch: envelope.baseBranch } : {}),
-      // M2: re-derived from the re-parsed envelope (parser is pure over the
+      // Re-derived from the re-parsed envelope (parser is pure over the
       // raw body, unaffected by ledger state).
       ...(envelope.repoFullName !== undefined ? { repoFullName: envelope.repoFullName } : {}),
       ...(envelope.installationId !== undefined ? { installationId: envelope.installationId } : {}),
@@ -461,7 +461,7 @@ export class ServiceBusEventQueueConsumer {
   }
 }
 
-// The B1 producer body contract: { deliveryId, event, payload }. The SB SDK
+// The github-app producer body contract: { deliveryId, event, payload }. The SB SDK
 // JSON-deserializes a message sent with applicationProperties content-type
 // application/json, so `body` may arrive as an object OR a JSON string —
 // handle both.
@@ -507,8 +507,7 @@ function isSessionUnavailable(err: unknown): boolean {
 }
 
 // The @azure/service-bus SDK's normalized `ServiceBusError.code` values that
-// are transient (verified against node_modules/@azure/service-bus — codex PR
-// #142). NOTE: these are the SDK's post-normalization spellings (e.g.
+// are transient (verified against node_modules/@azure/service-bus). NOTE: these are the SDK's post-normalization spellings (e.g.
 // `SessionCannotBeLocked`, NOT the rhea-level `SessionCannotBeLockedError`;
 // `ServiceBusy`, NOT `ServerBusy`).
 const TRANSIENT_SB_CODES: ReadonlySet<string> = new Set([
@@ -540,7 +539,7 @@ export function isTransientServiceBusError(err: unknown): boolean {
 // (`name === 'ServiceBusError'`, which the SDK sets on every ServiceBusError)
 // before swallowing. The dangling acceptNextSession 'ServiceTimeout' rejection
 // that crash-looped the job IS a ServiceBusError, so it still matches; a stray
-// AbortError from unrelated code does NOT. (codex PR #142 finding.)
+// AbortError from unrelated code does NOT.
 export function isTransientServiceBusErrorStrict(err: unknown): boolean {
   if (typeof err !== 'object' || err === null) return false;
   const e = err as { name?: unknown; code?: unknown };

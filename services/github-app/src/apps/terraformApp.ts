@@ -3,8 +3,8 @@
 // Auth: signed dispatch from GitHub Actions + validator-bot. v0 uses the
 // same HMAC scheme as ca-agent, with a distinct env var so secret
 // rotation can move independently. Real terraform execution (shelling
-// out to the terraform CLI under managed identity) lands in B7+ when the
-// platform-overlay workload roots exist to run against.
+// out to the terraform CLI under managed identity) is not implemented:
+// plan/apply return 503 not_implemented_v0.
 
 import { Hono } from 'hono';
 import { verifyWebhookSignature } from '../hmac.js';
@@ -21,8 +21,8 @@ export interface TerraformAppConfig {
   // Optional GitHub App substrate-scoped client (JWT→installation-token
   // minting for Terraform commits). Injected at boot via buildGitHubAppDeps
   // when GITHUB_APP_* env is set. Optional so the existing HMAC-only test
-  // suite keeps working; the plan/apply routes swap from 503 to using this
-  // client in a follow-up PR.
+  // suite keeps working; the plan/apply routes return 503 and do not use
+  // this client in v0.
   substrateClient?: SubstrateClient;
 }
 

@@ -56,8 +56,8 @@ export interface WireParsedTransitionMessage {
   // ADR 0012 §"Activation status" activation gate (a). Optional on the
   // wire: emitted only for PR-kind transitions where the parser
   // populated them from `pull_request.head.ref` / `pull_request.base.ref`.
-  // The orchestrator-side wire-deserializer (PR #110, sister
-  // serviceBusAgentDispatcher) already accepts both fields and feeds
+  // The orchestrator-side wire-deserializer (sister
+  // serviceBusAgentDispatcher) accepts both fields and feeds
   // them to the BranchSyncChecker via processMessage.
   headBranch?: string;
   baseBranch?: string;
@@ -73,14 +73,12 @@ export interface WireParsedTransitionMessage {
 
 export interface OutgoingPublisher {
   publish(message: ParsedTransitionMessage, verdict: Verdict): Promise<void>;
-  // Issue #182: release any underlying transport handles (the SB sender +
-  // its ServiceBusClient). The consumer-loop boot MUST call this when the
-  // loop ends — an open AMQP connection keeps the Node event loop alive, so
-  // a drained Container Apps Job execution never exits and is killed at the
-  // replica timeout → 'Failed' despite correct processing (same class of
-  // leak the orchestrator fixed for its consumer + dispatcher in PR #143;
-  // the validator's publisher half was missed). Optional: the in-memory
-  // impl holds no handles.
+  // Release any underlying transport handles (the SB sender + its
+  // ServiceBusClient). The consumer-loop boot MUST call this when the loop
+  // ends — an open AMQP connection keeps the Node event loop alive, so a
+  // drained Container Apps Job execution never exits and is killed at the
+  // replica timeout → 'Failed' despite correct processing. Optional: the
+  // in-memory impl holds no handles.
   close?(): Promise<void>;
 }
 
@@ -90,7 +88,7 @@ export function serializePublishedMessage(
 ): PublishedMessageWire {
   // headBranch/baseBranch are emitted only when defined so non-PR
   // transitions keep the unchanged wire shape and the orchestrator's
-  // existing skip-when-absent gate (PR #101) governs them. Matches the
+  // existing skip-when-absent gate governs them. Matches the
   // orchestrator's sister serializer in serviceBusAgentDispatcher.ts.
   const wireMessage: WireParsedTransitionMessage = {
     lockToken: message.lockToken,
@@ -109,7 +107,7 @@ export function serializePublishedMessage(
   };
   if (message.headBranch !== undefined) wireMessage.headBranch = message.headBranch;
   if (message.baseBranch !== undefined) wireMessage.baseBranch = message.baseBranch;
-  // M2: emit repo slug + installation id when present (omitted otherwise so
+  // Emit repo slug + installation id when present (omitted otherwise so
   // the wire shape is unchanged for transitions lacking them).
   if (message.repoFullName !== undefined) wireMessage.repoFullName = message.repoFullName;
   if (message.installationId !== undefined) wireMessage.installationId = message.installationId;
@@ -160,7 +158,7 @@ export class ServiceBusOutgoingPublisher implements OutgoingPublisher {
   private readonly senderFactory: () => SenderLike | Promise<SenderLike>;
   // The lazily-created ServiceBusClient behind the sender (auth mode only;
   // null in senderFactory test-seam mode). Closed by close() — see the
-  // OutgoingPublisher.close contract (issue #182 idle-exit leak).
+  // OutgoingPublisher.close contract (idle-exit leak).
   private sbClient: { close(): Promise<void> } | null = null;
 
   constructor(config: ServiceBusOutgoingPublisherConfig) {
@@ -230,7 +228,7 @@ export type OutgoingPublisherBootConfig =
     };
 
 // Env-driven boot resolution. Mirrors the orchestrator's dispatcher
-// resolution shape (B4-PR6) so operators set the same env on both
+// resolution shape so operators set the same env on both
 // sides for the same auth mode.
 export function resolveOutgoingPublisherBootConfig(): OutgoingPublisherBootConfig {
   const queueName = process.env[SERVICE_BUS_DISPATCH_QUEUE_ENV] ?? DEFAULT_DISPATCH_QUEUE_NAME;

@@ -79,7 +79,7 @@ export class ServiceBusEventQueue implements EventQueue {
         deliveryId: args.deliveryId,
         event: args.event,
         payload: args.payload,
-        // M2: repo slug + installation id (when present on the delivery).
+        // Repo slug + installation id (when present on the delivery).
         // Omitted from the body when undefined so the wire shape is
         // unchanged for deliveries lacking an `installation` block.
         ...(args.repoFullName !== undefined ? { repoFullName: args.repoFullName } : {}),

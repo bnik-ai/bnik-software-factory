@@ -154,7 +154,7 @@ describe('resolveEventQueueConsumerFromEnv — env-driven backend selection', ()
   });
 });
 
-describe('runConsumerLoop — publishes downstream after ledger append, before ack (B3-PR26)', () => {
+describe('runConsumerLoop — publishes downstream after ledger append, before ack', () => {
   test('successful messages get published to downstream queue with verdict populated', async () => {
     const consumer = new InMemoryEventQueueConsumer();
     const ledger = new InMemoryAuditLedgerWriter();

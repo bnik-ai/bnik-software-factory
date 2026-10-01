@@ -32,7 +32,7 @@ describe('evaluateTaskTransition — allowed transitions', () => {
     ).toEqual({ verdict: 'accept' });
   });
 
-  test('ready → done by OpsAgent (issue #180 post-merge bookkeeping — v0 BuildAgent never claims the Task)', () => {
+  test('ready → done by OpsAgent (post-merge bookkeeping — v0 BuildAgent never claims the Task)', () => {
     expect(
       evaluateTaskTransition({ fromState: 'ready', toState: 'done', actor: 'OpsAgent' }),
     ).toEqual({ verdict: 'accept' });
@@ -125,7 +125,7 @@ describe('evaluateTaskTransition — unauthorized actor emits soft flag', () => 
     ).toEqual({ verdict: 'flag', reason: 'actor_not_authorized' });
   });
 
-  test('ready → done by BuildAgent (issue #180 already-satisfied empty-diff settle)', () => {
+  test('ready → done by BuildAgent (already-satisfied empty-diff settle)', () => {
     expect(
       evaluateTaskTransition({ fromState: 'ready', toState: 'done', actor: 'BuildAgent' }),
     ).toEqual({ verdict: 'accept' });

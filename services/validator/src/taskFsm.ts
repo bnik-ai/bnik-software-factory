@@ -8,17 +8,17 @@ import type { Actor, FsmRejectReason, Verdict } from './types.js';
 //   - Off-policy transitions emit `flag`.
 //   - "any → abandoned" covers proposed / ready / in_progress / in_review,
 //     by human OR PlannerAgent (with documented reason — the validator
-//     does not enforce the documentation requirement here; that's a
-//     field-level check in a later PR).
-//   - in_review → in_progress is the "review requested changes" loop. Issue
-//     #178: under structural review (single GitHub App identity, ADR 0009),
+//     does not enforce the documentation requirement here; it is a
+//     field-level check, not an FSM rule).
+//   - in_review → in_progress is the "review requested changes" loop. Under
+//     structural review (single GitHub App identity, ADR 0009),
 //     ReviewAgent DRIVES this Task transition (applies status:in_progress on the
 //     paired Task) to bounce the work back so the orchestrator dispatches
 //     BuildAgent off `task:in_review→in_progress` (routingTable.ts). So the edge
 //     admits BOTH ReviewAgent (the driver of the label) and BuildAgent (legacy/
 //     self-restart). Multi-agent edge → the validator's App-actor resolver uses
 //     ReviewAgent's structural-comment marker to attribute the transition.
-//   - ready → done admits TWO agents (issue #180):
+//   - ready → done admits TWO agents:
 //       (a) OpsAgent's post-merge completion: v0 BuildAgent never drives
 //           ready→in_progress→in_review (it scaffolds the PR without touching
 //           Task status labels), so the paired Task still sits at `ready` when
@@ -64,7 +64,7 @@ export const TASK_TRANSITIONS: Readonly<
   },
   ready: {
     in_progress: { allowedActors: ['BuildAgent'] },
-    // Issue #180: OpsAgent post-merge completion (v0 BuildAgent never claims the
+    // OpsAgent post-merge completion (v0 BuildAgent never claims the
     // Task, so it is still `ready` when the paired PR merges) AND BuildAgent
     // already-satisfied completion (an empty diff for a Task already met by
     // existing code is terminal, settled with a structural marker — no PR).
@@ -77,8 +77,8 @@ export const TASK_TRANSITIONS: Readonly<
   },
   in_review: {
     done: { allowedActors: ['OpsAgent'] },
-    // ReviewAgent drives the structural-review "request changes" bounce (issue
-    // #178); BuildAgent retained for the legacy self-restart path.
+    // ReviewAgent drives the structural-review "request changes" bounce;
+    // BuildAgent retained for the legacy self-restart path.
     in_progress: { allowedActors: ['ReviewAgent', 'BuildAgent'] },
     abandoned: { allowedActors: HUMAN_OR_PLANNER_AGENT },
   },
