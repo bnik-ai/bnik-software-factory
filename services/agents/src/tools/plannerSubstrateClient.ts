@@ -18,10 +18,10 @@
 //     impl writes the substrate (label change) and the validator's normal
 //     inbound webhook flow evaluates the transition. PlannerAgent does not
 //     emit a separate transition message; the substrate write IS the event.
-//   - Pure interface: no I/O at construction. Real impl (B5-PR11+) wraps
-//     a GraphQL/REST client + label-edit calls; v0 ships the stub so the
-//     binary boots and tests exercise the planner logic against an
-//     in-memory backlog.
+//   - Pure interface: no I/O at construction. The real impl
+//     (GithubPlannerSubstrateClient) wraps GraphQL/REST + label-edit calls;
+//     the stub lets the binary boot and tests exercise the planner logic
+//     against an in-memory backlog.
 
 import type { Actor } from '../types.js';
 
@@ -88,8 +88,8 @@ export interface PlannerSubstrateClient {
 }
 
 // v0 stub: in-memory backlog the tests seed + the planner reads. Boot
-// uses this so the binary starts without a substrate; B5-PR11+ swaps in a
-// GitHub-app-backed impl behind the same interface.
+// uses this so the binary starts without a substrate;
+// GithubPlannerSubstrateClient is the GitHub-App-backed impl of the same interface.
 export class StubPlannerSubstrateClient implements PlannerSubstrateClient {
   private readonly tasks: Map<string, PlannerTaskMetadata> = new Map();
   private readonly transitions: Array<{
@@ -195,8 +195,7 @@ const PRIORITY_LABEL_PREFIX = 'priority:';
 // Tasks are created (task.yml + PlannerAgent fan-out) with only `kind:task`, and
 // the validator derives `proposed` into the audit ledger — it never writes a
 // `status:proposed` label. So a proposed Task is `kind:task` open WITHOUT any of
-// these later status labels; searching `label:status:proposed` finds nothing
-// (codex PR #150).
+// these later status labels; searching `label:status:proposed` finds nothing.
 const NON_PROPOSED_TASK_STATES: ReadonlyArray<string> = [
   'ready',
   'in_progress',
@@ -239,8 +238,7 @@ interface SearchItem {
 // All fields are OPTIONAL: the `... on Issue` inline fragment populates them
 // only when the resolved node is actually an Issue. A node id that resolves to a
 // non-Issue type (a malformed `blocked-by` ref to a User/Commit/etc.) returns a
-// non-null node with NONE of these fields, so they must be guarded before use
-// (codex PR #150).
+// non-null node with NONE of these fields, so they must be guarded before use.
 interface GraphqlTaskNode {
   number?: number;
   body?: string | null;
@@ -285,7 +283,7 @@ export class GithubPlannerSubstrateClient implements PlannerSubstrateClient {
     // IMPLICIT `proposed` state there is no `status:proposed` label, so match
     // `kind:task` open issues NOT yet promoted to a later status; for the
     // labeled states (ready / in_progress / ...) match the status carrier
-    // directly. (codex PR #150)
+    // directly.
     const scope = [
       `repo:${this.owner}/${this.repo}`,
       'is:issue',
@@ -300,7 +298,7 @@ export class GithubPlannerSubstrateClient implements PlannerSubstrateClient {
     // Page through ALL matches — a single per_page=100 page silently strands
     // proposed Tasks beyond the first 100 (GitHub search order is NOT the
     // planner's priority/dependency order), so ready work could never be
-    // promoted (codex PR #150). GitHub's search API caps at 1000 results
+    // promoted. GitHub's search API caps at 1000 results
     // (10 pages of 100); stop when a page returns fewer than a full page or the
     // declared total_count is reached, whichever comes first.
     const PER_PAGE = 100;
@@ -337,7 +335,7 @@ export class GithubPlannerSubstrateClient implements PlannerSubstrateClient {
     // cross-repo reference (the task.yml + ADR 0003 blocked-by form) via
     // repository.issue. Supporting both is required so a human-declared blocker
     // actually resolves instead of being a permanent record_not_found that
-    // strands the dependent Task. (codex PR #150)
+    // strands the dependent Task.
     const ISSUE_FIELDS = 'number body state createdAt labels(first: 50) { nodes { name } }';
     const ref = parseIssueRef(taskId);
     const { query, variables } =
@@ -380,7 +378,7 @@ export class GithubPlannerSubstrateClient implements PlannerSubstrateClient {
     // null = absent record. A non-null node MISSING the Issue fields (`labels`/
     // `createdAt`) is a non-Issue node (the `... on Issue` fragment matched
     // nothing) — also not a readable Task. Surface the typed not-found rather
-    // than throwing on `node.labels.nodes` and crashing the planner. (codex PR #150)
+    // than throwing on `node.labels.nodes` and crashing the planner.
     if (
       node === undefined ||
       node === null ||
@@ -567,12 +565,12 @@ const PLANNER_TASK_STATES: ReadonlySet<string> = new Set<PlannerTaskState>([
   'done',
   'abandoned',
 ]);
-// Precedence (issue #180 rev3): when MULTIPLE status labels are present (the
+// Precedence: when MULTIPLE status labels are present (the
 // transient apply-then-remove swap window, or a failed cleanup after
-// status:done landed), the MOST-ADVANCED state wins — terminal first. The
-// label-ORDER scan was nondeterministic there: a leftover status:ready before
-// status:done read as 'ready' and kept dependents blocked even though the
-// transition to done was already ledgered.
+// status:done landed), the MOST-ADVANCED state wins — terminal first. A
+// label-ORDER scan would be nondeterministic there: a leftover status:ready before
+// status:done would read as 'ready' and keep dependents blocked even though the
+// transition to done is already ledgered.
 const STATE_PRECEDENCE: ReadonlyArray<PlannerTaskState> = [
   'done',
   'abandoned',
@@ -593,13 +591,13 @@ function deriveStateFromLabels(labelNames: ReadonlyArray<string>): PlannerTaskSt
   // No status label = the IMPLICIT initial state. Tasks are created with only
   // `kind:task`; the validator derives `proposed` into the ledger and never
   // writes a `status:proposed` label, so an unlabeled Task is `proposed` — not a
-  // metadata error (it's the planner's primary backlog state; codex PR #150).
+  // metadata error (it's the planner's primary backlog state).
   return 'proposed';
 }
 
 // Parse an `owner/repo#number` cross-repo issue reference (the task.yml + ADR
 // 0003 blocked-by form). Returns undefined for a GraphQL node id (the listTasks
-// backlog form), which getTaskMetadata resolves via node(id:). (codex PR #150)
+// backlog form), which getTaskMetadata resolves via node(id:).
 function parseIssueRef(ref: string): { owner: string; repo: string; number: number } | undefined {
   const match = /^([^/\s]+)\/([^/#\s]+)#(\d+)$/.exec(ref.trim());
   if (match === null) return undefined;

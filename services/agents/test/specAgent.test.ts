@@ -194,7 +194,7 @@ describe('runSpecAgent — defensive guards', () => {
   });
 });
 
-describe('runSpecAgent — real content brain (M1c env-gated path)', () => {
+describe('runSpecAgent — real content brain (env-gated path)', () => {
   test('calls generateContent then issues.create with the model-authored body', async () => {
     const deps = makeDeps('Add a /healthz endpoint\n\ndetail');
     const calls: Array<{ system?: string; prompt: string }> = [];

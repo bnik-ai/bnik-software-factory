@@ -41,11 +41,11 @@ export interface GithubIssueToolConfig {
   // Injected for tests; defaults to global fetch (native in Node 20+).
   fetchImpl?: typeof fetch;
   // App slug (GITHUB_APP_SLUG, e.g. example-factory). The ONLY author whose
-  // structural markers listComments trusts (issue #182 / codex #189): PR
+  // structural markers listComments trusts: PR
   // comments are user-writable, so a marker from any other author is forgeable
   // and must not drive the revision loop. When unset, the Bot-author floor
   // still blocks human forgery (see listComments). GraphQL Bot logins drop the
-  // `[bot]` suffix (#161), so this is matched suffix-normalized.
+  // `[bot]` suffix that REST/webhook logins carry, so this is matched suffix-normalized.
   appBotLogin?: string;
 }
 
@@ -68,7 +68,7 @@ interface GraphqlIssueNode {
   body: string | null;
   state: string;
   // Optional: a non-null node whose inline fragments matched nothing (a
-  // non-Issue/PR node id) comes back WITHOUT these fields (issue #178 rev9).
+  // non-Issue/PR node id) comes back WITHOUT these fields.
   labels?: { nodes: Array<{ name: string }> };
 }
 
@@ -82,7 +82,7 @@ function structuralMarker(structural: { role: string; run: string; verdict?: str
 }
 
 // Parse the ADR 0009 §D structural marker off a comment body's leading HTML
-// comment (issue #182): the inverse of structuralMarker(). Returns undefined for
+// comment: the inverse of structuralMarker(). Returns undefined for
 // a non-structural comment (no leading marker / missing agent or run). The
 // optional `verdict=` attribute carries the review verdict the marker stamped.
 function parseStructuralMarker(
@@ -100,7 +100,7 @@ function parseStructuralMarker(
 
 // Normalize a GitHub login for App-bot comparison: lowercase + drop a trailing
 // `[bot]`. GraphQL Actor logins for a GitHub App lack the `[bot]` suffix that
-// webhook senders carry (#161), so the config slug and the queried author login
+// webhook senders carry, so the config slug and the queried author login
 // are normalized to the same form before matching.
 export function normalizeBotLogin(login: string): string {
   return login.toLowerCase().replace(/\[bot\]$/, '');
@@ -140,9 +140,8 @@ export class GithubIssueTool implements IssueTool {
 
   // GraphQL node() resolution of an Issue OR PullRequest by node_id. PR nodes
   // are type `PullRequest`, not `Issue` — without its own inline fragment a PR
-  // node matches nothing and the fields come back null (issue #178 rev9: the
-  // claim guard reads PR labels through this tool; same defect class as
-  // resolveNumber()'s missing PR fragment).
+  // node matches nothing and the fields come back null (the claim guard reads
+  // PR labels through this tool; resolveNumber() carries the same PR fragment).
   async read(recordId: string): Promise<IssueToolResult<IssueRecord>> {
     const query = `query($id: ID!) {
       node(id: $id) {
@@ -320,7 +319,7 @@ export class GithubIssueTool implements IssueTool {
     return { ok: true, value: { recordId: args.recordId, label: args.label } };
   }
 
-  // Close the issue with a GitHub `state_reason` (issue #181). REST PATCH
+  // Close the issue with a GitHub `state_reason`. REST PATCH
   // /issues/{number} with state=closed + state_reason. Idempotent: GitHub
   // returns 200 when closing an already-closed issue, so a re-delivered
   // bookkeeping run is a no-op success.
@@ -346,8 +345,8 @@ export class GithubIssueTool implements IssueTool {
     return { ok: true, value: { recordId: args.recordId } };
   }
 
-  // Append a single line to the record body (issue #180 codex round 3: the
-  // `pr-ref:` Task→PR backlink write). read() handles Issue AND PullRequest
+  // Append a single line to the record body (the `pr-ref:` Task→PR backlink
+  // write). read() handles Issue AND PullRequest
   // nodes; the write goes through REST PATCH /repos/{owner}/{repo}/issues/
   // {number} (a PR is an Issue in the REST issues namespace, same as the
   // labels API). Idempotent: the exact line already present → ok, no write.
@@ -384,14 +383,14 @@ export class GithubIssueTool implements IssueTool {
     return { ok: true, value: { recordId } };
   }
 
-  // List a record's comments oldest→newest (issue #182). GraphQL comments(first:
+  // List a record's comments oldest→newest. GraphQL comments(last:
   // 100) over the Issue/PullRequest node; the ADR 0009 §D structural marker is
   // parsed off each leading HTML comment into the `structural` field so the
   // revision loop can filter ReviewAgent `request-changes` rounds without
-  // re-deriving the marker grammar. v0 cap: first 100 (no pagination) — far above
+  // re-deriving the marker grammar. v0 cap: newest 100 (no pagination) — far above
   // any realistic per-PR review-round count; the budget is bounded long before.
   //
-  // SECURITY (codex #189): PR/issue comments are user-writable, so a structural
+  // SECURITY: PR/issue comments are user-writable, so a structural
   // marker is trusted ONLY from the App bot. GitHub stamps author.__typename
   // from the authenticated identity — a human is a `User`, never a `Bot` — so a
   // Bot-author floor blocks all human forgery; when appBotLogin is configured we
@@ -402,8 +401,7 @@ export class GithubIssueTool implements IssueTool {
     // comments(last:100): the revision loop needs the NEWEST request-changes
     // marker; first:100 returns the OLDEST comments, so on a PR with >100
     // comments the current findings fall off the page → build_agent_revision_no_findings
-    // or revising against stale findings (codex #189 r6; same fix class as #188's
-    // reviews last:100). last:100 returns the most-recent page (oldest-first
+    // or revising against stale findings. last:100 returns the most-recent page (oldest-first
     // within it), the order the caller scans.
     const query = `query($id: ID!) {
       node(id: $id) {
@@ -461,9 +459,9 @@ export class GithubIssueTool implements IssueTool {
     return { ok: true, value: listed };
   }
 
-  // A structural marker is trusted only from the App bot (codex #189): require a
+  // A structural marker is trusted only from the App bot: require a
   // Bot author (blocks human `User` forgery) and, when appBotLogin is set, a
-  // login match (excludes any other installed App). Suffix-normalized per #161.
+  // login match (excludes any other installed App). Suffix-normalized (normalizeBotLogin).
   private isTrustedMarkerAuthor(
     author: { __typename?: string; login?: string } | null | undefined,
   ): boolean {
@@ -475,7 +473,7 @@ export class GithubIssueTool implements IssueTool {
   // Resolve an Issue/PullRequest node_id → number via GraphQL (labels API is
   // REST and number-addressed). PullRequest is included because a PR is an
   // Issue in GitHub's REST labels namespace (`/issues/{number}/labels` accepts
-  // PR numbers); the structural-review path (issue #178) applies status:* labels
+  // PR numbers); the structural-review path applies status:* labels
   // to PR node_ids, whose GraphQL node type is PullRequest, not Issue. Without
   // the PullRequest fragment the `... on Issue` query returns no number and the
   // label write fails record_not_found.

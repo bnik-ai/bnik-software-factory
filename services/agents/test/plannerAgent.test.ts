@@ -12,14 +12,14 @@
 //     surface in the result (substrate-shape problem the human owns).
 //   - PROMOTE triggers: every key EXCEPT design:ratified (2 intake + 5
 //     dep-clear) dispatches the same backlog scan.
-//   - DECOMPOSE trigger (design:ready_for_review→ratified, issue #177): reads
+//   - DECOMPOSE trigger (design:ready_for_review→ratified): reads
 //     the ratified Design + fans out kind:task Issues with parent/spec/design
 //     links; brain path (N Tasks + intra-Design blocked-by), no-brain stub
 //     fallback (1 Task), typed failures (no-issues-tool / parse / content /
-//     read / partial-failure). P1: unblocked ROOTS are promoted proposed→ready
+//     read / partial-failure). Unblocked ROOTS are promoted proposed→ready
 //     IN the decompose run against the created recordIds (App-authored Tasks
-//     get no orchestrator promote-dispatch); blocked Tasks stay proposed. P2:
-//     a failed BLOCKER create skips its dependents (not materialized without
+//     get no orchestrator promote-dispatch); blocked Tasks stay proposed. A
+//     failed BLOCKER create skips its dependents (not materialized without
 //     the dependency) and surfaces a typed partial-failure.
 //   - Mis-routed transition → planner_agent_wrong_transition, NO
 //     substrate writes.
@@ -338,7 +338,7 @@ describe('runPlannerAgent — substrate-shape gaps surface in result', () => {
     expect(deps.substrate.transitionHistory()).toHaveLength(0);
   });
 
-  test('transitionTask failure on one Task → ok:false partial_failure so consumer deadletters (codex PR2 rev1 P2)', async () => {
+  test('transitionTask failure on one Task → ok:false partial_failure so consumer deadletters', async () => {
     // Substrate that lists two proposed Tasks but fails the transition
     // on one of them. The planner must NOT ack ok:true with the failure
     // hidden in the summary — that would lose the only retry signal for
@@ -436,7 +436,7 @@ describe('runPlannerAgent — substrate-shape gaps surface in result', () => {
 
 describe('runPlannerAgent — every recognized PROMOTE trigger dispatches the same scan', () => {
   // NOTE: design:ready_for_review→ratified is intentionally absent — that key
-  // routes to the DECOMPOSE branch (issue #177), covered by its own suite. The
+  // routes to the DECOMPOSE branch, covered by its own suite. The
   // remaining intake + dep-clear keys all run the promote-by-dep-order scan.
   test.each([
     // New intake.
@@ -499,7 +499,7 @@ describe('runPlannerAgent — defensive guard for mis-routed transitions', () =>
   });
 });
 
-describe('runPlannerAgent — DECOMPOSE: design:ratified fans out into Tasks (issue #177)', () => {
+describe('runPlannerAgent — DECOMPOSE: design:ratified fans out into Tasks', () => {
   function decomposeMessage(): ParsedTransitionMessage {
     return makeMessage({
       kind: 'design',
@@ -571,7 +571,7 @@ describe('runPlannerAgent — DECOMPOSE: design:ratified fans out into Tasks (is
     }
     expect(creates[0]?.title).toBe('Add API route');
     expect(creates[1]?.title).toBe('Add DB migration');
-    // P1: both Tasks are roots (no blockers) → both promoted to ready IN THIS
+    // Both Tasks are roots (no blockers) → both promoted to ready IN THIS
     // run against the recordIds returned by create (NOT via listTasks). The
     // orchestrator would never promote App-authored Tasks otherwise.
     expect(result.result).toContain('created_tasks=2');
@@ -588,7 +588,7 @@ describe('runPlannerAgent — DECOMPOSE: design:ratified fans out into Tasks (is
     expect(history.map((t) => t.taskId).sort()).toEqual(createdIds.sort());
   });
 
-  test('intra-Design ordering: dependent gets blocked-by line + only the root is promoted (P1)', async () => {
+  test('intra-Design ordering: dependent gets blocked-by line + only the root is promoted', async () => {
     const issues = new StubIssueTool();
     seedDesign(issues);
     // Task 1 ("UI") blocks on Task 0 ("API").
@@ -616,7 +616,7 @@ describe('runPlannerAgent — DECOMPOSE: design:ratified fans out into Tasks (is
     expect(uiCreate?.body).toMatch(/blocked-by: I_stub_/);
     // API is created before UI (dependency-respecting creation order).
     expect(creates[0]?.title).toBe('API');
-    // P1: only the ROOT (API) is promoted now; the blocked UI stays proposed
+    // Only the ROOT (API) is promoted now; the blocked UI stays proposed
     // and cascades to ready later via the task:in_review→done re-plan trigger.
     expect(result.result).toContain('promoted_roots=1');
     const history = deps.substrate.transitionHistory();
@@ -700,7 +700,7 @@ describe('runPlannerAgent — DECOMPOSE: design:ratified fans out into Tasks (is
   });
 });
 
-describe('runPlannerAgent — DECOMPOSE partial-failure surfacing (issue #177)', () => {
+describe('runPlannerAgent — DECOMPOSE partial-failure surfacing', () => {
   function decomposeMsg(): ParsedTransitionMessage {
     return makeMessage({
       kind: 'design',
@@ -773,7 +773,7 @@ describe('runPlannerAgent — DECOMPOSE partial-failure surfacing (issue #177)',
     expect(substrate.transitionHistory()).toHaveLength(1);
   });
 
-  test('P2: a failed BLOCKER create skips its dependent (not materialized) + surfaces typed failure', async () => {
+  test('a failed BLOCKER create skips its dependent (not materialized) + surfaces typed failure', async () => {
     const stub = seededStub();
     // T0 is the blocker (fails). T1 depends on T0 (blockedBy [0]) → must be
     // SKIPPED, not created with the missing blocker silently dropped.
@@ -839,7 +839,7 @@ describe('runPlannerAgent — DECOMPOSE partial-failure surfacing (issue #177)',
   });
 });
 
-describe('runPlannerAgent — task:ready→done is a dep-clear replan trigger (#180 rev9)', () => {
+describe('runPlannerAgent — task:ready→done is a dep-clear replan trigger', () => {
   test('ready→done replans the proposed backlog (cascade trigger)', async () => {
     const substrate = new StubPlannerSubstrateClient();
     const result = await runPlannerAgent(

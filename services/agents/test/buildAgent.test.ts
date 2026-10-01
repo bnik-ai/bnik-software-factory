@@ -110,7 +110,7 @@ describe('runBuildAgent — happy path on task:proposed→ready', () => {
     expect(deps.pulls.openHistory()[0]?.baseBranch).toBe('stgx');
   });
 
-  test('writes the pr-ref backlink onto the Task body after PR-open (codex round 3 bidirectional pairing)', async () => {
+  test('writes the pr-ref backlink onto the Task body after PR-open (bidirectional pairing)', async () => {
     const deps = makeDeps();
     const result = await runBuildAgent(makeMessage(), deps);
 
@@ -140,7 +140,7 @@ describe('runBuildAgent — happy path on task:proposed→ready', () => {
   });
 });
 
-describe('runBuildAgent — real coding-brain path (M1c env-gated)', () => {
+describe('runBuildAgent — real coding-brain path (env-gated)', () => {
   // Records call order across clone / git / coding / pulls so we can assert
   // the clone→branch→runCodingAgent→commit→push→open sequence.
   function makeRealDeps(codingResult: {
@@ -239,7 +239,7 @@ describe('runBuildAgent — real coding-brain path (M1c env-gated)', () => {
     expect(opened?.body).toContain('Implemented /healthz with a test.');
 
     // The real path ALSO writes the pr-ref backlink onto the Task after open
-    // (codex round 3 — both open sites are covered).
+    // (both open sites are covered).
     expect(deps.issues.appendHistory()).toEqual([
       { recordId: 'I_kwAOA_task_99', line: 'pr-ref: PR_stub_1' },
     ]);
@@ -284,7 +284,7 @@ describe('runBuildAgent — real coding-brain path (M1c env-gated)', () => {
     expect(deps.git.branchHistory()).toHaveLength(0);
   });
 
-  // Issue #180: a converged coding run with an EMPTY diff (Task already
+  // A converged coding run with an EMPTY diff (Task already
   // satisfied by existing code) is a terminal already-done outcome — settle the
   // Task ready→done with a structural marker, never commit/push/open a PR, never
   // dead-letter. A genuine commit failure (non-empty diff) still dead-letters.
@@ -335,7 +335,7 @@ describe('runBuildAgent — real coding-brain path (M1c env-gated)', () => {
     ]);
   });
 
-  test('agent committed its OWN work (clean tree + commits ahead) → FAIL CLOSED, no un-attributed PR, no false done (codex P1+P2 #180)', async () => {
+  test('agent committed its OWN work (clean tree + commits ahead) → FAIL CLOSED, no un-attributed PR, no false done', async () => {
     const { order, deps } = makeRealDeps({
       ok: true,
       subtype: 'success',
@@ -355,7 +355,7 @@ describe('runBuildAgent — real coding-brain path (M1c env-gated)', () => {
     const result = await runBuildAgent(makeMessage(), deps);
 
     // The agent's commits lack ADR 0009 trailers — fail closed rather than push
-    // un-attributed commits (P2) or silently settle done / drop them (P1).
+    // un-attributed commits or silently settle done / drop them.
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toMatch(/^build_agent_coding_agent_self_committed:sf\/T-/);
@@ -367,7 +367,7 @@ describe('runBuildAgent — real coding-brain path (M1c env-gated)', () => {
     expect(order).toEqual(['clone', 'branch', 'coding']);
   });
 
-  test('MIXED: agent self-committed AND left dirty edits → FAIL CLOSED (self-commit checked before the dirty path; codex P2 r6)', async () => {
+  test('MIXED: agent self-committed AND left dirty edits → FAIL CLOSED (self-commit checked before the dirty path)', async () => {
     const { order, deps } = makeRealDeps({
       ok: true,
       subtype: 'success',
@@ -396,7 +396,7 @@ describe('runBuildAgent — real coding-brain path (M1c env-gated)', () => {
     expect(order).toEqual(['clone', 'branch', 'coding']);
   });
 
-  test('clean tree but BEHIND a base that advanced mid-build → FAIL CLOSED for re-run, never settle done (codex P1 #180 r5)', async () => {
+  test('clean tree but BEHIND a base that advanced mid-build → FAIL CLOSED for re-run, never settle done', async () => {
     const { order, deps } = makeRealDeps({
       ok: true,
       subtype: 'success',
@@ -452,7 +452,7 @@ describe('runBuildAgent — real coding-brain path (M1c env-gated)', () => {
     expect(deps.issues.commentHistory()).toHaveLength(0);
   });
 
-  test('Task RELABELED during the coding run (ready→abandoned) → settle re-reads live labels and refuses, no status:done (codex P2 #180 TOCTOU)', async () => {
+  test('Task RELABELED during the coding run (ready→abandoned) → settle re-reads live labels and refuses, no status:done (TOCTOU)', async () => {
     const { deps } = makeRealDeps({
       ok: true,
       subtype: 'success',
@@ -561,7 +561,7 @@ describe('runBuildAgent — defensive guards', () => {
   });
 });
 
-describe('runBuildAgent — rebase-for-review path (ADR 0012; B4-PR9)', () => {
+describe('runBuildAgent — rebase-for-review path (ADR 0012)', () => {
   function makeRebaseMessage(
     overrides: Partial<ParsedTransitionMessage> = {},
   ): ParsedTransitionMessage {
@@ -581,9 +581,9 @@ describe('runBuildAgent — rebase-for-review path (ADR 0012; B4-PR9)', () => {
     };
   }
 
-  // The bounce reads the PR's live status label (issue #192) — seed the PR-as-
+  // The bounce reads the PR's live status label — seed the PR-as-
   // issue at status:in_review (the state a gated review-trigger leaves it in).
-  // The claim-phase path (codex #200 r3) also reads the PR's native state via
+  // The claim-phase path also reads the PR's native state via
   // pulls, so seed the PR record too (default native open).
   function makeRebaseDeps(
     prStatusLabels: readonly string[] = ['status:in_review'],
@@ -619,7 +619,7 @@ describe('runBuildAgent — rebase-for-review path (ADR 0012; B4-PR9)', () => {
     };
   }
 
-  test('STEP 1 happy path: rebase + force-push, then drive PR to durable status:syncing (issue #192)', async () => {
+  test('STEP 1 happy path: rebase + force-push, then drive PR to durable status:syncing', async () => {
     const deps = makeRebaseDeps();
     deps.git.setNextRebaseTreeChanged(true);
     const result = await runBuildAgent(makeRebaseMessage(), deps);
@@ -642,7 +642,7 @@ describe('runBuildAgent — rebase-for-review path (ADR 0012; B4-PR9)', () => {
     expect(deps.git.commitHistory()).toHaveLength(0);
   });
 
-  test('regression issue #112: treeChanged=false BUT head SHA changed → push MUST fire (delta re-review)', async () => {
+  test('treeChanged=false BUT head SHA changed → push MUST fire (delta re-review)', async () => {
     const deps = makeRebaseDeps();
     const result = await runBuildAgent(makeRebaseMessage(), deps);
 
@@ -696,7 +696,7 @@ describe('runBuildAgent — rebase-for-review path (ADR 0012; B4-PR9)', () => {
     expect(deps.issues.labelRemoveHistory()).toHaveLength(0);
   });
 
-  test('STEP 1 redelivery: HALF-APPLIED dual-label [syncing, in_review] → resume the in_review removal, NO re-apply (codex #200 r2)', async () => {
+  test('STEP 1 redelivery: HALF-APPLIED dual-label [syncing, in_review] → resume the in_review removal, NO re-apply', async () => {
     // A prior run applied status:syncing but the status:in_review removal failed →
     // both labels present. Resuming must complete the removal (not return
     // already_syncing, which would strand the bounce: step 2's in_review apply
@@ -738,7 +738,7 @@ describe('runBuildAgent — rebase-for-review path (ADR 0012; B4-PR9)', () => {
     expect(deps.issues.labelApplyHistory()).toHaveLength(0);
   });
 
-  test('CLAIM-mode REDELIVERY + TRUE no-op rebase (head unchanged) → already_claimed no-op (codex #200 r9 P1)', async () => {
+  test('CLAIM-mode REDELIVERY + TRUE no-op rebase (head unchanged) → already_claimed no-op', async () => {
     // Prior claim-mode rebase already claimed (status:in_review). On redelivery the
     // rebase is a no-op (head unchanged) so the prior ReviewAgent run still covers
     // the current head. Must NOT bounce (would race that verdict).
@@ -753,7 +753,7 @@ describe('runBuildAgent — rebase-for-review path (ADR 0012; B4-PR9)', () => {
     expect(deps.issues.labelRemoveHistory()).toHaveLength(0);
   });
 
-  test('CLAIM-mode REDELIVERY + rebase CHANGED the head → bounce to re-review the new head (codex #202)', async () => {
+  test('CLAIM-mode REDELIVERY + rebase CHANGED the head → bounce to re-review the new head', async () => {
     // The redelivery's rebase pushed a NEW head (base advanced again). The prior
     // claim reviewed the OLD head, so the new head still needs review → bounce, not
     // a no-op. (Stub default: rebase changes the head.)
@@ -769,7 +769,7 @@ describe('runBuildAgent — rebase-for-review path (ADR 0012; B4-PR9)', () => {
     expect(deps.git.pushHistory()).toHaveLength(1); // the changed head was pushed
   });
 
-  test('CLAIM-phase: gate fired on an UNCLAIMED open PR (e.g. pr:__initial__→open) → BuildAgent claims after rebase (codex #200 r3)', async () => {
+  test('CLAIM-phase: gate fired on an UNCLAIMED open PR (e.g. pr:__initial__→open) → BuildAgent claims after rebase', async () => {
     // No status:in_review label + native open → the gate fired on a claim trigger
     // before the PR was claimed. After rebasing, BuildAgent claims (status:in_review
     // + marker) so pr:open→in_review routes to ReviewAgent — NOT a silent skip.
@@ -788,7 +788,7 @@ describe('runBuildAgent — rebase-for-review path (ADR 0012; B4-PR9)', () => {
     expect(deps.git.rebaseHistory()).toHaveLength(1); // rebased first
   });
 
-  test('NATIVE review-request: no status:in_review label but reReviewMode=bounce (ledger at in_review) → drive the bounce, NOT a no-op claim (codex #200 r7)', async () => {
+  test('NATIVE review-request: no status:in_review label but reReviewMode=bounce (ledger at in_review) → drive the bounce, NOT a no-op claim', async () => {
     // A native pr:open→in_review review-request leaves the ledger at in_review with
     // NO status label. Claiming would re-apply in_review as a no-op and never
     // re-dispatch. reReviewMode='bounce' (from the orchestrator) drives the syncing
@@ -806,7 +806,7 @@ describe('runBuildAgent — rebase-for-review path (ADR 0012; B4-PR9)', () => {
     expect(deps.issues.commentHistory()).toHaveLength(0);
   });
 
-  test('BOUNCE-mode skip: redelivered bounce-mode rebase on a PR now at status:approved → skip, NO syncing applied (codex #200 r8)', async () => {
+  test('BOUNCE-mode skip: redelivered bounce-mode rebase on a PR now at status:approved → skip, NO syncing applied', async () => {
     // reReviewMode='bounce' but the PR already reached approved on a redelivery. The
     // terminal skip must fire BEFORE the bounce path — applying status:syncing here
     // would be an illegal approved→syncing transition + an orphan label.
@@ -820,7 +820,7 @@ describe('runBuildAgent — rebase-for-review path (ADR 0012; B4-PR9)', () => {
     expect(deps.issues.labelApplyHistory()).toHaveLength(0);
   });
 
-  test('BOUNCE-mode skip: redelivered bounce-mode rebase on a PR parked at changes_requested → skip, NO syncing applied (codex #200 r8)', async () => {
+  test('BOUNCE-mode skip: redelivered bounce-mode rebase on a PR parked at changes_requested → skip, NO syncing applied', async () => {
     const deps = makeRebaseDeps(['status:changes_requested'], 'open');
     const result = await runBuildAgent(makeRebaseMessage({ reReviewMode: 'bounce' }), deps);
 
@@ -831,7 +831,7 @@ describe('runBuildAgent — rebase-for-review path (ADR 0012; B4-PR9)', () => {
     expect(deps.issues.labelApplyHistory()).toHaveLength(0);
   });
 
-  test('CLAIM-phase skip: redelivered rebase on a PR now parked at changes_requested → skip, no reclaim (codex #200 r4)', async () => {
+  test('CLAIM-phase skip: redelivered rebase on a PR now parked at changes_requested → skip, no reclaim', async () => {
     // No in_review/syncing label → falls into the claim path, but the PR is parked
     // at changes_requested awaiting a revision. Claiming would re-review with no
     // fix pushed — skip instead.
@@ -846,7 +846,7 @@ describe('runBuildAgent — rebase-for-review path (ADR 0012; B4-PR9)', () => {
     expect(deps.issues.commentHistory()).toHaveLength(0);
   });
 
-  test('STEP 2 terminal guard: PR closed between step 1 and step 2 (syncing label persists) → skip, no review on a closed PR (codex #200 r4)', async () => {
+  test('STEP 2 terminal guard: PR closed between step 1 and step 2 (syncing label persists) → skip, no review on a closed PR', async () => {
     const deps = makeRebaseDeps(['status:syncing'], 'closed');
     const result = await runBuildAgent(makeFinishSyncMessage(), deps);
 
@@ -931,11 +931,11 @@ describe('runBuildAgent — rebase-for-review path (ADR 0012; B4-PR9)', () => {
   });
 });
 
-describe('runBuildAgent — revision loop on pr:in_review→changes_requested (issue #182)', () => {
+describe('runBuildAgent — revision loop on pr:in_review→changes_requested', () => {
   const HEAD_BRANCH = 'sf/T-99/01HV6/build@opus-4-7';
   const PR_ID = 'PR_stub_rev';
-  // issue #191: the App bot login the ownership guard matches the PR author
-  // against (GraphQL-normalized, no `[bot]` suffix — #161).
+  // The App bot login the ownership guard matches the PR author
+  // against (GraphQL-normalized, no `[bot]` suffix).
   const APP_BOT_LOGIN = 'example-factory';
 
   // The revision is dispatched with a pr-kind message (recordId = PR), mirroring
@@ -968,10 +968,10 @@ describe('runBuildAgent — revision loop on pr:in_review→changes_requested (i
       headBranch?: string;
       baseBranch?: string;
       prStatusLabel?: string;
-      // issue #190: pre-seed N BuildAgent revision-pushed resume markers on the PR
+      // Pre-seed N BuildAgent revision-pushed resume markers on the PR
       // (simulates a push that landed before a crash-before-drive redelivery).
       revisionPushedMarkers?: number;
-      // issue #191 ownership overrides. Default App-authored same-repo so the
+      // Ownership overrides. Default App-authored same-repo so the
       // revision runs; override to simulate a human-opened or fork PR.
       author?: { login?: string; isBot: boolean };
       isCrossRepository?: boolean;
@@ -985,8 +985,8 @@ describe('runBuildAgent — revision loop on pr:in_review→changes_requested (i
       labels: ['kind:task', 'status:ready'],
       body: 'parent-goal: I_x\n\nImplement webhook endpoint',
     });
-    // The PR-as-issue carries the live status label the idempotency guard reads
-    // (codex #189 r6). Default: still at changes_requested (the revision runs).
+    // The PR-as-issue carries the live status label the idempotency guard reads.
+    // Default: still at changes_requested (the revision runs).
     issues.seedRecord({
       recordId: PR_ID,
       labels: [opts.prStatusLabel ?? 'status:changes_requested'],
@@ -1000,7 +1000,7 @@ describe('runBuildAgent — revision loop on pr:in_review→changes_requested (i
       headBranch: opts.headBranch ?? HEAD_BRANCH,
       baseBranch: opts.baseBranch ?? 'main',
       body: opts.prBody ?? 'task-ref: I_kwAOA_task_99',
-      // issue #191: default App-authored same-repo so the ownership guard passes.
+      // Default App-authored same-repo so the ownership guard passes.
       author: opts.author ?? { login: APP_BOT_LOGIN, isBot: true },
       isCrossRepository: opts.isCrossRepository ?? false,
     });
@@ -1011,7 +1011,7 @@ describe('runBuildAgent — revision loop on pr:in_review→changes_requested (i
         structural: { role: 'review@opus-4-7', run: `run-${round}`, verdict: 'request-changes' },
       });
     }
-    // issue #190: pre-seed BuildAgent revision-pushed resume markers (a prior
+    // Pre-seed BuildAgent revision-pushed resume markers (a prior
     // attempt pushed for that round but crashed before the FSM drive).
     for (let round = 1; round <= (opts.revisionPushedMarkers ?? 0); round += 1) {
       issues.seedComment(PR_ID, {
@@ -1027,7 +1027,7 @@ describe('runBuildAgent — revision loop on pr:in_review→changes_requested (i
       runId: '01HZXYZ123456789ABCDEFGHJK',
       repo: 'example-org/software-factory',
       model: 'opus-4-7',
-      // issue #191: the App slug the guard matches the PR author against.
+      // The App slug the guard matches the PR author against.
       appBotLogin: opts.appBotLogin ?? APP_BOT_LOGIN,
     };
   }
@@ -1052,7 +1052,7 @@ describe('runBuildAgent — revision loop on pr:in_review→changes_requested (i
       { recordId: PR_ID, label: 'status:changes_requested' },
     ]);
     // Two structural marker comments on the PR (build@model attribution): the
-    // issue #190 revision-pushed resume marker, then the drive marker.
+    // revision-pushed resume marker, then the drive marker.
     const comments = deps.issues.commentHistory();
     expect(comments.map((c) => c.recordId)).toEqual([PR_ID, PR_ID]);
     expect(comments[0]?.structural).toMatchObject({
@@ -1110,7 +1110,7 @@ describe('runBuildAgent — revision loop on pr:in_review→changes_requested (i
     expect(deps.git.pushHistory()).toEqual([{ branch: HEAD_BRANCH }]);
   });
 
-  test('redelivery after the PR was already revised (now status:in_review) → no-op, NO rebuild (codex #189 r6 idempotency)', async () => {
+  test('redelivery after the PR was already revised (now status:in_review) → no-op, NO rebuild (idempotency)', async () => {
     // Same pr:in_review→changes_requested message redelivered after a prior
     // attempt drove the PR back to in_review: the request-changes comments are
     // unchanged, but the live PR label is no longer changes_requested → skip.
@@ -1216,7 +1216,7 @@ describe('runBuildAgent — revision loop on pr:in_review→changes_requested (i
     expect(realDeps.issues.labelApplyHistory()).toHaveLength(0);
   });
 
-  test('real revision: coding agent SELF-COMMITTED (HEAD moved) → fail closed, NO commit/push/drive (codex #189)', async () => {
+  test('real revision: coding agent SELF-COMMITTED (HEAD moved) → fail closed, NO commit/push/drive', async () => {
     const deps = makeRevisionDeps(1);
     // HEAD differs before vs after the coding run → the agent committed itself;
     // those commits lack ADR 0009 trailers, so BuildAgent must not push them.
@@ -1246,7 +1246,7 @@ describe('runBuildAgent — revision loop on pr:in_review→changes_requested (i
     expect(realDeps.issues.labelApplyHistory()).toHaveLength(0);
   });
 
-  test('non-agent (human/fork) head branch → PARK, no clone/commit/push/drive (codex #189 r4)', async () => {
+  test('non-agent (human/fork) head branch → PARK, no clone/commit/push/drive', async () => {
     // A human-opened PR (head branch is not sf/...) must never be auto-mutated.
     const deps = makeRevisionDeps(1, { headBranch: 'feature/human-patch' });
     let cloned = false;
@@ -1280,7 +1280,7 @@ describe('runBuildAgent — revision loop on pr:in_review→changes_requested (i
     expect(parked[0]?.body).toContain('not a BuildAgent-owned');
   });
 
-  test('issue #191: human-authored PR on an sf/...-named branch → PARK (branch grammar alone is not ownership)', async () => {
+  test('human-authored PR on an sf/...-named branch → PARK (branch grammar alone is not ownership)', async () => {
     // A human crafts a branch matching the agent grammar (HEAD_BRANCH) but
     // authors the PR themselves (isBot:false). The grammar passes; the
     // App-author check must reject it → park, never auto-mutate.
@@ -1314,7 +1314,7 @@ describe('runBuildAgent — revision loop on pr:in_review→changes_requested (i
     expect(realDeps.issues.labelApplyHistory()).toHaveLength(0);
   });
 
-  test('issue #191: PR authored by a DIFFERENT installed App (login mismatch) → PARK', async () => {
+  test('PR authored by a DIFFERENT installed App (login mismatch) → PARK', async () => {
     // A Bot author, but not OUR App slug. The login match excludes other Apps.
     const deps = makeRevisionDeps(1, { author: { login: 'some-other-app', isBot: true } });
     const result = await runBuildAgent(makeRevisionMessage(), deps);
@@ -1326,7 +1326,7 @@ describe('runBuildAgent — revision loop on pr:in_review→changes_requested (i
     expect(deps.git.pushHistory()).toHaveLength(0);
   });
 
-  test('issue #191: fork PR (cross-repository) with a colliding sf/... ref → PARK, never clone/push the wrong base-repo branch', async () => {
+  test('fork PR (cross-repository) with a colliding sf/... ref → PARK, never clone/push the wrong base-repo branch', async () => {
     // App-authored AND grammar-matching, but the head lives in a FORK. Cloning/
     // pushing it would target the wrong base-repo branch → must park.
     const deps = makeRevisionDeps(1, { isCrossRepository: true });
@@ -1355,7 +1355,7 @@ describe('runBuildAgent — revision loop on pr:in_review→changes_requested (i
     expect(realDeps.git.pushHistory()).toHaveLength(0);
   });
 
-  test('issue #191: genuine App-authored same-repo sf/... PR revises (all three ownership signals hold)', async () => {
+  test('genuine App-authored same-repo sf/... PR revises (all three ownership signals hold)', async () => {
     // Grammar + App author (login match, suffix-normalized) + same-repo → revise.
     const deps = makeRevisionDeps(1, { author: { login: `${APP_BOT_LOGIN}[bot]`, isBot: true } });
     const result = await runBuildAgent(makeRevisionMessage(), deps);
@@ -1366,7 +1366,7 @@ describe('runBuildAgent — revision loop on pr:in_review→changes_requested (i
     expect(deps.git.pushHistory()).toEqual([{ branch: HEAD_BRANCH }]);
   });
 
-  test('issue #191: appBotLogin unset → App-author check relaxes to the Bot floor (any Bot author same-repo grammar revises)', async () => {
+  test('appBotLogin unset → App-author check relaxes to the Bot floor (any Bot author same-repo grammar revises)', async () => {
     // With no configured slug the login match is skipped, but a non-Bot still
     // cannot pass. A Bot author + same-repo + grammar revises.
     const deps = makeRevisionDeps(1, {
@@ -1383,7 +1383,7 @@ describe('runBuildAgent — revision loop on pr:in_review→changes_requested (i
     expect(result.result).toContain('round 1/3');
   });
 
-  test('revision empty-diff/self-commit checks compare against the PR base, not the default (codex #189 r4)', async () => {
+  test('revision empty-diff/self-commit checks compare against the PR base, not the default', async () => {
     // PR based on a release branch, not main. hasChanges must be asked about that
     // base so the empty-diff/stale checks fetch origin/<that base>.
     const deps = makeRevisionDeps(1, { baseBranch: 'release/2.0' });
@@ -1405,7 +1405,7 @@ describe('runBuildAgent — revision loop on pr:in_review→changes_requested (i
     expect(realDeps.git.hasChangesBaseBranches).toEqual(['release/2.0']);
   });
 
-  test('issue #190 redelivery after push-but-before-drive (revision-pushed marker present) → RESUMES the drive, NO rebuild', async () => {
+  test('redelivery after push-but-before-drive (revision-pushed marker present) → RESUMES the drive, NO rebuild', async () => {
     // A prior attempt pushed a revision for this single request-changes round but
     // crashed before driving to in_review, so the PR is still status:changes_requested
     // (cheap guard passes) AND a revision-pushed marker exists (markers >= rounds).
@@ -1448,7 +1448,7 @@ describe('runBuildAgent — revision loop on pr:in_review→changes_requested (i
     expect(written[0]?.body).toContain('returning this PR to in_review');
   });
 
-  test('issue #190 (codex #194): duplicate markers on an EARLIER round + a NEW request-changes → BUILDS, not false-resume', async () => {
+  test('duplicate markers on an EARLIER round + a NEW request-changes → BUILDS, not false-resume', async () => {
     // Timeline: rc(round1), revision-pushed, revision-pushed (a duplicate from two
     // workers racing one delivery), THEN a NEW rc(round2) with no marker after it.
     // Count-based logic (markers 2 >= rounds 2) would falsely RESUME and skip the
@@ -1495,7 +1495,7 @@ describe('runBuildAgent — revision loop on pr:in_review→changes_requested (i
     expect(result.result).not.toContain('resumed drive');
   });
 
-  test('issue #190 (codex #194): post-push resume-marker comment failure does NOT strand the PR — still drives to in_review', async () => {
+  test('post-push resume-marker comment failure does NOT strand the PR — still drives to in_review', async () => {
     const deps = makeRevisionDeps(1);
     // Fail ONLY the revision-pushed resume marker; all other comments succeed.
     const realComment = deps.issues.comment.bind(deps.issues);
@@ -1529,7 +1529,7 @@ describe('runBuildAgent — revision loop on pr:in_review→changes_requested (i
     ]);
   });
 
-  test('issue #190 resume marker is NOT counted toward the request-changes budget', async () => {
+  test('resume marker is NOT counted toward the request-changes budget', async () => {
     // 3 request-changes rounds (at the MAX_REVISION_ATTEMPTS=3 cap) plus 3
     // revision-pushed markers. If markers were miscounted as rounds the total
     // would be 6 > 3 and PARK; the marker must be inert for the budget. With
@@ -1548,7 +1548,7 @@ describe('runBuildAgent — revision loop on pr:in_review→changes_requested (i
     expect(deps.git.pushHistory()).toHaveLength(0);
   });
 
-  test('issue #190 first delivery (no resume marker) still builds normally and posts the resume marker before the drive', async () => {
+  test('first delivery (no resume marker) still builds normally and posts the resume marker before the drive', async () => {
     // No revision-pushed marker yet (markers 0 < rounds 1) → the resume guard does
     // NOT fire; the revision builds, posts a revision-pushed marker, THEN drives.
     const deps = makeRevisionDeps(1);

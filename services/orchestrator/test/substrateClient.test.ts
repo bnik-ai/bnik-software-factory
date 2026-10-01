@@ -228,7 +228,7 @@ describe('GithubSubstrateClient — getTaskHeadBranch (two-hop GraphQL)', () => 
   });
 });
 
-describe('extractPrRefFromBody — newest backlink wins (#180 rev9)', () => {
+describe('extractPrRefFromBody — newest backlink wins', () => {
   test('two pr-ref lines → the LAST is returned (matches reviewAgent claim semantics)', () => {
     expect(extractPrRefFromBody('pr-ref: PR_stale\nsome text\npr-ref: PR_active')).toBe(
       'PR_active',

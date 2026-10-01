@@ -53,7 +53,7 @@ describe('isGithubAppMode', () => {
   });
 });
 
-describe('buildOpsDeps — GitHub-only gate (issue #179 review P1)', () => {
+describe('buildOpsDeps — GitHub-only gate', () => {
   test('GitHub creds present + Anthropic ABSENT → REAL GithubPullTool (never a stub)', () => {
     // The exact regression: GitHub App secrets set, ANTHROPIC_API_KEY missing.
     // isRealMode() would be false → buildAgentDeps would hand back a stub
@@ -65,7 +65,7 @@ describe('buildOpsDeps — GitHub-only gate (issue #179 review P1)', () => {
     const deps = buildOpsDeps({ env: githubOnlyEnv, runId: '01HZXYZ123456789ABCDEFGHJK' });
     expect(deps.pulls).toBeInstanceOf(GithubPullTool);
     expect(deps.pulls).not.toBeInstanceOf(StubPullTool);
-    // Issue #180: the post-merge Task bookkeeping needs the REAL IssueTool on
+    // The post-merge Task bookkeeping needs the REAL IssueTool on
     // the same GitHub-only gate (buildIssueTool seam) — no Anthropic key needed.
     expect(deps.issues).toBeInstanceOf(GithubIssueTool);
     expect(deps.issues).not.toBeInstanceOf(StubIssueTool);
@@ -125,7 +125,7 @@ describe('buildAgentDeps — stub path (secrets absent)', () => {
     expect(deps.repo).toEqual({ owner: 'example-org', repo: 'SF' });
   });
 
-  test('GITHUB_APP_SLUG set in stub mode → appBotLogin NOT threaded (codex #195: else stub PRs fail the #191 ownership check and park)', () => {
+  test('GITHUB_APP_SLUG set in stub mode → appBotLogin NOT threaded (else stub PRs fail the auto-revision ownership check and park)', () => {
     const deps = buildAgentDeps({
       env: { AGENT_DEFAULT_REPO: 'example-org/SF', GITHUB_APP_SLUG: 'example-factory' },
       runId: '01HZXYZ123456789ABCDEFGHJK',

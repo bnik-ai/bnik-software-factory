@@ -27,7 +27,7 @@ export interface IssueLabelArgs {
 export interface IssueCloseArgs {
   recordId: string;
   // GitHub issue close `state_reason`. 'completed' for a satisfied Task
-  // (issue #181: OpsAgent closes a status:done Task); 'not_planned' for
+  // (OpsAgent closes a status:done Task); 'not_planned' for
   // abandonment.
   reason: 'completed' | 'not_planned';
 }
@@ -65,7 +65,7 @@ export interface IssueCommentArgs {
   structural?: {
     role: string; // e.g. 'ReviewAgent'
     run: string; // ULID per ADR 0008
-    // Optional marker attribute (issue #178 rev6): the review VERDICT this
+    // Optional marker attribute: the review VERDICT this
     // comment carries ('approve' | 'request-changes'). The validator's
     // review-required assertion accepts ONLY a verdict=approve marker as
     // structural review evidence — claim markers (no verdict) never satisfy it.
@@ -73,7 +73,7 @@ export interface IssueCommentArgs {
   };
 }
 
-// A comment read back off a record (issue #182 revision loop). BuildAgent's
+// A comment read back off a record (revision loop). BuildAgent's
 // revision path lists a PR's comments to (a) count ReviewAgent `request-changes`
 // rounds for the bounded-retry budget and (b) read the latest findings text to
 // feed the revision. `structural` is the ADR 0009 §D marker parsed off the
@@ -95,22 +95,22 @@ export interface IssueTool {
   read(recordId: string): Promise<IssueToolResult<IssueRecord>>;
   applyLabel(args: IssueLabelArgs): Promise<IssueToolResult<{ recordId: string; label: string }>>;
   removeLabel(args: IssueLabelArgs): Promise<IssueToolResult<{ recordId: string; label: string }>>;
-  // Close the issue with a GitHub `state_reason` (issue #181: OpsAgent's
+  // Close the issue with a GitHub `state_reason` (OpsAgent's
   // post-merge bookkeeping closes a status:done Task so the board never shows
   // open-but-done records). Idempotent — closing an already-closed issue is a
   // no-op success (GitHub returns 200).
   close(args: IssueCloseArgs): Promise<IssueToolResult<{ recordId: string }>>;
   comment(args: IssueCommentArgs): Promise<IssueToolResult<{ commentId: string }>>;
   create(args: IssueCreateArgs): Promise<IssueToolResult<{ recordId: string; number: number }>>;
-  // Append a single line to the record body (issue #180 codex round 3:
-  // BuildAgent writes the `pr-ref: <PR recordId>` backlink onto the Task at
-  // PR-open; OpsAgent's post-merge bookkeeping REQUIRES it for bidirectional
-  // pairing). Idempotent: if the exact line already exists in the body, the
-  // call returns ok WITHOUT writing.
+  // Append a single line to the record body (BuildAgent writes the
+  // `pr-ref: <PR recordId>` backlink onto the Task at PR-open; OpsAgent's
+  // post-merge bookkeeping REQUIRES it for bidirectional pairing). Idempotent:
+  // if the exact line already exists in the body, the call returns ok WITHOUT
+  // writing.
   appendToBody(recordId: string, line: string): Promise<IssueToolResult<{ recordId: string }>>;
-  // List a record's comments newest-last (issue #182). The revision loop reads a
+  // List a record's comments newest-last. The revision loop reads a
   // PR's comments to count ReviewAgent `request-changes` rounds (budget) and pull
-  // the latest findings text. Real impl resolves via GraphQL comments(first:100);
+  // the latest findings text. Real impl resolves via GraphQL comments(last:100);
   // the structural marker is parsed off each leading HTML comment.
   listComments(recordId: string): Promise<IssueToolResult<ReadonlyArray<ListedComment>>>;
 }
@@ -121,7 +121,7 @@ export class StubIssueTool implements IssueTool {
   private readonly labelRemoves: IssueLabelArgs[] = [];
   private readonly closes: IssueCloseArgs[] = [];
   private readonly comments: IssueCommentArgs[] = [];
-  // Per-record comment store (issue #182): listComments reads these back. comment()
+  // Per-record comment store: listComments reads these back. comment()
   // pushes here; seedComment() pre-seeds a findings comment for revision tests.
   private readonly commentsByRecord: Map<string, ListedComment[]> = new Map();
   private readonly creates: IssueCreateArgs[] = [];
@@ -165,7 +165,7 @@ export class StubIssueTool implements IssueTool {
     this.comments.push(args);
     const commentId = `stub-comment-${this.nextCommentId}`;
     this.nextCommentId += 1;
-    // Mirror into the per-record store so listComments reads it back (issue #182).
+    // Mirror into the per-record store so listComments reads it back.
     // The stub keeps `structural` as a parsed field (the real impl prepends the
     // ADR 0009 §D marker into the body and parses it back); the body is the raw
     // human-readable text the caller passed.

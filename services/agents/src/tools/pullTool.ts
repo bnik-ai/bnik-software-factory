@@ -22,7 +22,7 @@ export interface PullOpenArgs {
   draft?: boolean;
 }
 
-// PR author identity (issue #191). The ownership signals BuildAgent's
+// PR author identity. The ownership signals BuildAgent's
 // auto-revision guard needs beyond the head-branch grammar: the ref name alone
 // cannot prove the PR is App-authored. `login` is the GraphQL Actor login;
 // `isBot` is `__typename === 'Bot'` (a human is a `User`, never a `Bot` — the
@@ -30,7 +30,7 @@ export interface PullOpenArgs {
 // Mirrors the validator's actor-resolution (githubSubstrateClient.ts) and the
 // githubIssueTool marker-trust floor.
 export interface PullAuthor {
-  // GraphQL Actor login. For a GitHub App the `[bot]` suffix is dropped (#161);
+  // GraphQL Actor login. For a GitHub App the `[bot]` suffix is dropped (REST keeps it);
   // callers normalize before comparing to the configured App slug.
   login?: string;
   // __typename === 'Bot'. A non-Bot author can never be the App.
@@ -46,15 +46,15 @@ export interface PullRecord {
   // GitHub PR body markdown. BuildAgent writes `task-ref: <Task_recordId>`
   // into it (buildAgent.ts), so ReviewAgent's verdict run can resolve the
   // paired Task from the PR (PR→Task linkage) to drive the
-  // `task:in_review→in_progress` revision loop on request-changes (issue #178
-  // rev2). Optional: a seeded/legacy record may omit it.
+  // `task:in_review→in_progress` revision loop on request-changes.
+  // Optional: a seeded/legacy record may omit it.
   body?: string;
-  // PR author identity (issue #191). The auto-revision ownership guard asserts
+  // PR author identity. The auto-revision ownership guard asserts
   // the App authored the PR (not a human crafting an `sf/...`-named branch).
   // Optional: a seeded/legacy record may omit it (treated as not-App-owned by
   // the guard — fail closed → park).
   author?: PullAuthor;
-  // Cross-repo (fork) signal (issue #191). True when the head branch lives in a
+  // Cross-repo (fork) signal. True when the head branch lives in a
   // FORK, not the base repo — a fork PR could carry a colliding `sf/...` ref, so
   // cloning/pushing it would target the wrong base-repo branch. The guard
   // requires same-repo (false). Optional: a seeded/legacy record may omit it
@@ -69,8 +69,7 @@ export interface PullCloseArgs {
 
 export interface PullMergeArgs {
   recordId: string; // PR node_id
-  // squash | rebase | merge. v0 default is squash per existing convention
-  // (see PR #54+ self-merge commands using --squash). Repo rulesets may
+  // squash | rebase | merge. v0 default is squash. Repo rulesets may
   // reject non-allowed methods; the real impl surfaces the GraphQL error.
   method?: 'squash' | 'rebase' | 'merge';
   // Optional override for the commit subject line. v0 default is the PR
@@ -102,9 +101,8 @@ export type PullToolResult<T> = { ok: true; value: T } | { ok: false; reason: st
 // The substrate-edge mitigation (GitHub ruleset's
 // `strict_required_status_checks_policy = true` on a non-empty
 // `required_status_checks`) is currently INACTIVE in v0 because CI hasn't
-// been wired — issue #105 documents the gap. This code-path check is the
-// pre-CI fix. When CI lands and `required_status_checks` is populated,
-// the substrate edge gives belt-and-suspenders.
+// been wired. This code-path check covers that gap. When CI lands and
+// `required_status_checks` is populated, the substrate edge gives belt-and-suspenders.
 export interface PullSyncStatus {
   recordId: string; // PR node_id
   status: 'current' | 'behind';
@@ -121,7 +119,7 @@ export interface PullDiff {
   truncated: boolean;
 }
 
-// Base-tree file read (issue #179). ReviewAgent resolves a symbol/file/fixture
+// Base-tree file read. ReviewAgent resolves a symbol/file/fixture
 // the diff CITES but does not define against the PR's base ref — it may already
 // exist in base from an earlier merged task, so a "missing" finding would be
 // false. A clean not-found at base maps to `found: false` (a genuinely-absent
@@ -141,11 +139,11 @@ export interface PullTool {
   close(args: PullCloseArgs): Promise<PullToolResult<{ recordId: string }>>;
   submitReview(args: PullReviewSubmitArgs): Promise<PullToolResult<{ reviewId: string }>>;
   merge(args: PullMergeArgs): Promise<PullToolResult<{ recordId: string; mergeSha: string }>>;
-  // The PR's unified diff — the review surface (M5 finding: a metadata-only
+  // The PR's unified diff — the review surface (a metadata-only
   // review forces the brain to fail closed with REQUEST_CHANGES; the verdict
   // is only meaningful when the reviewer sees the code).
   diff(recordId: string): Promise<PullToolResult<PullDiff>>;
-  // Read a file's contents at the PR's BASE ref (issue #179). ReviewAgent uses
+  // Read a file's contents at the PR's BASE ref. ReviewAgent uses
   // it to refute a false "missing symbol/file/fixture" finding: a reference
   // resolvable in base (from an earlier merged task) is NOT a defect. Real impl
   // wraps GitHub's contents API at `?ref=<baseBranch>`; a clean 404 →
@@ -160,7 +158,7 @@ export interface PullTool {
 export class StubPullTool implements PullTool {
   private readonly records: Map<string, PullRecord> = new Map();
   private readonly diffs: Map<string, PullDiff> = new Map();
-  // Per-PR base-tree files (issue #179). recordId → (path → contents). Unseeded
+  // Per-PR base-tree files. recordId → (path → contents). Unseeded
   // paths default to found:false (a clean not-found at base — a genuine missing
   // reference), exercising ReviewAgent's fail-closed path.
   private readonly baseFiles: Map<string, Map<string, { content: string; truncated: boolean }>> =
@@ -172,12 +170,12 @@ export class StubPullTool implements PullTool {
   private readonly merged: PullMergeArgs[] = [];
   private readonly syncStatusCalls: string[] = [];
   // Per-PR sync override for tests. When unset, getSyncStatus returns
-  // 'current' (the safe default — pre-issue-#105 behavior).
+  // 'current' (the safe default — the sync gate stays open unless a test opts in).
   private readonly syncStatusOverrides: Map<string, PullSyncStatus> = new Map();
   private nextPrNumber = 1;
   private nextReviewId = 1;
   private nextMergeSha = 1;
-  // open()-default PR ownership (issue #191): App-authored, same-repo, so
+  // open()-default PR ownership: App-authored, same-repo, so
   // existing tests (and the genuine BuildAgent path) pass the ownership guard
   // without per-test seeding. Override via setDefaultAuthor for human/fork cases.
   private defaultAuthor: PullAuthor = { login: 'sfac-app[bot]', isBot: true };
@@ -190,7 +188,7 @@ export class StubPullTool implements PullTool {
   }
 
   // Test helper: set the author/fork ownership stamped on subsequently opened
-  // PRs (issue #191). Default is App-authored same-repo; override to simulate a
+  // PRs. Default is App-authored same-repo; override to simulate a
   // human-opened PR (isBot:false) or a fork (isCrossRepository:true).
   setDefaultOwnership(author: PullAuthor, isCrossRepository: boolean): void {
     this.defaultAuthor = author;
@@ -210,7 +208,7 @@ export class StubPullTool implements PullTool {
       headBranch: args.headBranch,
       baseBranch: args.baseBranch,
       body: args.body,
-      // issue #191: default App-authored same-repo so opened PRs pass the
+      // Default App-authored same-repo so opened PRs pass the
       // ownership guard (override via setDefaultOwnership for human/fork tests).
       author: { ...this.defaultAuthor },
       isCrossRepository: this.defaultIsCrossRepository,

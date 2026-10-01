@@ -3,8 +3,8 @@
 // ops entrypoint plumbing is end-to-end exercisable: an approved-PR envelope
 // on the `agent-runs-ops` queue routes through the OpsAgent role, drives
 // runOpsAgent (stale-base re-check → squash-merge → structural comment →
-// issue #180 post-merge Task bookkeeping), and acks. Also asserts the stamp
-// uses a ULID (issue #109 P1 — NOT deliveryId).
+// post-merge Task bookkeeping), and acks. Also asserts the stamp
+// uses a ULID (NOT deliveryId).
 
 import { createHash } from 'node:crypto';
 import { describe, expect, test, vi } from 'vitest';
@@ -50,8 +50,8 @@ describe('mainAgentOps — wire-format → parser → loop → runOpsAgent → a
     // StubPullTool's default getSyncStatus is 'current', so the stale-base
     // gate passes and runOpsAgent proceeds to squash-merge + comment. Seed
     // the PR (with BuildAgent's task-ref line) + the paired Task at
-    // status:ready carrying the REQUIRED `pr-ref:` backlink (codex round 3
-    // bidirectional pairing) so the issue #180 post-merge bookkeeping is
+    // status:ready carrying the REQUIRED `pr-ref:` backlink (bidirectional
+    // pairing) so the post-merge bookkeeping is
     // exercised end-to-end through the entrypoint wiring.
     const pulls = new StubPullTool();
     pulls.seedRecord({
@@ -70,7 +70,7 @@ describe('mainAgentOps — wire-format → parser → loop → runOpsAgent → a
     });
 
     // Mint a fresh ULID exactly as the entrypoint does — proves the boot
-    // path's stamp parses against the validator's ULID_RE (issue #109 P1).
+    // path's stamp parses against the validator's ULID_RE.
     const runId = mintRunId();
     expect(ULID_REGEX.test(runId)).toBe(true);
 
@@ -99,7 +99,7 @@ describe('mainAgentOps — wire-format → parser → loop → runOpsAgent → a
     // Structural merge-note comment posted on the PR.
     expect(pulls.reviewHistory()).toHaveLength(1);
     expect(pulls.reviewHistory()[0]?.state).toBe('comment');
-    // Issue #180 post-merge bookkeeping: marker comment on the Task, then
+    // Post-merge bookkeeping: marker comment on the Task, then
     // the status:done apply (drives task:ready→done → PlannerAgent re-plan),
     // then the status:ready swap cleanup.
     expect(issues.commentHistory()).toHaveLength(1);

@@ -4,10 +4,10 @@
 //     routingTable.ts). The handler MUST be tolerant of receiving other
 //     transitions if mis-routed and return a typed failure rather than
 //     attempting work — defensive guard, not normal path.
-//   - v0 minimum: creates ONE Spec issue per accepted Goal, body
-//     placeholder ("TODO: SpecAgent v0+ will author real spec content").
-//     Multi-spec decomposition + real content authoring (Anthropic model
-//     calls) ship in B5-PR9+ once a SpecAgent-LLM adapter exists.
+//   - v0 minimum: creates ONE Spec issue per accepted Goal. The body is
+//     model-authored when a content brain is injected, else a placeholder
+//     ("TODO: SpecAgent v0+ will author real spec content"). Multi-spec
+//     decomposition is not implemented.
 //   - Spec issue gets kind:spec label at creation. status:* labels are
 //     NOT applied by the agent — the validator's transitionResolver maps
 //     issues.opened (no status:* label) to per-kind default (Spec →
@@ -34,11 +34,9 @@
 //     default), yielding a clean drafting→ready_for_review transition.
 //   - Repo target for the Spec issue: same repo the Goal lives in
 //     (ADR 0003: planning records co-locate with the application repo
-//     that owns the Goal). v0 inputs include repo via ParsedTransitionMessage
-//     in a follow-up; for now the message doesn't carry repo so the
-//     agent uses 'SAME_REPO_AS_GOAL' as a sentinel the real impl
-//     resolves via the validator's substrate client (B5-PR9+ replaces
-//     this with a real repo string).
+//     that owns the Goal). The dispatch message does not carry the target
+//     repo, so the caller supplies it as deps.repo (mainAgentSpec binds the
+//     AGENT_DEFAULT_REPO slug).
 
 import type { AgentResult } from '../agentRegistry.js';
 import type { ContentRequest, ContentResult } from '../runtime/contentAgent.js';

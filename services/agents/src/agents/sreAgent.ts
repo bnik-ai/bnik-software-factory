@@ -6,8 +6,8 @@
 //   - v0 minimum: observe and acknowledge. The validator's audit ledger
 //     already recorded the failure transition; SREAgent's run-row in the
 //     ledger is the "an SRE was paged" evidence. No tool calls — real
-//     alerting (PagerDuty / Slack / Log Analytics rules) wires in
-//     B5-PR9+ when an alerting adapter exists.
+//     alerting (PagerDuty / Slack / Log Analytics rules) needs an alerting
+//     adapter, which does not exist yet.
 //   - The result envelope names the deployment failure mode (failure vs
 //     error) and the recordId so the audit ledger row carries enough
 //     context for post-incident analysis without joining other rows.

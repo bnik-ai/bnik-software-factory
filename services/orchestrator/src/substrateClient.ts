@@ -1,6 +1,6 @@
 // Spec: docs/decisions/0012-review-loop-resync.md item 5 ("Activation status"
-// — real `GET /compare` checker + task→PR lookup) + issue #111 (paired-Task
-// path needs the same stale-base gate the pr:* path has).
+// — real `GET /compare` checker + task→PR lookup). The paired-Task path needs
+// the same stale-base gate the pr:* path has.
 // Invariants:
 //   - READ-ONLY. The orchestrator only ever READS from substrate; mutating
 //     writes belong to L3 agents (ADR 0011) or the github-app service.
@@ -8,7 +8,7 @@
 //       (1) compareBranches() — drives GithubCompareBranchSyncChecker
 //           (`GET /repos/{owner}/{repo}/compare/{base}...{head}` → behind_by).
 //       (2) getTaskHeadBranch() — drives the paired-Task review-trigger
-//           gate (issue #111). The task message carries the task recordId
+//           gate. The task message carries the task recordId
 //           only; the gate needs headBranch/baseBranch which live on the
 //           PR the task references via its body's `pr-ref:` field.
 //   - Real impl is fetch-backed (no @octokit/* deps in orchestrator package).
@@ -33,7 +33,7 @@ export type CompareBranchesResult =
   | { ok: false; reason: string };
 
 // What the orchestrator needs to apply the branch-sync gate on the paired-
-// Task review-trigger (`task:in_progress→in_review`, issue #111): the PR's
+// Task review-trigger (`task:in_progress→in_review`): the PR's
 // headBranch/baseBranch + its recordId (so the synthetic rebase dispatch
 // targets the right PR, not the task).
 export interface TaskHeadBranchView {
@@ -275,7 +275,7 @@ export class GithubSubstrateClient implements SubstrateClient {
 // Re-exported for the v0 paired-Task path stub in tests; matches the
 // reviewAgent's PR_REF_PREFIX so the body parsing rule is single-sourced
 // at the spec level (the agent and the orchestrator agree on the format).
-// NEWEST backlink wins (#180 rev9): a replacement BuildAgent run APPENDS a
+// NEWEST backlink wins: a replacement BuildAgent run APPENDS a
 // second `pr-ref:` line, so the LAST line is the active PR — the branch-sync
 // gate must check the same PR ReviewAgent claims (reviewAgent.extractPrRef
 // uses the same newest-wins rule).

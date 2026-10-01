@@ -276,7 +276,7 @@ describe('GithubPullTool', () => {
   });
 });
 
-describe('GithubPullTool.diff (M5 review surface)', () => {
+describe('GithubPullTool.diff (review surface)', () => {
   test('GETs the PR with the diff media type and returns the text', async () => {
     const { fetchImpl, calls } = makeFetch((call) => {
       if (call.url.includes('/graphql')) return { json: { data: { node: { number: 11 } } } };
@@ -320,7 +320,7 @@ describe('GithubPullTool.diff (M5 review surface)', () => {
   });
 });
 
-describe('GithubPullTool.readBaseFile (issue #179 base-tree read)', () => {
+describe('GithubPullTool.readBaseFile (base-tree read)', () => {
   // The PR read resolves the base ref; the contents call carries ?ref=<base>.
   function baseFetch(responder: (call: RecordedCall) => { status?: number; text?: string }) {
     return makeFetch((call) => {
@@ -366,7 +366,7 @@ describe('GithubPullTool.readBaseFile (issue #179 base-tree read)', () => {
     if (!r.ok) expect(r.reason).toMatch(/^base_file_read_failed:500/);
   });
 
-  test('rejects traversal / absolute paths before any contents call (codex P2)', async () => {
+  test('rejects traversal / absolute paths before any contents call', async () => {
     for (const bad of ['../issues', 'a/../../secrets', '/etc/passwd', 'a/./b', 'a\\b', '']) {
       const { fetchImpl, calls } = baseFetch(() => ({ text: 'should-not-be-served' }));
       const tool = new GithubPullTool({ getToken, owner: 'o', repo: 'r', fetchImpl });
@@ -390,9 +390,9 @@ describe('GithubPullTool.readBaseFile (issue #179 base-tree read)', () => {
     }
   });
 
-  // issue #191: read() must surface PR author + cross-repo so BuildAgent's
+  // read() must surface PR author + cross-repo so BuildAgent's
   // auto-revision ownership guard can assert App-author + same-repo.
-  test('read maps a Bot App author (suffix-normalized #161) + same-repo isCrossRepository=false', async () => {
+  test('read maps a Bot App author (suffix-normalized) + same-repo isCrossRepository=false', async () => {
     const { fetchImpl } = makeFetch((call) => {
       if (call.url.endsWith('/graphql')) return { json: { data: { node: { number: 11 } } } };
       return {
@@ -413,7 +413,7 @@ describe('GithubPullTool.readBaseFile (issue #179 base-tree read)', () => {
     const r = await tool.read('PR_node1');
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    // `[bot]` suffix dropped to match the GraphQL-form App slug (#161).
+    // `[bot]` suffix dropped to match the GraphQL-form App slug.
     expect(r.value.author).toEqual({ login: 'example-factory', isBot: true });
     expect(r.value.isCrossRepository).toBe(false);
   });

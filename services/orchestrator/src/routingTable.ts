@@ -11,9 +11,9 @@
 //     rows): the orchestrator special-cases actor=human → dispatch the
 //     owner agent. Agent-created records have the agent already running
 //     (no dispatch). Without the actor branch, human-created records would
-//     silently strand because no one advances them (PR #50 rev2 codex).
+//     silently strand because no one advances them.
 //   - Routes only legitimate, FSM-accepted transitions. processMessage()
-//     enforces this with the verdict gate (B4-PR4): messages with
+//     enforces this with the verdict gate: messages with
 //     verdict==='flag' or 'reject' never reach routeTransition; only
 //     verdict==='accept' (or undefined for v0 wire compatibility) does.
 //   - Many transitions have NO downstream agent (terminal states,
@@ -63,7 +63,7 @@ const ROUTING_TABLE: ReadonlyMap<TransitionKey, AgentRole> = new Map([
   // BuildAgent opens PR (in_review) → ReviewAgent reviews; OpsAgent
   // merges and the merge fires the Deployment flow.
   // The in_review→in_progress cycle is the AUTHORITATIVE dispatch trigger
-  // for the revision loop per ADR 0010 rev1 (Review record drives Task
+  // for the revision loop per ADR 0010 (Review record drives Task
   // FSM cycle; orchestrator dispatches BuildAgent on the Task transition,
   // not on the parallel pr:approved→in_review event which would be
   // redundant).
@@ -80,7 +80,7 @@ const ROUTING_TABLE: ReadonlyMap<TransitionKey, AgentRole> = new Map([
   // per ADR 0013 §4 ("any →abandoned" — abandonment removes the block on
   // dependents the same way completion does).
   ['task:in_review→done', 'PlannerAgent'],
-  // Issue #180: the Task reaches `done` straight from `ready` two ways —
+  // The Task reaches `done` straight from `ready` two ways —
   // OpsAgent's post-merge bookkeeping (v0 BuildAgent never claims the Task, so
   // it still sits at `ready` when the PR merges) AND BuildAgent's already-
   // satisfied settle (an empty diff for a Task already met by existing code —
@@ -100,7 +100,7 @@ const ROUTING_TABLE: ReadonlyMap<TransitionKey, AgentRole> = new Map([
   ['pr:draft→in_review', 'ReviewAgent'],
   ['pr:open→in_review', 'ReviewAgent'],
   ['pr:in_review→approved', 'OpsAgent'],
-  // Changes-requested revision loop on the PR FSM (issue #182): ReviewAgent's
+  // Changes-requested revision loop on the PR FSM: ReviewAgent's
   // request-changes drives pr:in_review→changes_requested → dispatch BuildAgent
   // to revise the same branch; BuildAgent drives pr:changes_requested→in_review
   // → re-dispatch ReviewAgent for re-review. The loop runs on the PR FSM (not the
@@ -108,9 +108,9 @@ const ROUTING_TABLE: ReadonlyMap<TransitionKey, AgentRole> = new Map([
   // Task-FSM bounce (task:in_review→in_progress) never fires for an ordinary build.
   ['pr:in_review→changes_requested', 'BuildAgent'],
   ['pr:changes_requested→in_review', 'ReviewAgent'],
-  // Re-sync re-review bounce (issue #192/#119), TWO dispatches so the syncing
-  // state is durably ledgered between them (codex #200 — a same-execution swap
-  // races the async webhook resolution). Step 1: BuildAgent rebases + drives the
+  // Re-sync re-review bounce, TWO dispatches so the syncing state is durably
+  // ledgered between them (a same-execution swap races the async webhook
+  // resolution). Step 1: BuildAgent rebases + drives the
   // PR to syncing → pr:in_review→syncing routes back to BuildAgent to finish.
   // Step 2: BuildAgent drives syncing→in_review → routes to ReviewAgent (the gate
   // re-checks first; the branch is current post-rebase → ReviewAgent, not another
@@ -144,8 +144,8 @@ const NO_DISPATCH_TRANSITIONS: ReadonlySet<TransitionKey> = new Set([
   // dispatched).
   'task:ready→in_progress',
   // NOTE: goal:__initial__→proposed, task:in_review→done, and the four
-  // task:*→abandoned keys MOVED to ROUTING_TABLE → PlannerAgent in ADR
-  // 0013 PR2. PlannerAgent treats them as re-plan triggers (new intake /
+  // task:*→abandoned keys are in ROUTING_TABLE → PlannerAgent (ADR 0013),
+  // not here. PlannerAgent treats them as re-plan triggers (new intake /
   // dependency-clear / abandon-as-dep-clear per ADR 0013 §Decision 4).
   // OpsAgent's merge work on task:in_review→done is already complete by
   // the time that transition fires (OpsAgent ran on pr:in_review→approved
@@ -168,7 +168,7 @@ const NO_DISPATCH_TRANSITIONS: ReadonlySet<TransitionKey> = new Set([
   // dispatch happens on draft→open or draft→in_review.
   'pr:__initial__→draft',
   // PR merge fires the deployment flow separately; no PR-side dispatch from
-  // the routing table. NOTE (issue #178): processMessage intercepts a
+  // the routing table. NOTE: processMessage intercepts a
   // NON-OpsAgent pr:*→merged BEFORE routing and dispatches OpsAgent for
   // post-merge Task bookkeeping. An autonomous (actor=OpsAgent)
   // pr:approved→merged is NOT intercepted — that run already bookkept inline —
@@ -176,21 +176,21 @@ const NO_DISPATCH_TRANSITIONS: ReadonlySet<TransitionKey> = new Set([
   'pr:approved→merged',
   // Changes-after-approval loop for AGENT-driven reviews: the PR-side
   // transition is informational; the authoritative dispatch trigger is
-  // the paired task:in_review→in_progress transition (ADR 0010 rev1).
+  // the paired task:in_review→in_progress transition (ADR 0010).
   // Human-driven changes-after-approval has NO paired Task transition
   // auto-fired (no agent is running to propagate), so the
   // HUMAN_PR_REGRESSION_DISPATCH branch below catches actor=human
-  // separately (PR #50 rev3 codex finding).
+  // separately.
   'pr:approved→in_review',
   // PR/Spec/Design/Task close-paths.
   'pr:draft→closed',
   'pr:open→closed',
   'pr:in_review→closed',
-  // Closing a PR parked at changes_requested (#182 revision state) — same
-  // no-dispatch close path as the other PR states (codex #189 r7); without it a
+  // Closing a PR parked at changes_requested (revision state) — same
+  // no-dispatch close path as the other PR states; without it a
   // normal abandon/close from changes_requested dead-letters as unknown_transition.
   'pr:changes_requested→closed',
-  // Re-sync bounce escape (issue #192): a PR closed mid-bounce. (pr:in_review→
+  // Re-sync bounce escape: a PR closed mid-bounce. (pr:in_review→
   // syncing is DISPATCHED to BuildAgent for step two — see ROUTING_TABLE.)
   'pr:syncing→closed',
   'pr:approved→closed',
@@ -214,8 +214,8 @@ const NO_DISPATCH_TRANSITIONS: ReadonlySet<TransitionKey> = new Set([
   // dispatch by itself. All transitions are either authored by an agent
   // already running (creation/proposal) or executed by humans/system
   // (approval/rejection/supersede). The validator records them; no
-  // orchestrator action needed. PR #59 codex finding (orchestrator/
-  // validator kind drift fix).
+  // orchestrator action needed. The orchestrator must know every kind the
+  // validator emits (Kind mirror in types.ts).
   'decision:__initial__→drafting',
   'decision:drafting→proposed',
   'decision:drafting→abandoned',
@@ -240,7 +240,6 @@ const INITIAL_STATE = '__initial__';
 // Design / Task issue, the orchestrator dispatches the owner agent so the
 // record can advance. Agent-created records hit the same transitions but
 // fall through to NO_DISPATCH_TRANSITIONS (the agent is already running).
-// PR #50 rev2 codex finding.
 const HUMAN_CREATION_DISPATCH: ReadonlyMap<TransitionKey, AgentRole> = new Map([
   ['spec:__initial__→drafting', 'SpecAgent'],
   ['design:__initial__→drafting', 'DesignAgent'],
@@ -252,7 +251,7 @@ const HUMAN_CREATION_DISPATCH: ReadonlyMap<TransitionKey, AgentRole> = new Map([
 // agent is running to emit the paired event, so the orchestrator
 // dispatches directly. Same shape as HUMAN_CREATION_DISPATCH — both
 // instances of the actor-asymmetric pattern documented in the header
-// invariants (PR #50 rev3 codex finding).
+// invariants.
 const HUMAN_PR_REGRESSION_DISPATCH: ReadonlyMap<TransitionKey, AgentRole> = new Map([
   // Human submitted changes_requested on an approved PR. The agent path
   // relies on the paired task:in_review→in_progress transition emitted

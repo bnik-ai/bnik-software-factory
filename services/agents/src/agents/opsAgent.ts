@@ -1,13 +1,13 @@
 // Spec: docs/architecture.md (L3 OpsAgent merges approved PRs) + ADR 0002
 // (trunk-based main; merges land directly to main) + ADR 0012
 // (review-loop re-sync — pre-merge stale-base check is the code-path
-// mitigation per issue #105).
+// mitigation).
 // Invariants:
 //   - Triggered by routing key `pr:in_review→approved`. Defensive guard
 //     returns typed wrong_transition failure if mis-routed.
-//   - **Pre-merge stale-base gate (issue #105).** ADR 0012 item 1
+//   - **Pre-merge stale-base gate.** ADR 0012 item 1
 //     requires the feeder branch be current with main BEFORE the
-//     approved verdict; the orchestrator's pre-review gate (PR #101)
+//     approved verdict; the orchestrator's pre-review gate (branchSyncChecker.ts)
 //     covers review-trigger transitions but NOT pr:in_review→approved,
 //     and the substrate-edge mitigation (GitHub ruleset's
 //     strict_required_status_checks_policy) is INACTIVE in v0 because
@@ -25,18 +25,18 @@
 //     to the post-merge Task bookkeeping, reporting merge=already_merged.
 //     state='closed' (unmerged) is a typed ops_agent_pr_closed_unmerged
 //     failure. A pre-read failure falls through to the normal merge path.
-//   - v0 minimum (post-gate): squash-merge the PR. Repo rulesets
-//     configured in B1 allow squash; the real impl surfaces any
+//   - v0 minimum (post-gate): squash-merge the PR. The repo rulesets
+//     allow squash; the real impl surfaces any
 //     GraphQL rejection from branch protection as a typed
 //     pull_merge_failed reason.
 //   - Posts a structural comment on the PR per ADR 0009 §D naming the
 //     merge SHA. The Deployment FSM is fired by GitHub's
 //     workflow_run / deployment_status events on the merge commit; this
 //     agent has no direct deployment responsibility.
-//   - **Post-merge Task bookkeeping (issue #180).** After a successful merge,
+//   - **Post-merge Task bookkeeping.** After a successful merge,
 //     OpsAgent resolves the paired Task from the PR body's `task-ref:` line
 //     (BuildAgent writes `task-ref: <Task recordId>` — buildAgent.ts). The
-//     pairing is bidirectional and ENFORCED (codex round 3): the Task body
+//     pairing is bidirectional and ENFORCED: the Task body
 //     MUST carry a `pr-ref:` backlink pointing at THIS PR (BuildAgent writes
 //     it at PR-open — buildAgent.ts writePrRefBacklink); a missing or
 //     mismatched backlink is a typed skip, because `task-ref:` alone rides
@@ -46,10 +46,10 @@
 //     APPLY `status:done`, then REMOVE the prior status label — apply-then-
 //     remove so a failure can never strand the Task with no status label
 //     (the validator tolerates the dual-label window; the swap-cleanup
-//     removal is observational per transitionResolver.ts issue #180). The
+//     removal is observational per transitionResolver.ts). The
 //     FSM path: v0 BuildAgent never claims the Task (no ready→in_progress→
 //     in_review label drives), so at merge time the Task sits at `ready` —
-//     taskFsm.ts admits OpsAgent on ready→done (issue #180) and on the
+//     taskFsm.ts admits OpsAgent on ready→done and on the
 //     existing in_review→done. The emitted task:{ready|in_review}→done is
 //     routingTable.ts's PlannerAgent dep-clear re-plan trigger (ADR 0013 §4),
 //     which cascades blocked decomposed Tasks to `ready`.
@@ -58,7 +58,7 @@
 //     a typed `task_bookkeeping=...` token in the ok:true result string so
 //     the gap is operator-visible in the audit ledger; a missing `task-ref:`
 //     is a typed skip, not a failure.
-//   - **Any-merge bookkeeping (issue #178).** Post-merge bookkeeping must run
+//   - **Any-merge bookkeeping.** Post-merge bookkeeping must run
 //     on ANY merge, not only the autonomous in_review→approved→merge path. A
 //     human merge (e.g. at the request-changes gate) arrives as
 //     pull_request.closed merged:true → pr:<from>→merged; the orchestrator
@@ -68,7 +68,7 @@
 //     autonomous path runs. Idempotent: completePairedTask's internal guards
 //     no-op an already-done Task (skipped_already_done), so the autonomous
 //     path's own pr:approved→merged event reconciles harmlessly.
-//   - **Close the Task issue on done (issue #181).** When bookkeeping drives a
+//   - **Close the Task issue on done.** When bookkeeping drives a
 //     Task to status:done, also close the GitHub issue with reason=completed
 //     (a status:done Task must not linger OPEN — the board would show
 //     open-but-done records). Like the swap-cleanup removal this is
@@ -87,7 +87,7 @@ export interface OpsAgentDeps {
   // bookkeeping — gated on the App credentials ALONE, never ANTHROPIC_API_KEY
   // (OpsAgent calls no LLM; see buildOpsDeps).
   issues: IssueTool;
-  // Backlink-race retry knobs (#165 residual): the review/merge chain can
+  // Backlink-race retry knobs: the review/merge chain can
   // outrun BuildAgent's post-open backlink PATCH; on an sf/-branch PR a
   // missing backlink is re-read up to `backlinkRetryAttempts` times with
   // `backlinkRetryDelayMs` between reads before the typed skip. Defaults
@@ -104,7 +104,7 @@ const ROLE = 'OpsAgent' as const;
 // satisfies the ADR 0008 model grammar (`[a-z0-9.-]+`) so the validator's
 // attributionStamp parser resolves role=ops → OpsAgent instead of rejecting a
 // bare-role marker as malformed_agent_spec. in_review→done is single-agent so
-// its FSM fallback is authoritative; ready→done is multi-agent (issue #180 added
+// its FSM fallback is authoritative; ready→done is multi-agent (OpsAgent +
 // BuildAgent's already-satisfied path) so the App-actor resolver REQUIRES this
 // comment marker to attribute OpsAgent — posting it first (below) is load-
 // bearing there, and the run=<ulid> joins agent_runs on both edges.
@@ -123,11 +123,11 @@ const STATUS_DONE_LABEL = 'status:done';
 //   - autonomous path: `squash-merged as <sha>` (computed at the call site).
 //   - already-merged replay (idempotent redelivery of the approved event).
 const IDEMPOTENT_REPLAY_NOTE = 'previously squash-merged (idempotent replay of the approved event)';
-//   - any-merge bookkeeping (issue #178: human/non-App merge — no fresh
+//   - any-merge bookkeeping (human/non-App merge — no fresh
 //     merge() result, and the squash SHA isn't carried through the close event).
 const MERGED_BOOKKEEPING_NOTE = 'merged (post-merge bookkeeping)';
 // The Task states OpsAgent may legally complete from (taskFsm.ts allowedActors
-// evidence: ready→done = [OpsAgent, BuildAgent] (issue #180), in_review→done =
+// evidence: ready→done = [OpsAgent, BuildAgent], in_review→done =
 // [OpsAgent]). in_progress→done is NOT in the FSM — a Task found there (or in
 // any other state) yields a typed failed token instead of an off-policy write.
 const COMPLETABLE_STATUS_LABELS: ReadonlySet<string> = new Set([
@@ -146,7 +146,7 @@ export async function runOpsAgent(
     };
   }
 
-  // Any-merge bookkeeping (issue #178). A merge that already landed on the
+  // Any-merge bookkeeping. A merge that already landed on the
   // substrate (pull_request.closed merged:true → pr:<from>→merged — human or
   // App) needs ONLY the paired-Task → done bookkeeping; the merge / stale-base
   // gate / merge note are all moot (the PR is already on main). Run the SAME
@@ -192,11 +192,11 @@ export async function runOpsAgent(
     return { ok: false, reason: `ops_agent_pr_closed_unmerged:${message.recordId}` };
   }
 
-  // Pre-merge stale-base gate (issue #105 — ADR 0012 §Risks code-path
+  // Pre-merge stale-base gate (ADR 0012 §Risks code-path
   // mitigation). Re-check sync status RIGHT BEFORE merging — main may
   // have advanced between approval and now. On 'behind', return typed
   // failure; the orchestrator deadletters and BuildAgent's rebase loop
-  // (PR #106) re-fires the review-trigger transition, which after
+  // re-fires the review-trigger transition, which after
   // re-review eventually re-emits pr:in_review→approved against a
   // current base. On checker failure, fail-closed (safer than
   // merging against an unknown sync state).
@@ -225,8 +225,8 @@ export async function runOpsAgent(
   // verb separate from the Review primitive). The note is purely
   // informational; the audit ledger row for the merge transition is the
   // authoritative trail.
-  // Post-merge Task bookkeeping (issue #180) runs BEFORE the informational
-  // merge note (rev8, codex): a note failure returns ok:false (dead-letter,
+  // Post-merge Task bookkeeping runs BEFORE the informational
+  // merge note: a note failure returns ok:false (dead-letter,
   // no retry), and bookkeeping must not be hostage to it — the merge already
   // happened and dependents replan off the Task's done transition.
   const bookkeeping = await completePairedTask(
@@ -263,7 +263,7 @@ export async function runOpsAgent(
 // mergeDescriptor is the human-readable merge phrasing inserted into the Task's
 // structural-marker comment: `squash-merged as <sha>` on the autonomous merge,
 // the idempotent-replay note on the already-merged path, and the any-merge note
-// (issue #178) on a human/non-App merge — none of those last two carry a fresh
+// on a human/non-App merge — none of those last two carry a fresh
 // squash SHA through the close event / PR read.
 // ADR 0008 branch grammar prefix — identifies BuildAgent-authored PRs (the
 // only ones whose backlink can be mid-write when the merge lands).
@@ -297,7 +297,7 @@ async function completePairedTask(
     return `task_bookkeeping=failed:task_read:${task.reason}`;
   }
 
-  // Target validation (codex P2 + round 3): `task-ref:` rides the MUTABLE PR
+  // Target validation: `task-ref:` rides the MUTABLE PR
   // body — a human-edited body could point at any issue. Require the target to
   // be a real Task AND require its `pr-ref:` backlink (BuildAgent writes it
   // onto the Task body at PR-open — buildAgent.ts writePrRefBacklink) to point
@@ -306,7 +306,7 @@ async function completePairedTask(
   if (!task.value.labels.includes('kind:task')) {
     return `task_bookkeeping=skipped_not_a_task:${taskRef}`;
   }
-  // rev6+rev10 (codex): a Task can carry MULTIPLE pr-ref lines (a replacement
+  // A Task can carry MULTIPLE pr-ref lines (a replacement
   // PR appends a second backlink — writePrRefBacklink appends, never
   // replaces). The NEWEST (last) backlink is the active PR everywhere
   // (reviewAgent claim, orchestrator branch-sync) — and only the ACTIVE PR's
@@ -315,7 +315,7 @@ async function completePairedTask(
   let backRefs = extractPrRefs(task.value.body ?? '');
   let newestBackRef = backRefs[backRefs.length - 1];
   if (newestBackRef === undefined && isSfBranch(pr.value.headBranch)) {
-    // #165 residual (codex): the review/merge chain can outrun BuildAgent's
+    // The review/merge chain can outrun BuildAgent's
     // post-open backlink PATCH — on an sf/-branch (BuildAgent) PR a missing
     // backlink is most likely the seconds-wide write race, and skipping is
     // SILENT-PERMANENT (the late issues.edited settles observationally and
@@ -340,8 +340,8 @@ async function completePairedTask(
   const statusLabels = task.value.labels.filter((name) => name.startsWith(STATUS_LABEL_PREFIX));
   if (statusLabels.includes(STATUS_DONE_LABEL)) {
     // Idempotent re-delivery / parallel completion — the →done transition
-    // already landed, nothing to drive. STILL retry the close (issue #181,
-    // codex): a prior run may have applied status:done but FAILED the close,
+    // already landed, nothing to drive. STILL retry the close: a prior run
+    // may have applied status:done but FAILED the close,
     // leaving an open-but-done Task — and this early-return is the ONLY path a
     // replay reaches (it short-circuits before the close below). Retrying here
     // (idempotent: already-closed = 200 no-op) lets any redelivery — the
@@ -368,8 +368,8 @@ async function completePairedTask(
 
   // 1. Structural-marker comment FIRST (ADR 0009 §D) so the validator's actor
   //    resolver can attribute the labeled transition from the comment marker.
-  //    REQUIRED on the multi-agent ready→done edge (issue #180: OpsAgent +
-  //    BuildAgent); the single-agent FSM fallback still covers in_review→done.
+  //    REQUIRED on the multi-agent ready→done edge (OpsAgent + BuildAgent);
+  //    the single-agent FSM fallback still covers in_review→done.
   const marker = await deps.issues.comment({
     recordId: taskRef,
     body: `OpsAgent: paired PR ${prRecordId} ${mergeDescriptor}; completing this Task (status:done). (Run ${deps.runId})`,
@@ -393,7 +393,7 @@ async function completePairedTask(
   //    removal failure leaves only label hygiene, reported but still done.
   const removed = await deps.issues.removeLabel({ recordId: taskRef, label: priorStatusLabel });
 
-  // 4. CLOSE the Task issue (issue #181) — a status:done Task must not linger
+  // 4. CLOSE the Task issue — a status:done Task must not linger
   //    OPEN. reason=completed; idempotent (already-closed = 200 no-op). Same
   //    post-transition-hygiene class as the swap-cleanup removal: the
   //    {ready|in_review}→done edge already landed with the apply, so neither a
@@ -412,7 +412,7 @@ const PR_REF_PREFIX = 'pr-ref:';
 // The Task body's `pr-ref: <PR recordId>` back-reference (BuildAgent appends
 // it at PR-open — writePrRefBacklink; same carrier reviewAgent's paired-Task
 // route reads). REQUIRED here: bookkeeping proceeds only when the backlink
-// exists and points at THIS PR (codex round 3 bidirectional-pairing enforcement).
+// exists and points at THIS PR (bidirectional-pairing enforcement).
 function extractPrRefs(body: string): string[] {
   const refs: string[] = [];
   for (const line of body.split('\n')) {

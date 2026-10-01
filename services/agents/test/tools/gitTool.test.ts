@@ -55,8 +55,7 @@ describe('StubGitTool', () => {
       expect(r.value.newHeadSha).toMatch(/^stub-rebase-sha-[0-9a-f]{8}$/);
       // Default: head SHA changes every rebase (models the common case
       // where main advanced and the rebase rewrote commits). treeChanged
-      // defaults false (tree-equality is independent of head-equality —
-      // issue #112).
+      // defaults false (tree-equality is independent of head-equality).
       expect(r.value.oldHeadSha).not.toBe(r.value.newHeadSha);
       expect(r.value.treeChanged).toBe(false);
     }
@@ -74,7 +73,7 @@ describe('StubGitTool', () => {
   });
 
   test('setNextRebaseHeadUnchanged forces oldHeadSha === newHeadSha (one-shot)', async () => {
-    // Issue #112: BuildAgent's push gate is HEAD-equality. The stub
+    // BuildAgent's push gate is HEAD-equality. The stub
     // defaults to head-changed (push fires); this setter models the
     // truly-no-op rebase (already current, nothing to rewrite).
     const tool = new StubGitTool();
@@ -85,7 +84,7 @@ describe('StubGitTool', () => {
     if (r2.ok) expect(r2.value.oldHeadSha).not.toBe(r2.value.newHeadSha); // one-shot
   });
 
-  test('hasChanges defaults true; setNextHasChanges(false) models an empty diff (issue #180)', async () => {
+  test('hasChanges defaults true; setNextHasChanges(false) models an empty diff', async () => {
     const tool = new StubGitTool();
     expect(await tool.hasChanges('main')).toEqual({
       ok: true,
@@ -96,7 +95,7 @@ describe('StubGitTool', () => {
       ok: true,
       value: { changed: false, worktreeDirty: false, committedAhead: false },
     });
-    // records the base branch BuildAgent threads (codex P1 #180)
+    // records the base branch BuildAgent threads
     expect(tool.hasChangesBaseBranches).toEqual(['main', 'main']);
   });
 
@@ -111,7 +110,7 @@ describe('StubGitTool', () => {
     }
   });
 
-  test('headSha returns a stable default; setNextHeadShas enqueues pre/post values (issue #182)', async () => {
+  test('headSha returns a stable default; setNextHeadShas enqueues pre/post values', async () => {
     const tool = new StubGitTool();
     // Default: the same head before/after (no self-commit in the revision path).
     expect((await tool.headSha()).ok).toBe(true);

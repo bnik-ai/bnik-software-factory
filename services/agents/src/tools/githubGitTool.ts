@@ -10,7 +10,7 @@
 //   - commit() stamps the ADR 0009 §2 trailers (SF-Agent/SF-Run/SF-Task)
 //     onto the message body; agents never hand-author them.
 //   - rebase() returns { oldHeadSha, newHeadSha, treeChanged } — the two
-//     independent signals issue #112 + ADR 0012 item 4 require.
+//     independent signals ADR 0012 item 4 requires.
 //   - exec is injected (default real execFile) so tests use a fake — CI has
 //     no git creds and no network.
 
@@ -163,7 +163,7 @@ export class GithubGitTool implements GitTool {
     }
   }
 
-  // `git rev-parse HEAD` (issue #182): the revision path captures HEAD before
+  // `git rev-parse HEAD`: the revision path captures HEAD before
   // and after the coding run to detect a coding-agent self-commit (see GitTool).
   async headSha(): Promise<GitToolResult<{ sha: string }>> {
     try {
@@ -188,11 +188,11 @@ export class GithubGitTool implements GitTool {
     }
   }
 
-  // Issue #180: whether the branch carries ANY change relative to its base.
+  // Whether the branch carries ANY change relative to its base.
   // BuildAgent calls this after the coding run to distinguish an already-
   // satisfied Task (empty diff → settle done) from real work / a genuine commit
   // failure. TWO signals, because the coding agent has a Bash tool and may run
-  // `git commit` ITSELF (codex P1): a clean worktree alone does NOT prove an
+  // `git commit` ITSELF: a clean worktree alone does NOT prove an
   // empty diff — the branch could be ahead of base with committed work that
   // settling-as-done would silently drop.
   //   (1) worktree dirt: `git status --porcelain --untracked-files=all`.
@@ -211,11 +211,11 @@ export class GithubGitTool implements GitTool {
         '--untracked-files=all',
       ]);
       const worktreeDirty = status.trim().length > 0;
-      // Decide against the FRESHLY-fetched base (codex P2 #180): the base can
+      // Decide against the FRESHLY-fetched base: the base can
       // advance during a long coding run, so refresh + fetch (like rebase()).
       // committedAhead is computed UNCONDITIONALLY — even a DIRTY worktree must
       // surface an agent self-commit, else a mixed (committed + dirty) run would
-      // commit the leftovers and publish the un-attributed commit (codex P2 r6).
+      // commit the leftovers and publish the un-attributed commit.
       await this.refreshRemote();
       await this.git(['-C', this.workdir, 'fetch', 'origin']);
       const { stdout: ahead } = await this.git([
@@ -233,7 +233,7 @@ export class GithubGitTool implements GitTool {
         return { ok: true, value: { changed: true, worktreeDirty: false, committedAhead: true } };
       }
       // Clean + no own commits: `changed` iff the branch's tree DIFFERS from the
-      // live base (codex P1 r5). HEAD exactly at base → no diff → already
+      // live base. HEAD exactly at base → no diff → already
       // satisfied. HEAD behind a freshly-advanced base → diff present → changed
       // (stale checkout; BuildAgent fails closed for a re-run, never settles done).
       // `git diff --name-only` (not --quiet, which exits non-zero and throws).
@@ -257,7 +257,7 @@ export class GithubGitTool implements GitTool {
 
   // Rebase headBranch onto baseBranch (ADR 0012 strategy: rebase, not
   // merge-in). Fetches origin first so baseBranch is current, then computes
-  // the two independent signals (issue #112):
+  // the two independent signals:
   //   - oldHeadSha vs newHeadSha → head-equality (drives the push gate)
   //   - treeChanged → tree-equality (drives full-vs-delta review, ADR 0012)
   async rebase(

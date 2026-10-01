@@ -159,7 +159,7 @@ describe('runDesignAgent — defensive guards', () => {
   });
 });
 
-describe('runDesignAgent — real content brain (M1c env-gated path)', () => {
+describe('runDesignAgent — real content brain (env-gated path)', () => {
   test('calls generateContent then issues.create with the model-authored body', async () => {
     const deps = makeDeps('parent-goal: I_kwAOA_goal_42\n\nDeploy sample-app\n\nbody');
     const calls: Array<{ system?: string; prompt: string }> = [];

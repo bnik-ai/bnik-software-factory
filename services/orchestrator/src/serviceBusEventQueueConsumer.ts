@@ -32,7 +32,7 @@
 //     ([]) so a transport blip does not crash the loop; non-transient errors
 //     propagate (the loop's catch ends the execution for redelivery). The
 //     non-session receiver has no acceptNextSession dangling-rejection risk, so
-//     no process-wide guard is needed here (cf. validator PR #142).
+//     no process-wide guard is needed here (cf. services/validator/src/mainConsumer.ts).
 
 import type { ParsedTransitionMessage, TransitionVerdict } from './types.js';
 
@@ -287,15 +287,15 @@ export function deserializeDispatchMessage(
   }
   if (typeof m.headBranch === 'string') message.headBranch = m.headBranch;
   if (typeof m.baseBranch === 'string') message.baseBranch = m.baseBranch;
-  // M2: target repo slug + installation id, forwarded to agents downstream.
+  // Target repo slug + installation id, forwarded to agents downstream.
   if (typeof m.repoFullName === 'string') message.repoFullName = m.repoFullName;
   if (typeof m.installationId === 'number') message.installationId = m.installationId;
   return message;
 }
 
 // The @azure/service-bus SDK's normalized `ServiceBusError.code` values that
-// are transient (verified against node_modules/@azure/service-bus — cf.
-// validator PR #142). These are post-normalization spellings (e.g.
+// are transient (verified against node_modules/@azure/service-bus). These are
+// post-normalization spellings (e.g.
 // `ServiceBusy`, NOT the rhea-level `ServerBusy`).
 const TRANSIENT_SB_CODES: ReadonlySet<string> = new Set([
   'ServiceTimeout',

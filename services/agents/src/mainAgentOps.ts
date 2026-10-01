@@ -4,9 +4,9 @@
 // mainAgentDesign.ts.
 //
 // OpsAgent is the merge agent: it squash-merges approved PRs after a
-// pre-merge stale-base re-check, then drives the paired Task to done (issue
-// #180 post-merge bookkeeping — see src/agents/opsAgent.ts header + ADR
-// 0012). runOpsAgent's deps are `pulls` (PullTool) + `issues` (IssueTool, the
+// pre-merge stale-base re-check, then drives the paired Task to done
+// (post-merge bookkeeping — see src/agents/opsAgent.ts header + ADR 0012).
+// runOpsAgent's deps are `pulls` (PullTool) + `issues` (IssueTool, the
 // Task status-label writes) + a per-run ULID; it does not touch
 // generateContent / any LLM.
 //
@@ -15,7 +15,7 @@
 // including ANTHROPIC_API_KEY, and would silently fall back to StubPullTool
 // when the Ops job has GitHub App creds but no Anthropic key, ack'ing the
 // approved-PR message after a STUB (no-op) merge — silent data-loss in the
-// merge path (issue #179 review P1). buildOpsDeps gates the real
+// merge path. buildOpsDeps gates the real
 // GithubPullTool + GithubIssueTool on the GitHub App credentials ALONE.
 
 import { buildOpsDeps, isGithubAppMode } from './agentDeps.js';
@@ -30,7 +30,7 @@ import {
 const ROLE = 'OpsAgent' as const;
 const DEFAULT_QUEUE_NAME = 'agent-runs-ops';
 
-// Fail closed (issue #179 review P2): OpsAgent's only job is to MERGE via
+// Fail closed: OpsAgent's only job is to MERGE via
 // GitHub. If it is wired to a REAL Service Bus queue (live mode) but lacks the
 // GitHub App credentials, buildOpsDeps would hand back a StubPullTool and every
 // approved-PR message would be acked after a no-op stub merge — silent
@@ -57,13 +57,13 @@ export function startOpsAgentConsumer(): ReturnType<typeof startAgentConsumer> {
     defaultQueueName: DEFAULT_QUEUE_NAME,
     handler: (message) => {
       // Per-run ULID per ADR 0008 §2 — REQUIRED by the validator's
-      // attributionStamp parser (issue #109 P1). Mint here; do NOT reuse
+      // attributionStamp parser. Mint here; do NOT reuse
       // message.deliveryId (it isn't ULID-shaped).
       const runId = mintRunId();
       // GitHub-only gate: real GithubPullTool + GithubIssueTool whenever the
       // App secrets are present (decoupled from ANTHROPIC_API_KEY — OpsAgent
       // never calls an LLM), else stubs (CI / in-memory boot). `issues`
-      // drives the post-merge Task bookkeeping (issue #180).
+      // drives the post-merge Task bookkeeping.
       const deps = buildOpsDeps({ env: process.env, runId });
       return runOpsAgent(message, {
         pulls: deps.pulls,

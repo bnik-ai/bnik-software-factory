@@ -1,20 +1,18 @@
 // Spec: docs/decisions/0011-agent-dispatch-topology.md (per-role Service Bus
 // fan-out — `caj-agent-spec` Container Apps Job consumes `agent-runs-spec`).
 // Invariants:
-//   - One entrypoint per role; the four roles with provisioned per-role Jobs
-//     (spec, design, build, review) each have a sibling main*.ts. PlannerAgent
-//     stays a stub in ADR 0013 PR1 (mechanical rename); the real handler +
-//     mainAgentPlanner land in PR2. OpsAgent/SREAgent run inline today (no
-//     per-role Job provisioned in VHQ Terraform).
+//   - One entrypoint per role with a provisioned per-role Job (spec, design,
+//     planner, build, review, ops), each a sibling main*.ts. SREAgent has no
+//     per-role Job and no main*.ts entrypoint.
 //   - Reads from the queue named by env AGENT_QUEUE_NAME, defaulting to
 //     `agent-runs-spec` (the SB queue the orchestrator's
 //     ServiceBusAgentDispatcher publishes SpecAgent dispatches to).
-//   - Handler is bound at boot. v0 wires StubIssueTool so the binary boots
-//     without a substrate; B5-PR9+ swaps in the real GitHub-app-backed
-//     IssueTool implementation.
+//   - Handler is bound at boot. Tools are env-gated via buildAgentDeps: the
+//     GitHub-App-backed IssueTool when credentials are set, else StubIssueTool
+//     so the binary boots without a substrate.
 //   - SB SDK swap (in-memory → @azure/service-bus) is a runtime concern; the
 //     consumer interface stays the same. See ADR 0011 for the queue
-//     topology and B7 for the SDK swap.
+//     topology and serviceBusAgentRunConsumer.ts for the SDK adapter.
 
 import { buildAgentDeps } from './agentDeps.js';
 import { runSpecAgent } from './agents/specAgent.js';
@@ -31,7 +29,7 @@ export function startSpecAgentConsumer(): ReturnType<typeof startAgentConsumer> 
     handler: (message) => {
       // Per-run ULID per ADR 0008 §2. Validator's attributionStamp parser
       // requires `run` to match /^[0-9A-HJKMNP-TV-Z]{26}$/, so we mint a
-      // fresh ULID here (issue #109 P1; wire-envelope run-id is a future fix).
+      // fresh ULID here (message.deliveryId is not ULID-shaped; see runId.ts).
       const runId = mintRunId();
       // Env-gated: real tools + content brain when secrets present, else
       // stub tools + templated placeholder (CI / in-memory boot).

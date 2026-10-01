@@ -2,11 +2,10 @@
 // Invariants:
 //   - dispatch() returns a typed result (success/failure) — the caller
 //     decides whether to ack the source message or deadletter it.
-//   - The real mechanism (HTTP? Container Apps Job spawn? KEDA-triggered
-//     separate queue per agent? — TBD per B7 wiring decision) is hidden
-//     behind this interface. B4-PR3 will pick a concrete implementation;
-//     v0 boot uses InMemoryAgentDispatcher which just records attempts
-//     so tests + the consumer loop can exercise the full path.
+//   - The transport is hidden behind this interface. The production impl
+//     is ServiceBusAgentDispatcher (one queue per agent role, ADR 0011);
+//     InMemoryAgentDispatcher just records attempts so tests + the
+//     consumer loop can exercise the full path.
 
 import type { AgentRole, ParsedTransitionMessage } from './types.js';
 
@@ -37,7 +36,6 @@ export type DispatchResult =
       // The ServiceBusAgentDispatcher classifies SB SDK errors at the
       // dispatcher boundary; in-memory + test stubs default to undefined
       // (treated as deterministic) so existing behavior is preserved.
-      // Issue #109 P2.
       transient?: boolean;
     };
 
@@ -51,8 +49,8 @@ export interface AgentDispatcher {
 }
 
 // In-memory dispatcher for tests + v0 boot. Records every dispatch
-// attempt; never fails (real impl B4-PR3 will wire to actual agent
-// runtimes and surface their failures here).
+// attempt; never fails (ServiceBusAgentDispatcher surfaces real enqueue
+// failures).
 export class InMemoryAgentDispatcher implements AgentDispatcher {
   private readonly attempts: DispatchRequest[] = [];
   private nextDispatchId = 1;

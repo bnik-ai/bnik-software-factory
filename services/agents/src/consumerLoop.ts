@@ -153,7 +153,7 @@ export async function runAgentConsumerLoop(deps: AgentConsumerLoopDeps): Promise
 }
 
 // Parse a JSON-wire payload + wrap it as an AgentRunMessage. Used by the
-// real Service Bus adapter (B7) — the in-memory consumer skips the wire
+// real Service Bus adapter — the in-memory consumer skips the wire
 // step and accepts AgentRunMessage directly. Exposed here so the parser
 // boundary stays inside the agents package.
 export function parseEnvelopeFromWire(
@@ -219,9 +219,9 @@ export function resolveQueueName(defaultQueueName: string): string {
   return raw;
 }
 
-// Per-entrypoint boot shape. v0 wires the in-memory consumer so the binary
-// boots without an external Service Bus; B7 swaps in the real SB adapter
-// behind the AgentRunQueueConsumer interface.
+// Per-entrypoint boot shape. Boot env-gates the AgentRunQueueConsumer: the
+// Service Bus adapter when SB env is set, else the in-memory consumer so the
+// binary boots without an external Service Bus.
 export interface StartAgentConsumerOpts {
   role: AgentRole;
   defaultQueueName: string;

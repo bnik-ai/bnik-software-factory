@@ -53,15 +53,15 @@ export interface ConsumerLoopDeps {
   onError?: (deliveryId: string, err: Error) => void;
   // Forwarded to processMessage (branch-sync gate per ADR 0010/0012).
   // Defaults to the pass-through AlwaysCurrentBranchSyncChecker inside
-  // processMessage when omitted, preserving pre-B4-PR8 boot behavior.
+  // processMessage when omitted (no branch-sync check).
   branchSyncChecker?: import('./branchSyncChecker.js').BranchSyncChecker;
   // SubstrateClient is forwarded to processMessage so the paired-Task
   // review-trigger path can resolve head/base via task body → pr-ref →
-  // PR (issue #111). When omitted, the task-path gate skips (matches the
+  // PR. When omitted, the task-path gate skips (matches the
   // pr:* path's "skip when headBranch missing" v0 posture).
   substrateClient?: SubstrateClient;
   defaultBaseBranch?: string;
-  // Issue #182: repo-targeting allowlist (AGENT_TARGET_REPOS), forwarded to
+  // Repo-targeting allowlist (AGENT_TARGET_REPOS), forwarded to
   // processMessage. Undefined → no filtering (backward compat; v0 boots and
   // single-repo deploys without the env var behave exactly as before).
   targetRepoAllowlist?: ReadonlySet<string>;
@@ -116,7 +116,7 @@ export async function runConsumerLoop(deps: ConsumerLoopDeps): Promise<void> {
         if (decision.action === 'ack') {
           await deps.consumer.ack(message.lockToken);
         } else if (decision.action === 'retry') {
-          // Issue #109 P2: transient failure — leave the message
+          // Transient failure — leave the message
           // unsettled and END THE JOB EXECUTION. SB redelivers on a
           // fresh execution. Same session-order discipline as the
           // catch-error path; the explicit log distinguishes "we chose
@@ -248,7 +248,7 @@ async function resolveConsumer(): Promise<{
   return { consumer, close: () => consumer.close() };
 }
 
-// Issue #182: AGENT_TARGET_REPOS — optional comma-separated owner/repo
+// AGENT_TARGET_REPOS — optional comma-separated owner/repo
 // allowlist (e.g. "example-owner/sample-app,example-org/software-factory"). When set,
 // processMessage acks messages targeting any OTHER repo as
 // `repo_not_targeted` instead of dispatching agents that are pinned to
@@ -410,7 +410,7 @@ export async function startConsumer(): Promise<StartConsumerHandle> {
   })
     // Idle-drain exit: when the loop returns without a SIGTERM/SIGINT, close
     // the consumer + dispatcher here so the Job completes instead of the open
-    // SB handles keeping the process alive (codex PR #143).
+    // SB handles keeping the process alive.
     .then(closeResourcesOnce);
 
   const shutdown = async (signal?: NodeJS.Signals): Promise<void> => {

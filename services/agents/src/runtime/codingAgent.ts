@@ -14,9 +14,9 @@
 //     does NOT restrict), and `allowedTools` auto-allows them so they execute
 //     without prompts. Both receive the same allowlist.
 //   - `cwd` is the clone dir; the SDK reads ANTHROPIC_API_KEY from env.
-//   - `maxTurns` caps loop-runaway (plan Risks: "Loop runaway").
+//   - `maxTurns` caps loop-runaway.
 //   - ADR 0009 commit-attribution trailers (SF-Agent/SF-Run/SF-Task) are
-//     applied by the GitTool layer (services/agents/src/tools/, M1b), NOT
+//     applied by the GitTool layer (services/agents/src/tools/), NOT
 //     here — this module only drives the model's file edits.
 //   - The SDK `query` is dependency-injected (`queryFn`) so tests drive a
 //     fake async-generator; CI has no ANTHROPIC_API_KEY and MUST NOT call

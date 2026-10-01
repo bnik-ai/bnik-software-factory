@@ -100,7 +100,7 @@ describe('ServiceBusDispatchQueueConsumer — receive + deserialize', () => {
     expect(consumer.inflightCount()).toBe(1);
   });
 
-  test('forwards M2 + PR fields when present (verdict/repoFullName/installationId/headBranch/baseBranch)', async () => {
+  test('forwards repo + PR fields when present (verdict/repoFullName/installationId/headBranch/baseBranch)', async () => {
     const receiver = new FakeReceiver([
       [
         makeReceivedMessage(

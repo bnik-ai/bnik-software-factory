@@ -81,7 +81,7 @@ describe('StubIssueTool', () => {
     expect(tool.createHistory()[0]?.title).toBe('Spec: New thing');
   });
 
-  test('listComments returns comment() writes + seedComment seeds, both with structural (issue #182)', async () => {
+  test('listComments returns comment() writes + seedComment seeds, both with structural', async () => {
     const tool = new StubIssueTool();
     // Pre-seed a ReviewAgent request-changes findings comment on a PR.
     tool.seedComment('PR_1', {

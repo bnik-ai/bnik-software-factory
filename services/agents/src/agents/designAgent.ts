@@ -3,9 +3,9 @@
 // Invariants:
 //   - Triggered by routing key `spec:ready_for_review→ratified`. Defensive
 //     guard returns typed wrong_transition failure if mis-routed.
-//   - v0 minimum: creates ONE Design issue per ratified Spec, body
-//     placeholder. Multi-design decomposition + real content authoring
-//     via model invocation ship in B5-PR9+.
+//   - v0 minimum: creates ONE Design issue per ratified Spec. The body is
+//     model-authored when a content brain is injected, else a placeholder.
+//     Multi-design decomposition is not implemented.
 //   - Design issue gets kind:design label at creation. status:* labels
 //     are NOT applied — the validator's transitionResolver maps
 //     issues.opened to per-kind default (Design → drafting) per

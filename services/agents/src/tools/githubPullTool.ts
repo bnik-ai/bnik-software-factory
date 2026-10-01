@@ -52,13 +52,13 @@ interface PrApiShape {
   draft?: boolean;
   merged?: boolean;
   // GitHub REST `GET /pulls/{number}` returns the PR body markdown. ReviewAgent
-  // reads `task-ref:` out of it to resolve the paired Task (issue #178 rev2).
+  // reads `task-ref:` out of it to resolve the paired Task.
   body?: string | null;
-  // PR author (issue #191). REST `user.type` is `User` | `Bot` — the App is a
-  // `Bot`. REST bot logins carry the `[bot]` suffix (GraphQL drops it, #161); we
+  // PR author. REST `user.type` is `User` | `Bot` — the App is a
+  // `Bot`. REST bot logins carry the `[bot]` suffix (GraphQL drops it); we
   // normalize before the App-slug comparison in BuildAgent's ownership guard.
   user?: { login?: string | null; type?: string | null } | null;
-  // Head/base repo identity (issue #191). A fork PR has head.repo.id !==
+  // Head/base repo identity. A fork PR has head.repo.id !==
   // base.repo.id (or a null head.repo for a deleted fork) → cross-repository.
   // The ownership guard requires same-repo (clone/push must target the base
   // repo, not a fork carrying a colliding `sf/...` ref).
@@ -70,7 +70,7 @@ interface PrApiShape {
 // run's context cost on outsized diffs; the prompt carries a truncation note.
 const DIFF_CHAR_CAP = 120_000;
 
-// Base-tree file read cap (chars). Issue #179: a few small cited files to
+// Base-tree file read cap (chars). Reads are a few small cited files to
 // refute a false "missing" finding, not the whole tree — a tighter cap.
 const BASE_FILE_CHAR_CAP = 64_000;
 
@@ -284,7 +284,7 @@ export class GithubPullTool implements PullTool {
     };
   }
 
-  // Read a file at the PR's BASE ref (issue #179). GitHub contents API with the
+  // Read a file at the PR's BASE ref. GitHub contents API with the
   // raw media type returns file bytes directly. A clean 404 = genuinely absent
   // at base (found:false, NOT a transport error); only network/other-non-2xx is
   // ok:false. The base ref comes from the PR record (like getSyncStatus).
@@ -292,7 +292,7 @@ export class GithubPullTool implements PullTool {
     const prResult = await this.read(recordId);
     if (!prResult.ok) return prResult;
     const ref = prResult.value.baseBranch;
-    // Reject traversal / absolute paths (codex P2): filePath is UNTRUSTED review
+    // Reject traversal / absolute paths: filePath is UNTRUSTED review
     // output. `encodeURIComponent` leaves `.`/`..` segments intact, so the URL
     // parser would normalize `/contents/../x` onto another REST endpoint (and a
     // directory/JSON response could be marked found:true). Only repo-relative
@@ -372,7 +372,7 @@ export class GithubPullTool implements PullTool {
 // A repo-relative file path with no traversal: non-empty, no backslash, and no
 // empty / `.` / `..` segment (which reject absolute, trailing-slash, and dot
 // paths). Pre-encoded `%2e%2e` is harmless — encodeURIComponent re-encodes the
-// `%`, so only literal dot segments can normalize the URL (codex P2).
+// `%`, so only literal dot segments can normalize the URL.
 function isSafeRepoRelativePath(path: string): boolean {
   if (path.length === 0 || path.includes('\\')) return false;
   for (const segment of path.split('/')) {
@@ -399,22 +399,23 @@ function toPullRecord(pr: PrApiShape): PullRecord {
     headBranch: pr.head.ref,
     baseBranch: pr.base.ref,
     ...(pr.body !== undefined && pr.body !== null ? { body: pr.body } : {}),
-    // issue #191 ownership signals for BuildAgent's auto-revision guard.
+    // Ownership signals for BuildAgent's auto-revision guard.
     author: toPullAuthor(pr.user),
     isCrossRepository: isCrossRepository(pr),
   };
 }
 
-// Map REST `user` → PullAuthor (issue #191). `type === 'Bot'` marks a bot
+// Map REST `user` → PullAuthor. `type === 'Bot'` marks a bot
 // account (a human is `User` — the substrate stamps it, not forgeable). Login is
-// suffix-normalized (#161) so it compares to the configured App slug.
+// suffix-normalized (REST keeps `[bot]`, GraphQL drops it) so it compares to the
+// configured App slug.
 function toPullAuthor(user: PrApiShape['user']): PullAuthor {
   const login = user?.login ?? undefined;
   const isBot = user?.type === 'Bot';
   return login === undefined ? { isBot } : { login: normalizeBotLogin(login), isBot };
 }
 
-// Cross-repo (fork) signal (issue #191). A fork PR's head repo differs from the
+// Cross-repo (fork) signal. A fork PR's head repo differs from the
 // base repo; a deleted-fork head repo is null. Same-repo iff both repo ids are
 // present and equal. Fail closed (→ cross-repo true) on any missing id so an
 // indeterminate head never reads as same-repo.

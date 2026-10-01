@@ -7,12 +7,12 @@
 //     all code-side writes; ReviewAgent drives the PR review FSM via
 //     STATUS LABELS + a findings COMMENT and reads PR / Task / Issue
 //     substrate. The dep set deliberately omits `git`.
-//   - STRUCTURAL REVIEW (issue #178): under the single App identity (ADR
+//   - STRUCTURAL REVIEW: under the single App identity (ADR
 //     0009 §1), BuildAgent opens the PR as the App and ReviewAgent reviews
 //     it as the SAME App. GitHub returns HTTP 422 "Can not approve/request-
 //     changes on your own pull request" for `pulls.submitReview(APPROVE/
 //     REQUEST_CHANGES)`, so the formal-review API can NEVER advance the
-//     App's own PR (confirmed in the agent-runs-review DLQ). The fix keeps
+//     App's own PR. ReviewAgent therefore keeps
 //     ADR 0009's single identity (model-independence is still enforced by
 //     the role@model branch/stamp per ADR 0010) and drives the FSM the
 //     SAME way every other agent does: apply a `status:<to>` label on the
@@ -21,7 +21,7 @@
 //     transitionResolver maps `pull_request` action='labeled' carrying a
 //     `status:*` label to the PR toState and resolves the actor (ReviewAgent)
 //     from the single-agent edge / the structural-comment marker.
-//   - TWO-PHASE (issue #178 rev2): the review runs as two separate, session-
+//   - TWO-PHASE: the review runs as two separate, session-
 //     ordered ReviewAgent runs — exactly the ADR 0010 shape (the loop runs
 //     WITHIN in_review). Each run does EXACTLY ONE status-label transition on
 //     the PR, so there is no in-run apply+remove race and the verdict run never
@@ -37,20 +37,19 @@
 //               `status:in_review`→`status:approved` on the PR (emits
 //               `pr:in_review→approved` → OpsAgent, NOT ReviewAgent, so no
 //               loop); on `request-changes` swap `status:in_review`→
-//               `status:changes_requested` on the PR (issue #182), emitting
+//               `status:changes_requested` on the PR, emitting
 //               `pr:in_review→changes_requested` → BuildAgent's revision
 //               (routingTable.ts). NEVER re-apply `status:in_review` in the
 //               verdict run — that is what self-triggers ReviewAgent.
-//     Rationale (codex rev1): a single run that applied `status:in_review` then
+//     Rationale: a single run that applied `status:in_review` then
 //     removed it before `status:approved` ingested could race the async,
 //     session-ordered webhook pipeline — the labeled(in_review) event could
 //     resolve `applied_label_no_longer_present`, the in_review transition would
 //     never land in the ledger, and the later labeled(approved) would resolve
 //     fromState=open → FSM-flagged `open→approved`. Splitting the runs removes
-//     the apply+remove entirely from any single run. rev2: the paired-Task route
-//     is CLAIM-only (verdicting it races the PR ledger — codex P1a). The
-//     request-changes path (issue #182, replacing the #178 rev4 deferral) runs on
-//     the PR FSM, NOT the Task FSM: in v0 the paired Task stays status:ready
+//     the apply+remove entirely from any single run. The paired-Task route
+//     is CLAIM-only (verdicting it races the PR ledger). The request-changes path
+//     runs on the PR FSM, NOT the Task FSM: in v0 the paired Task stays status:ready
 //     through review (BuildAgent drives the PR draft→in_review, never the Task), so
 //     a Task bounce (task:in_review→in_progress) would be neither FSM-authorized
 //     nor routed and the loop would never start. BuildAgent's revision handler
@@ -79,13 +78,13 @@
 //   - Defensive: any other transition (mis-routed) returns a typed
 //     `review_agent_wrong_transition` failure without tool calls.
 //   - v0 placeholder verdict (design-doc §7 v0 substitute, ADR 0010 §"Open
-//     decisions" O3): the codex CLI is not yet headless-authenticated in
-//     `caj-agent-review`. Until O3 resolves, v0 emits a placeholder
+//     decisions"): the second-model review CLI is not yet headless-authenticated
+//     in `caj-agent-review`. Until it is, v0 emits a placeholder
 //     `approved` Review so the PR can advance to `pr:in_review→approved`
 //     and the orchestrator → OpsAgent merge path is exercisable end-to-
-//     end. Real multi-model adversarial loop (independent review →
-//     adjudicate → revision → re-review → convergence) ships in B5-PR11+
-//     once O3 is resolved. The placeholder body explicitly names the
+//     end. The multi-model adversarial loop (independent review →
+//     adjudicate → revision → re-review → convergence) is deferred until
+//     that CLI authenticates headlessly. The placeholder body explicitly names the
 //     deferral so the audit ledger reads as a v0 placeholder, not a
 //     real verdict.
 //   - For paired-Task routes the PR linkage comes from the Task body's
@@ -123,7 +122,7 @@ export interface ReviewAgentDeps {
   // content review of the PR and maps the verdict to the `approve` /
   // `request-changes` structural-label path. When absent, it drives the v0
   // placeholder `approve` path so the loop stays exercisable (in-memory
-  // boot + existing tests). NOTE: the ADR 0010 multi-model codex
+  // boot + existing tests). NOTE: the ADR 0010 multi-model
   // adjudication loop is a future enhancement; v0 real-path is single-model
   // content review.
   generateContent?: GenerateContentFn;
@@ -163,17 +162,14 @@ const ROLE = 'ReviewAgent' as const;
 // shape; matches branch-grammar role enum in ADR 0008).
 const ROLE_ATTR = 'review' as const;
 const PR_REF_PREFIX = 'pr-ref: ';
-// BuildAgent writes `task-ref: <Task_recordId>` into the PR body (buildAgent.ts).
-// ReviewAgent's verdict run reads it to resolve the paired Task (PR→Task) so a
-// request-changes verdict can drive `task:in_review→in_progress` (rev2 P1b).
 
-// PR review-FSM status labels (issue #178 structural review). Applying
+// PR review-FSM status labels (structural review). Applying
 // these on the PR (a PR is an Issue in GitHub's API, so issue-labels apply)
 // is how ReviewAgent advances the PR FSM without the 422-blocked native
 // review-approval API.
 const STATUS_IN_REVIEW_LABEL = 'status:in_review';
 const STATUS_APPROVED_LABEL = 'status:approved';
-// PR status label driven on the changes-requested verdict (issue #182): on
+// PR status label driven on the changes-requested verdict: on
 // request-changes ReviewAgent swaps `status:in_review`→`status:changes_requested`
 // on the PR, emitting `pr:in_review→changes_requested` — the routingTable edge
 // that dispatches BuildAgent's revision (prFsm.ts admits ReviewAgent on this
@@ -181,18 +177,18 @@ const STATUS_APPROVED_LABEL = 'status:approved';
 // paired Task stays status:ready through review, so a Task bounce never fires.
 const STATUS_CHANGES_REQUESTED_LABEL = 'status:changes_requested';
 
-// Base-tree resolution (issue #179). Pass 1 lets the brain enumerate cited
+// Base-tree resolution. Pass 1 lets the brain enumerate cited
 // symbols/files/fixtures it would otherwise flag as missing via `NEEDS-BASE:
 // <path>` lines; ReviewAgent reads each from the PR's base ref and re-prompts
 // (pass 2) so a reference resolvable in base is NOT a defect. The cap bounds
 // untrusted-diff-driven reads (risk control: only explicitly-cited paths,
 // still fail-closed on anything NOT FOUND / unreadable). MAX_BASE_FILE_READS is
-// a FAIL-CLOSED threshold (codex P2): more cited refs than the cap means pass 2
+// a FAIL-CLOSED threshold: more cited refs than the cap means pass 2
 // would verdict on an incomplete base-resolution set, so the review fails
 // closed with a typed reason rather than silently dropping the overflow.
 const BASE_REF_REQUEST_PREFIX = 'NEEDS-BASE:';
 const MAX_BASE_FILE_READS = 20;
-// Aggregate base-content budget (codex P2). Even within MAX_BASE_FILE_READS and
+// Aggregate base-content budget. Even within MAX_BASE_FILE_READS and
 // the per-file read cap, N resolved files can sum past the model context window
 // (20 × 64KB ≈ 1.3MB on top of the diff). Bound the TOTAL base content fed into
 // the pass-2 prompt; over budget → fail closed (typed reason, human gate) rather
@@ -201,14 +197,14 @@ const MAX_BASE_FILE_READS = 20;
 // the model context limit.
 const MAX_BASE_TOTAL_CONTENT_CHARS = 200_000;
 
-// Two-phase structural review (issue #178 rev2, ADR 0010 §"the review loop
+// Two-phase structural review (ADR 0010 §"the review loop
 // runs within in_review"). Each ReviewAgent run does EXACTLY ONE status-label
 // transition on the PR, so there is no in-run apply+remove race and the verdict
 // run never re-dispatches ReviewAgent.
 //
 //   CLAIM phase: apply `status:in_review` on the PR ONLY. Triggers:
 //     - `pr:__initial__→open`, `pr:draft→open` (PR opened directly), AND
-//     - the paired-Task route `task:in_progress→in_review` (rev2 P1a): this
+//     - the paired-Task route `task:in_progress→in_review`: this
 //       webhook is a SEPARATE session from the PR's own open event, so it must
 //       NOT verdict (it could apply `status:approved` while the PR ledger is
 //       still open/__initial__ → illegal open→approved). Instead it resolves
@@ -221,23 +217,23 @@ const MAX_BASE_TOTAL_CONTENT_CHARS = 200_000;
 //
 //   VERDICT phase (`pr:open→in_review`, `pr:draft→in_review`, AND the
 //   re-review edge `pr:changes_requested→in_review` after a BuildAgent
-//   revision — issue #182): post the structural findings COMMENT, then on
+//   revision): post the structural findings COMMENT, then on
 //   `approve` swap `status:in_review` → `status:approved` on the PR (emits
 //   `pr:in_review→approved` → OpsAgent, NOT ReviewAgent, so no loop). On
 //   `request-changes` swap `status:in_review` → `status:changes_requested` on
 //   the PR (emits `pr:in_review→changes_requested` → BuildAgent's revision via
 //   routingTable.ts). BuildAgent then drives `pr:changes_requested→in_review`,
 //   which routes back here as the next verdict run — so that edge MUST be a
-//   verdict key or every revised PR dead-letters (codex #189). NEVER apply
+//   verdict key or every revised PR dead-letters. NEVER apply
 //   `status:in_review` on the PR here — that is what self-triggers ReviewAgent.
 const PR_CLAIM_KEYS: ReadonlySet<string> = new Set(['pr:__initial__→open', 'pr:draft→open']);
 const PR_VERDICT_KEYS: ReadonlySet<string> = new Set([
   'pr:draft→in_review',
   'pr:open→in_review',
-  // Re-review after a revision (issue #182): BuildAgent drove the PR back from
+  // Re-review after a revision: BuildAgent drove the PR back from
   // changes_requested; re-run the verdict on the revised diff.
   'pr:changes_requested→in_review',
-  // Re-review after a gated rebase (issue #192/#119): BuildAgent's syncing bounce
+  // Re-review after a gated rebase: BuildAgent's syncing bounce
   // drove the PR back from `syncing`; re-run the verdict on the rebased branch.
   'pr:syncing→in_review',
 ]);
@@ -272,7 +268,7 @@ export async function runReviewAgent(
     return claimReview(message.recordId, deps);
   }
 
-  // Paired-Task route (rev2 P1a — CLAIM phase, NOT verdict): the Task reached
+  // Paired-Task route (CLAIM phase, NOT verdict): the Task reached
   // in_review in its own session. Resolve the PR via the Task body's `pr-ref:`
   // and only CLAIM it (`status:in_review`); the PR's resulting pr:open→in_review
   // drives the single verdict run. Verdicting here would race the PR ledger.
@@ -315,7 +311,7 @@ async function claimReview(prRecordId: string, deps: ReviewAgentDeps): Promise<A
     return { ok: false, reason: `review_agent_pr_read_failed:${pr.reason}` };
   }
 
-  // Claim guard (issue #178 rev8): the paired-Task event rides a DIFFERENT
+  // Claim guard: the paired-Task event rides a DIFFERENT
   // Service Bus session than the PR's own events, so it can arrive after the
   // claim/verdict path already advanced the PR. Blindly re-applying
   // status:in_review to an approved PR would record pr:approved→in_review (a
@@ -331,14 +327,14 @@ async function claimReview(prRecordId: string, deps: ReviewAgentDeps): Promise<A
   }
   const prIssue = await deps.issues.read(prRecordId);
   if (!prIssue.ok) {
-    // rev10: claiming with the guard blind recreates the exact race the guard
+    // Claiming with the guard blind recreates the exact race the guard
     // exists for (re-applying status:in_review to an already-approved PR is
     // NOT idempotent — it adds a label and records approved→in_review). Same
     // typed-failure posture as the pulls.read failure above; the deadletter
     // reason names the gap for the operator.
     return { ok: false, reason: `review_agent_claim_guard_read_failed:${prIssue.reason}` };
   }
-  // changes_requested added per codex #189: a late paired-Task claim must not
+  // changes_requested also blocks the claim: a late paired-Task claim must not
   // overwrite it with status:in_review (the resolver would misread the resulting
   // changes_requested→in_review as a BuildAgent revision and re-review with no
   // revision pushed). Only BuildAgent drives the PR out of changes_requested.
@@ -398,7 +394,7 @@ async function emitVerdict(prRecordId: string, deps: ReviewAgentDeps): Promise<A
     return { ok: false, reason: `review_agent_pr_read_failed:${pr.reason}` };
   }
 
-  // Idempotency guard (codex #189 r7): the verdict run posts a structural verdict
+  // Idempotency guard: the verdict run posts a structural verdict
   // marker and swaps the PR's status:in_review label (→approved or
   // →changes_requested). On an at-least-once REDELIVERY after a prior run already
   // emitted the verdict, the PR is no longer at status:in_review — re-posting
@@ -422,7 +418,7 @@ async function emitVerdict(prRecordId: string, deps: ReviewAgentDeps): Promise<A
   let verdict: 'approve' | 'request-changes';
   let findingsBody: string;
   if (deps.generateContent !== undefined) {
-    // M5 finding: a metadata-only review surface forces the brain to fail
+    // A metadata-only review surface forces the brain to fail
     // closed with REQUEST_CHANGES ("can't see the code"). Fetch the unified
     // diff — and FAIL CLOSED if it can't be read (a blind verdict is
     // worthless; the typed reason dead-letters operator-visibly).
@@ -430,14 +426,14 @@ async function emitVerdict(prRecordId: string, deps: ReviewAgentDeps): Promise<A
     if (!prDiff.ok) {
       return { ok: false, reason: `review_agent_diff_read_failed:${prDiff.reason}` };
     }
-    // rev2 (codex P1): a truncated surface must NOT be approvable — hunks
+    // A truncated surface must NOT be approvable — hunks
     // beyond the cap were never reviewed. Fail closed; an outsized PR gets a
     // human review in v0 (typed reason dead-letters operator-visibly).
     if (prDiff.value.truncated) {
       return { ok: false, reason: `review_agent_diff_truncated_v0:${prRecordId}` };
     }
     // Pass 1: review the diff. The brain emits `NEEDS-BASE: <path>` lines for
-    // any reference it would flag as missing — it may exist in base (#179).
+    // any reference it would flag as missing — it may exist in base.
     const firstPass = await deps.generateContent({
       system: REVIEWER_SYSTEM,
       prompt: renderReviewPrompt(
@@ -457,7 +453,7 @@ async function emitVerdict(prRecordId: string, deps: ReviewAgentDeps): Promise<A
     let finalText = firstPass.text;
     const baseRequests = extractBaseFileRequests(firstPass.text);
     if (baseRequests.length > MAX_BASE_FILE_READS) {
-      // Fail closed (codex P2): too many cited refs to resolve → pass 2 would
+      // Fail closed: too many cited refs to resolve → pass 2 would
       // verdict on an incomplete base set (a later missing ref could slip
       // through). Typed reason dead-letters operator-visibly (human gate),
       // mirroring the diff-truncation fail-closed posture.
@@ -469,14 +465,14 @@ async function emitVerdict(prRecordId: string, deps: ReviewAgentDeps): Promise<A
       // review signal the brain judges (the genuinely-missing ref may or may not
       // matter).
       const resolved = await resolveBaseFiles(prRecordId, baseRequests, deps);
-      // Hard-gate (codex P2): an UNREADABLE cited ref (transport error / invalid
+      // Hard-gate: an UNREADABLE cited ref (transport error / invalid
       // path) means presence could NOT be determined — fail closed
       // deterministically rather than trusting the brain to honor the prompt's
       // fail-closed instruction. Mirrors the diff-read-failed/truncated gates.
       if (resolved.some((file) => file.status === 'unreadable')) {
         return { ok: false, reason: `review_agent_base_file_unreadable_v0:${prRecordId}` };
       }
-      // Fail closed (codex P2): aggregate resolved base content over the pass-2
+      // Fail closed: aggregate resolved base content over the pass-2
       // budget would either overflow the model context or be silently dropped —
       // either way pass 2 would verdict on an unsound set. Dead-letter visibly
       // for the human gate, mirroring the request-count + diff-truncation gates.
@@ -509,7 +505,7 @@ async function emitVerdict(prRecordId: string, deps: ReviewAgentDeps): Promise<A
   // 1. Structural-marker findings COMMENT (actor attribution per ADR 0009 §D).
   //    On the single-agent `pr:in_review→approved` edge the FSM fallback alone
   //    resolves ReviewAgent; the comment is the audit-carrier for the verdict.
-  // The marker carries the VERDICT attribute (issue #178 rev6): the
+  // The marker carries the VERDICT attribute: the
   // validator's review-required assertion accepts ONLY verdict=approve as
   // structural review evidence, so a stale claim or request-changes marker can
   // never satisfy a later pr:in_review→approved.
@@ -527,7 +523,7 @@ async function emitVerdict(prRecordId: string, deps: ReviewAgentDeps): Promise<A
   }
 
   if (verdict === 'request-changes') {
-    // Changes-requested verdict (issue #182, closing the #178 rev4 deferral).
+    // Changes-requested verdict.
     // The findings comment is posted on the PR above (verdict=request-changes
     // marker — the structural attribution for this single-actor edge). Drive the
     // PR `in_review→changes_requested` so the orchestrator dispatches BuildAgent's
@@ -540,8 +536,8 @@ async function emitVerdict(prRecordId: string, deps: ReviewAgentDeps): Promise<A
     return requestChangesOnPr(prRecordId, pr.value.number, deps);
   }
 
-  // 2. approve → swap `status:in_review` for `status:approved`. APPLY-then-REMOVE
-  //    (codex rev3): apply `status:approved` FIRST, then remove `status:in_review`.
+  // 2. approve → swap `status:in_review` for `status:approved`. APPLY-then-REMOVE:
+  //    apply `status:approved` FIRST, then remove `status:in_review`.
   //    If the apply fails, the PR keeps `status:in_review` (recoverable) rather
   //    than being stranded with no status label and no transition to dispatch
   //    OpsAgent. The validator's PR label resolver tolerates the temporary
@@ -571,7 +567,7 @@ async function emitVerdict(prRecordId: string, deps: ReviewAgentDeps): Promise<A
   return { ok: true, result: summary };
 }
 
-// Changes-requested verdict (issue #182): drive the PR `in_review→changes_requested`
+// Changes-requested verdict: drive the PR `in_review→changes_requested`
 // so the orchestrator dispatches BuildAgent's revision off
 // `pr:in_review→changes_requested`. The findings comment is the structural marker
 // (posted in emitVerdict, verdict=request-changes); this single-actor edge
@@ -609,13 +605,13 @@ async function requestChangesOnPr(
   };
 }
 
-// Review surface: PR metadata + the unified diff (pulls.diff — M5 finding:
-// the metadata-only surface forced fail-closed REQUEST_CHANGES verdicts).
-// The diff is UNTRUSTED, PR-authored data (codex rev3): a markdown fence is
+// Review surface: PR metadata + the unified diff (pulls.diff — a metadata-only
+// surface forces fail-closed REQUEST_CHANGES verdicts).
+// The diff is UNTRUSTED, PR-authored data: a markdown fence is
 // escapable from inside a diff (context lines carry arbitrary text), so the
 // block is delimited with run-nonce markers the PR author cannot predict
 // (the per-run ULID is minted after the PR exists), and the system prompt
-// pins the untrusted-data rule. The ADR 0010 multi-model codex loop
+// pins the untrusted-data rule. The ADR 0010 multi-model review loop
 // (future) layers adjudication on top.
 function renderReviewPrompt(
   prNumber: number,
@@ -640,10 +636,10 @@ function renderReviewPrompt(
   ].join('\n');
 }
 
-// Parse the brain's `NEEDS-BASE: <path>` lines (issue #179): the files it would
+// Parse the brain's `NEEDS-BASE: <path>` lines: the files it would
 // otherwise flag as missing and wants checked against base. Deduped; the count
 // is checked against MAX_BASE_FILE_READS by the caller, which fails closed on
-// overflow (codex P2) rather than silently dropping the surplus here.
+// overflow rather than silently dropping the surplus here.
 function extractBaseFileRequests(text: string): string[] {
   const paths: string[] = [];
   const seen = new Set<string>();
@@ -691,10 +687,10 @@ async function resolveBaseFiles(
   return out;
 }
 
-// Pass-2 prompt (issue #179): the diff plus the resolved base files. Base file
+// Pass-2 prompt: the diff plus the resolved base files. Base file
 // contents are UNTRUSTED repo data, so they ride between run-nonce markers like
 // the diff. A fully-PRESENT file proves the reference exists (NOT a defect); a
-// TRUNCATED file (codex P2) does NOT prove existence on its own — the cited
+// TRUNCATED file does NOT prove existence on its own — the cited
 // symbol may sit past the cap, so it resolves only if the symbol is visible in
 // the shown excerpt, else it stays fail-closed like NOT-FOUND / UNREADABLE.
 function renderBaseResolutionPrompt(
@@ -740,7 +736,7 @@ function renderBaseResolutionPrompt(
   ].join('\n');
 }
 
-// NEWEST backlink wins (#180 rev7): a replacement BuildAgent run APPENDS a
+// NEWEST backlink wins: a replacement BuildAgent run APPENDS a
 // second `pr-ref:` line (writePrRefBacklink never rewrites), so the LAST line
 // is the active PR — reading the first would claim/review the stale one.
 function extractPrRef(body: string): string | undefined {

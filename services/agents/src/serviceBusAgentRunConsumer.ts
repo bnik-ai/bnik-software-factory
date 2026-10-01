@@ -24,14 +24,14 @@
 //   - Auth union mirrors the orchestrator's dispatcher: connectionString OR
 //     { fullyQualifiedNamespace, credential }; a receiverFactory test seam
 //     bypasses the SDK entirely.
-//   - Message-lock survival (codex PR #144 P1): agent handlers run real
+//   - Message-lock survival: agent handlers run real
 //     Claude/GitHub work that can exceed the queue's lock duration. The SDK's
 //     receiver auto-renews each received message's lock up to
 //     maxAutoLockRenewalDurationInMs (default 5 min); we raise it to
 //     DEFAULT_MAX_AUTO_LOCK_RENEWAL_MS so a long handler doesn't lose its lock
 //     and cause a MessageLockLost on completeMessage → duplicate dispatch run.
-//   - Transient receive resilience (codex PR #144 P2, mirrors validator PR
-//     #142): a transient receiveMessages rejection (ServiceBusy / ServiceTimeout
+//   - Transient receive resilience (mirrors the validator's SB
+//     consumer): a transient receiveMessages rejection (ServiceBusy / ServiceTimeout
 //     / network blip) must NOT crash the loop — runAgentConsumerLoop has no
 //     catch around receive(). We classify transient SB errors here and return
 //     [] (empty poll) so the loop retries on the next tick. Non-transient errors
@@ -91,7 +91,7 @@ export interface ServiceBusAgentRunConsumerConfig {
   auth?: ServiceBusAuth;
   queueName?: string;
   receiveWaitMs?: number;
-  // Lock auto-renewal window for the real SDK receiver (P1). Defaults to
+  // Lock auto-renewal window for the real SDK receiver. Defaults to
   // DEFAULT_MAX_AUTO_LOCK_RENEWAL_MS. Ignored by injected test receivers.
   maxAutoLockRenewalDurationInMs?: number;
 }
@@ -171,7 +171,7 @@ export class ServiceBusAgentRunQueueConsumer implements AgentRunQueueConsumer {
     };
     // peekLock (default) — the message stays locked until we completeMessage /
     // deadLetterMessage, so a crashed execution redelivers after lock timeout.
-    // maxAutoLockRenewalDurationInMs (P1): the SDK auto-renews each received
+    // maxAutoLockRenewalDurationInMs: the SDK auto-renews each received
     // message's lock for up to this window so a long agent handler doesn't lose
     // its lock and trigger MessageLockLost → duplicate dispatch.
     return client.createReceiver(queueName, {
@@ -188,10 +188,10 @@ export class ServiceBusAgentRunQueueConsumer implements AgentRunQueueConsumer {
         maxWaitTimeInMs: this.receiveWaitMs,
       });
     } catch (err) {
-      // P2: a transient SB condition (ServiceBusy / ServiceTimeout / network
+      // A transient SB condition (ServiceBusy / ServiceTimeout / network
       // blip) must NOT reject up into runAgentConsumerLoop (which has no catch
       // around receive()) and crash the job. Treat it as an empty poll so the
-      // loop retries on the next tick (mirrors validator PR #142). A
+      // loop retries on the next tick (mirrors the validator's SB consumer). A
       // non-transient error still propagates — a structural fault should
       // surface, not silently spin.
       if (isTransientServiceBusError(err)) {
@@ -278,7 +278,7 @@ export class ServiceBusAgentRunQueueConsumer implements AgentRunQueueConsumer {
   // Apps Job can exit cleanly after the loop's idle-drain return (an open
   // client/receiver keeps the process alive).
   //
-  // codex PR #144 P2: runAgentConsumerLoop returns on the first handler throw
+  // runAgentConsumerLoop returns on the first handler throw
   // (end_execution / session-order discipline) WITHOUT settling the rest of the
   // batch. close() is the end_execution hook (startAgentConsumer wires it as the
   // loop's .finally), so abandon any still-inflight messages here — releasing
@@ -311,7 +311,7 @@ export class ServiceBusAgentRunQueueConsumer implements AgentRunQueueConsumer {
 
 // The @azure/service-bus SDK's normalized ServiceBusError.code values that are
 // transient/retryable on a receive (verified against the validator's
-// serviceBusEventQueueConsumer post-PR #142). These are the post-normalization
+// serviceBusEventQueueConsumer). These are the post-normalization
 // spellings (e.g. `ServiceBusy`, not the rhea-level `ServerBusy`).
 const TRANSIENT_SB_CODES: ReadonlySet<string> = new Set([
   'ServiceTimeout',

@@ -17,7 +17,6 @@ export function parseBlockedBy(body: string): ReadonlyArray<string> {
     // way (not as a `blocked-by:` line), so human-created Tasks must be parsed
     // here too — else declared blockers are dropped and blocked work is promoted
     // prematurely. `_No response_` is GitHub's empty-optional-field placeholder.
-    // (codex PR #150)
     if (/^#{1,6}\s+blocked-by\s*$/.test(lower)) {
       for (let j = i + 1; j < lines.length; j++) {
         const value = (lines[j] ?? '').trim();

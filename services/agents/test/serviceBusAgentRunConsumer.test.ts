@@ -8,7 +8,7 @@ import {
   resolveAgentRunConsumerBootConfig,
 } from '../src/serviceBusAgentRunConsumer.js';
 
-// P1: assert the real SDK path passes maxAutoLockRenewalDurationInMs +
+// Assert the real SDK path passes maxAutoLockRenewalDurationInMs +
 // peekLock to createReceiver. Mock the dynamically-imported SDK module.
 const createReceiverSpy = vi.fn(
   (_q: string, _opts?: { receiveMode?: string; maxAutoLockRenewalDurationInMs?: number }) => ({
@@ -151,7 +151,7 @@ describe('ServiceBusAgentRunQueueConsumer — receive → deserialize', () => {
   });
 });
 
-describe('ServiceBusAgentRunQueueConsumer — lock auto-renewal (P1)', () => {
+describe('ServiceBusAgentRunQueueConsumer — lock auto-renewal', () => {
   test('real SDK receiver is created with peekLock + maxAutoLockRenewalDurationInMs', async () => {
     createReceiverSpy.mockClear();
     const consumer = new ServiceBusAgentRunQueueConsumer({
@@ -180,7 +180,7 @@ describe('ServiceBusAgentRunQueueConsumer — lock auto-renewal (P1)', () => {
   });
 });
 
-describe('isTransientServiceBusError — classification (P2)', () => {
+describe('isTransientServiceBusError — classification', () => {
   test.each([
     [{ name: 'ServiceBusError', code: 'ServiceBusy' }, true],
     [{ name: 'ServiceBusError', code: 'ServiceTimeout' }, true],
@@ -197,7 +197,7 @@ describe('isTransientServiceBusError — classification (P2)', () => {
   });
 });
 
-describe('ServiceBusAgentRunQueueConsumer — transient receive resilience (P2)', () => {
+describe('ServiceBusAgentRunQueueConsumer — transient receive resilience', () => {
   function throwingReceiver(err: unknown): ReceiverLike {
     return {
       receiveMessages: async () => {
@@ -369,7 +369,7 @@ describe('ServiceBusAgentRunQueueConsumer — lifecycle', () => {
     expect(receiver.closed).toBe(true);
   });
 
-  test('close() abandons unsettled inflight messages for immediate redelivery (P2)', async () => {
+  test('close() abandons unsettled inflight messages for immediate redelivery', async () => {
     // Two messages received; only the first is acked. The loop's end_execution
     // path leaves the second inflight — close() must abandon it (release lock
     // for redelivery) rather than leave it locked until expiry.

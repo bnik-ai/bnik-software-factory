@@ -1,8 +1,8 @@
 // Spec: docs/design/review-agent.md (PR code-review loop) +
-// docs/decisions/0010-multi-model-review-loop.md + issue #178 (structural
-// review — drive the PR review FSM via status labels + a findings comment
-// instead of the 422-blocked native review-approval API).
-// Coverage (two-phase split, issue #178 rev1 — one status-label transition per
+// docs/decisions/0010-multi-model-review-loop.md. Structural review: drive the
+// PR review FSM via status labels + a findings comment instead of the
+// 422-blocked native review-approval API.
+// Coverage (two-phase split — one status-label transition per
 // run; no apply+remove race; verdict run never self-dispatches):
 //   - CLAIM phase (`→open`: pr:__initial__→open, pr:draft→open): applies
 //     status:in_review ONLY (+ claim comment). No approval, no remove.
@@ -16,7 +16,7 @@
 //     NO tool calls.
 //   - Real-brain path (verdict phase): APPROVE → status:approved (in_review
 //     removed); REQUEST_CHANGES → drives the PR in_review→changes_requested
-//     (issue #182: apply status:changes_requested + remove status:in_review on the
+//     (apply status:changes_requested + remove status:in_review on the
 //     PR) so the orchestrator dispatches BuildAgent's revision; unparseable verdict
 //     fails closed to request-changes.
 //   - Hard invariant: ReviewAgent NEVER calls submitReview with state
@@ -48,8 +48,8 @@ function makeMessage(overrides: Partial<ParsedTransitionMessage> = {}): ParsedTr
 }
 
 // prLabels defaults to ['status:in_review'] — the PR's state DURING a verdict run
-// (the claim phase applied it), which the verdict idempotency guard (codex #189
-// r7) requires. CLAIM-phase tests pass [] so the claim proceeds (the claim guard
+// (the claim phase applied it), which the verdict idempotency guard
+// requires. CLAIM-phase tests pass [] so the claim proceeds (the claim guard
 // skips when status:in_review is already present).
 function makeDeps(prLabels: string[] = ['status:in_review']) {
   const issues = new StubIssueTool();
@@ -187,7 +187,7 @@ describe('runReviewAgent — VERDICT phase (`→in_review` triggers): post findi
     expect(deps.issues.labelApplyHistory().map((e) => e.label)).toEqual(['status:approved']);
   });
 
-  test('verdict REDELIVERY after the PR already moved off in_review → no-op, no duplicate marker (codex #189 r7)', async () => {
+  test('verdict REDELIVERY after the PR already moved off in_review → no-op, no duplicate marker', async () => {
     // The PR is no longer status:in_review (a prior verdict already swapped it):
     // re-running must NOT post a second verdict marker (a request-changes dupe
     // would inflate BuildAgent's revision-round count).
@@ -201,7 +201,7 @@ describe('runReviewAgent — VERDICT phase (`→in_review` triggers): post findi
     expect(deps.issues.labelApplyHistory()).toHaveLength(0);
   });
 
-  test('pr:changes_requested→in_review (re-review after revision, #182) runs the verdict — NOT a wrong_transition (codex #189)', async () => {
+  test('pr:changes_requested→in_review (re-review after revision) runs the verdict — NOT a wrong_transition', async () => {
     // BuildAgent drove the revised PR back to in_review. The orchestrator routes
     // pr:changes_requested→in_review to ReviewAgent; it MUST be a verdict key or
     // every revised PR dead-letters review_agent_wrong_transition.
@@ -219,7 +219,7 @@ describe('runReviewAgent — VERDICT phase (`→in_review` triggers): post findi
     expect(result.result).not.toMatch(/wrong_transition/);
   });
 
-  test('pr:syncing→in_review (re-review after a gated rebase, #192) runs the verdict — NOT a wrong_transition (codex #200)', async () => {
+  test('pr:syncing→in_review (re-review after a gated rebase) runs the verdict — NOT a wrong_transition', async () => {
     // BuildAgent's syncing bounce drove the rebased PR back to in_review. The
     // orchestrator routes pr:syncing→in_review to ReviewAgent; it MUST be a verdict
     // key or every gated-rebase re-review dead-letters review_agent_wrong_transition.
@@ -282,7 +282,7 @@ describe('runReviewAgent — paired-Task route task:in_progress→in_review (in 
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // rev2 P1a: the paired-Task route is a CLAIM-only run — it resolves the PR
+    // The paired-Task route is a CLAIM-only run — it resolves the PR
     // via the Task's pr-ref and applies status:in_review ONLY (claim comment +
     // status:in_review on the REFERENCED PR, never status:approved here).
     expect(deps.issues.commentHistory().map((c) => c.recordId)).toEqual(['PR_kwAOA_77']);
@@ -423,7 +423,7 @@ describe('runReviewAgent — defensive guards', () => {
   });
 });
 
-describe('runReviewAgent — real content-review brain (M1c env-gated)', () => {
+describe('runReviewAgent — real content-review brain (env-gated)', () => {
   test('APPROVE verdict → status:approved applied; findings comment carries the model verdict; NEVER submitReview', async () => {
     const deps = makeDeps();
     deps.pulls.seedDiff(
@@ -459,7 +459,7 @@ describe('runReviewAgent — real content-review brain (M1c env-gated)', () => {
     expect(result.result).toMatch(/^ReviewAgent: structural approve on PR PR_kwAOA_77 \(#77\)$/);
   });
 
-  test('REQUEST_CHANGES verdict → findings posted, PR swapped status:in_review→status:changes_requested (issue #182), NO submitReview', async () => {
+  test('REQUEST_CHANGES verdict → findings posted, PR swapped status:in_review→status:changes_requested, NO submitReview', async () => {
     const deps = makeDeps();
     deps.pulls.seedDiff(
       'PR_kwAOA_77',
@@ -472,7 +472,7 @@ describe('runReviewAgent — real content-review brain (M1c env-gated)', () => {
 
     const result = await runReviewAgent(makeMessage(), { ...deps, generateContent });
 
-    // issue #182 (PR FSM): request-changes posts the findings on the PR, then
+    // PR FSM: request-changes posts the findings on the PR, then
     // drives the PR in_review→changes_requested (apply status:changes_requested,
     // remove status:in_review) so the orchestrator dispatches BuildAgent's
     // revision. Never the 422 native-review path. No Task labels at all.
@@ -505,7 +505,7 @@ describe('runReviewAgent — real content-review brain (M1c env-gated)', () => {
     await runReviewAgent(makeMessage(), { ...deps, generateContent });
 
     // Fail-closed to request-changes: NEVER status:approved on an unparseable
-    // verdict — instead the PR is driven to changes_requested (issue #182).
+    // verdict — instead the PR is driven to changes_requested.
     expect(deps.issues.labelApplyHistory()).toEqual([
       { recordId: 'PR_kwAOA_77', label: 'status:changes_requested' },
     ]);
@@ -533,7 +533,7 @@ describe('runReviewAgent — real content-review brain (M1c env-gated)', () => {
   });
 });
 
-describe('runReviewAgent — claim guard on delayed paired-Task events (issue #178 rev8)', () => {
+describe('runReviewAgent — claim guard on delayed paired-Task events', () => {
   test('task-route claim SKIPPED when the PR already carries status:approved — no writes', async () => {
     const deps = makeDeps();
     deps.issues.seedRecord({
@@ -566,7 +566,7 @@ describe('runReviewAgent — claim guard on delayed paired-Task events (issue #1
     );
   });
 
-  test('task-route claim SKIPPED when the PR is at status:changes_requested — no in_review overwrite (codex #189)', async () => {
+  test('task-route claim SKIPPED when the PR is at status:changes_requested — no in_review overwrite', async () => {
     // A late paired-Task event while the PR awaits BuildAgent's revision must NOT
     // apply status:in_review over status:changes_requested: the resolver would read
     // the resulting changes_requested→in_review as a BuildAgent revision and
@@ -650,7 +650,7 @@ describe('runReviewAgent — claim guard on delayed paired-Task events (issue #1
   });
 });
 
-describe('runReviewAgent — claim guard fails closed (issue #178 rev10)', () => {
+describe('runReviewAgent — claim guard fails closed', () => {
   test('guard label-read failure → typed claim_guard failure, NO writes (never a blind claim)', async () => {
     // Fresh deps WITHOUT the PR issues-record seed: the guard's issues.read
     // fails while pulls.read succeeds — the exact blind-guard scenario.
@@ -682,7 +682,7 @@ describe('runReviewAgent — claim guard fails closed (issue #178 rev10)', () =>
   });
 });
 
-describe('runReviewAgent — review surface carries the diff (M5 fix)', () => {
+describe('runReviewAgent — review surface carries the diff', () => {
   test('verdict prompt includes the unified diff', async () => {
     const deps = makeDeps();
     deps.pulls.seedDiff('PR_kwAOA_77', 'diff --git a/x b/x\n+added-line-marker');
@@ -697,7 +697,7 @@ describe('runReviewAgent — review surface carries the diff (M5 fix)', () => {
     );
     expect(result.ok).toBe(true);
     expect(seenPrompt).toContain('added-line-marker');
-    // codex rev3: the diff rides between run-nonce markers (unpredictable to
+    // The diff rides between run-nonce markers (unpredictable to
     // the PR author), not a markdown fence escapable from inside a diff.
     expect(seenPrompt).toContain('-----BEGIN UNTRUSTED DIFF 01HZXYZ123456789ABCDEFGHJK-----');
     expect(seenPrompt).toContain('-----END UNTRUSTED DIFF 01HZXYZ123456789ABCDEFGHJK-----');
@@ -728,7 +728,7 @@ describe('runReviewAgent — review surface carries the diff (M5 fix)', () => {
   });
 });
 
-describe('runReviewAgent — truncated diff fails closed (M5 fix rev2)', () => {
+describe('runReviewAgent — truncated diff fails closed', () => {
   test('truncated diff → typed review_agent_diff_truncated_v0, no verdict, no writes', async () => {
     const deps = makeDeps();
     deps.pulls.seedDiff('PR_kwAOA_77', 'diff --git a/x b/x\n+partial', true);
@@ -745,7 +745,7 @@ describe('runReviewAgent — truncated diff fails closed (M5 fix rev2)', () => {
   });
 });
 
-describe('runReviewAgent — base-tree resolution refutes false missing-ref findings (issue #179)', () => {
+describe('runReviewAgent — base-tree resolution refutes false missing-ref findings', () => {
   // A reference the diff cites but does not define may already live in the BASE
   // branch (from an earlier merged task). Pass 1 emits NEEDS-BASE lines; pass 2
   // gets the base file contents → a reference present in base is NOT a defect.
@@ -791,7 +791,7 @@ describe('runReviewAgent — base-tree resolution refutes false missing-ref find
     expect(comment.body).toContain('resolved');
   });
 
-  test('genuinely absent reference (not in base) → fail-closed REQUEST_CHANGES → PR status:changes_requested (issue #182)', async () => {
+  test('genuinely absent reference (not in base) → fail-closed REQUEST_CHANGES → PR status:changes_requested', async () => {
     const deps = makeDeps();
     deps.pulls.seedDiff('PR_kwAOA_77', 'diff --git a/t.py b/t.py\n+from ghost import x');
     // No seedBaseFile → readBaseFile returns a clean found:false (absent).
@@ -823,7 +823,7 @@ describe('runReviewAgent — base-tree resolution refutes false missing-ref find
     expect(deps.issues.commentHistory().map((c) => c.recordId)).toEqual(['PR_kwAOA_77']);
   });
 
-  test('base read transport failure → typed hard-gate fail-closed, NO pass 2, NO writes (codex P2)', async () => {
+  test('base read transport failure → typed hard-gate fail-closed, NO pass 2, NO writes', async () => {
     const deps = makeDeps();
     deps.pulls.seedDiff('PR_kwAOA_77', 'diff --git a/t.py b/t.py\n+from conftest import auth');
     deps.pulls.failNextBaseFileRead('network_error:boom');
@@ -848,7 +848,7 @@ describe('runReviewAgent — base-tree resolution refutes false missing-ref find
     expect(deps.issues.commentHistory()).toHaveLength(0);
   });
 
-  test('truncated base file is NOT presented as proof of existence (codex P2 — fail-closed framing)', async () => {
+  test('truncated base file is NOT presented as proof of existence (fail-closed framing)', async () => {
     const deps = makeDeps();
     deps.pulls.seedDiff('PR_kwAOA_77', 'diff --git a/t.py b/t.py\n+from conftest import auth');
     // Present at base but truncated — the cited symbol could sit past the cap.
@@ -870,7 +870,7 @@ describe('runReviewAgent — base-tree resolution refutes false missing-ref find
     const result = await runReviewAgent(makeMessage(), { ...deps, generateContent });
 
     // request-changes (truncated excerpt is not an existence proof) → drive the PR
-    // to changes_requested (issue #182).
+    // to changes_requested.
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     // The file header must mark it truncated (not a plain "(full)" existence
@@ -882,7 +882,7 @@ describe('runReviewAgent — base-tree resolution refutes false missing-ref find
     ]);
   });
 
-  test('more than the cap of NEEDS-BASE lines → fail closed, no pass 2, NO writes (codex P2)', async () => {
+  test('more than the cap of NEEDS-BASE lines → fail closed, no pass 2, NO writes', async () => {
     const deps = makeDeps();
     deps.pulls.seedDiff('PR_kwAOA_77', 'diff --git a/t.py b/t.py\n+x');
     // 21 unique cited paths (cap is 20): resolving only the first 20 would let
@@ -905,7 +905,7 @@ describe('runReviewAgent — base-tree resolution refutes false missing-ref find
     expect(deps.issues.labelApplyHistory()).toHaveLength(0);
   });
 
-  test('aggregate base content over the budget → fail closed, no pass 2, NO writes (codex P2)', async () => {
+  test('aggregate base content over the budget → fail closed, no pass 2, NO writes', async () => {
     const deps = makeDeps();
     deps.pulls.seedDiff('PR_kwAOA_77', 'diff --git a/t.py b/t.py\n+x');
     // 4 cited paths (within the 20-file cap), each 60KB present-in-base → 240KB
@@ -967,7 +967,7 @@ describe('runReviewAgent — base-tree resolution refutes false missing-ref find
   });
 });
 
-describe('runReviewAgent — newest pr-ref wins on the paired-Task route (#180 rev7)', () => {
+describe('runReviewAgent — newest pr-ref wins on the paired-Task route', () => {
   test('Task with a stale + a newer pr-ref → the NEWER PR is claimed', async () => {
     const deps = makeDeps();
     deps.pulls.seedRecord({

@@ -10,13 +10,12 @@
 //     IssueTool / GitTool / PullTool plus a per-run ULID. The factory
 //     binds them at registry-construction time so the AgentHandler
 //     signature remains (message) → Promise<AgentResult>.
-//   - v0 ships REAL handlers for SpecAgent (B5-PR3), DesignAgent (B5-PR4),
-//     BuildAgent (B5-PR5), OpsAgent (B5-PR6), SREAgent (B5-PR7),
-//     ReviewAgent (B5-PR10 — v0 placeholder verdict per design-doc §7;
-//     real multi-model loop in B5-PR11+ once codex O3 resolves), and
-//     PlannerAgent (ADR 0013 PR2 — continuous triage / dependency-order /
-//     ready-gate engine over a live Task backlog; SubstrateClient stub
-//     boot, GitHub-backed impl follows in B5-PR11+).
+//   - v0 ships REAL handlers for SpecAgent, DesignAgent, BuildAgent,
+//     OpsAgent, SREAgent, ReviewAgent (v0 placeholder verdict per design-doc
+//     §7; the multi-model loop waits on ADR 0010 §"Open decisions"), and
+//     PlannerAgent (ADR 0013 — continuous triage / dependency-order /
+//     ready-gate engine over a live Task backlog via the injected
+//     PlannerSubstrateClient).
 //   - Handlers are async even for stubs so the contract matches the real
 //     impl (every real agent will do I/O — API calls, git operations,
 //     substrate writes).
@@ -45,8 +44,8 @@ export interface AgentDeps {
   issues: IssueTool;
   git: GitTool;
   pulls: PullTool;
-  // PlannerAgent's backlog-aware substrate seam (ADR 0013 PR2). v0 wires
-  // StubPlannerSubstrateClient; real GitHub-app-backed impl in B5-PR11+.
+  // PlannerAgent's backlog-aware substrate seam (ADR 0013): the stub or the
+  // GitHub-App-backed client, env-gated by the entrypoint (mainAgentPlanner).
   plannerSubstrate: PlannerSubstrateClient;
   // Per-run ULID, per ADR 0008. The mainConsumer mints this at dispatch
   // time and threads it through so the same ULID lands in the branch
@@ -63,7 +62,7 @@ export interface AgentDeps {
   // Other agents may use it for attribution but don't structurally require
   // it. Orchestrator boot reads ANTHROPIC_MODEL env.
   model: string;
-  // Optional real brains (M1c). Present on the env-gated real path, absent
+  // Optional real brains. Present on the env-gated real path, absent
   // on the stub path so handlers fall back to their templated placeholders.
   // generateContent feeds Spec/Design/Review; runCodingAgent + clone feed
   // BuildAgent's real implementation flow.
@@ -72,14 +71,14 @@ export interface AgentDeps {
   clone?: CloneFn;
   // Coding workdir BuildAgent's clone targets (real path only).
   workdir?: string;
-  // Configured App slug (GITHUB_APP_SLUG) for BuildAgent's #191 auto-revision
+  // Configured App slug (GITHUB_APP_SLUG) for BuildAgent's auto-revision
   // ownership guard (the PR author must match the App bot). Undefined when unset.
   appBotLogin?: string;
 }
 
 // Stub factory: produces a handler that returns a constant success
-// envelope tagged with the role name. Used for the six L3 agents that
-// haven't been built out yet (B5-PR4..B5-PR9).
+// envelope tagged with the role name. Backs the legacy stub-only
+// AGENT_REGISTRY below.
 function makeStubHandler(role: AgentRole): AgentHandler {
   return async (_message: ParsedTransitionMessage): Promise<AgentResult> => ({
     ok: true,
@@ -160,8 +159,8 @@ export function buildAgentRegistry(deps: AgentDeps): ReadonlyMap<AgentRole, Agen
 }
 
 // Legacy stub-only registry retained for callers that don't (yet) thread
-// deps. B5-PR4+ migrates the orchestrator boot to buildAgentRegistry();
-// once all callers are migrated this constant is removed.
+// deps. New callers use buildAgentRegistry(); this constant is removed once
+// all callers are migrated.
 export const AGENT_REGISTRY: ReadonlyMap<AgentRole, AgentHandler> = new Map([
   ['SpecAgent', makeStubHandler('SpecAgent')],
   ['DesignAgent', makeStubHandler('DesignAgent')],

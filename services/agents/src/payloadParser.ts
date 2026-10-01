@@ -151,7 +151,7 @@ export function parseAgentRunPayload(raw: string): PayloadParseResult {
     verdict = m.verdict as TransitionVerdict;
   }
 
-  // Optional PR-specific fields (B4-PR8 / B4-PR9). Pass through as
+  // Optional PR-specific fields. Pass through as
   // strings or undefined; the orchestrator populates them on review-
   // trigger transitions and on synthetic rebase-for-review dispatches.
   const headBranch = typeof m.headBranch === 'string' ? m.headBranch : undefined;

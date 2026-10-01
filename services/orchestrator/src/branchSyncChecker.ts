@@ -1,5 +1,5 @@
 // Spec: docs/decisions/0010-multi-model-review-loop.md §"Re-sync onto main"
-// + docs/design/review-agent.md §2 step 0 (open question O5).
+// + docs/design/review-agent.md §2 step 0.
 //
 // What this module does:
 //   For review-trigger transitions (pr:open→in_review and friends), the
@@ -15,15 +15,13 @@
 //     'behind' and processMessage decides what to do.
 //   - v0 default impl is AlwaysCurrentBranchSyncChecker — returns
 //     {ok: true, status: 'current'} unconditionally so existing
-//     behavior is unchanged. Real impl (B5-PR11+) queries the GitHub
-//     API via `GET /repos/{owner}/{repo}/compare/{base}...{head}` and
-//     returns 'behind' when behind_by > 0.
+//     behavior is unchanged. GithubCompareBranchSyncChecker queries the
+//     GitHub API via `GET /repos/{owner}/{repo}/compare/{base}...{head}`
+//     and returns 'behind' when behind_by > 0.
 //   - ReviewAgent itself stays READ-ONLY (no git.*). The rebase action
 //     belongs to BuildAgent; the orchestrator dispatches it when this
-//     checker reports 'behind' (mechanism documented in ADR 0010
-//     amendment §"Re-sync onto main"; the BuildAgent dispatch wire is
-//     a B5-PR11+ follow-up — this PR's v0 minimum is the gate + the
-//     review_blocked_by_stale_base outcome).
+//     checker reports 'behind' and returns the review_blocked_by_stale_base
+//     outcome (processMessage.ts; ADR 0010 §"Re-sync onto main").
 //   - The check fires for the review-trigger routing keys ONLY (not
 //     for every PR transition). isReviewTriggerTransition() enumerates them.
 
@@ -139,26 +137,26 @@ export class StubBranchSyncChecker implements BranchSyncChecker {
 // ReviewAgent (NOT the paired task:in_review→in_progress transition which
 // is BuildAgent revision, not a review trigger).
 //
-// Includes `task:in_progress→in_review` (issue #111): the paired-Task
+// Includes `task:in_progress→in_review`: the paired-Task
 // route also dispatches ReviewAgent (which then reads `pr-ref:` from the
 // task body to emit a Review on the referenced PR — reviewAgent.ts:113),
 // so a stale-base review on this path has the same risk as the pr:* paths.
 // processMessage.ts resolves headBranch/baseBranch via SubstrateClient
 // (task.body → pr-ref → PR.headRefName/baseRefName) when the trigger is
 // the task-kind one — the task message itself doesn't carry headBranch.
-// POST-REBASE RE-DISPATCH (issue #192/#119): when a gated edge is behind, the
+// POST-REBASE RE-DISPATCH: when a gated edge is behind, the
 // orchestrator dispatches BuildAgent to rebase instead of ReviewAgent. The
 // rebase's force-push is a `pull_request.synchronize` event the validator settles
 // observationally, so it can't re-fire the review on its own. BuildAgent closes
 // the loop by bouncing the PR in_review→syncing→in_review (prFsm); the final
 // `pr:syncing→in_review` routes to ReviewAgent.
 //
-// The bounce's OWN re-fire edges (`pr:syncing→in_review`) and the #182 post-
-// revision re-review (`pr:changes_requested→in_review`) are deliberately NOT gated
+// The bounce's OWN re-fire edges (`pr:syncing→in_review`) and the post-revision
+// re-review (`pr:changes_requested→in_review`) are deliberately NOT gated
 // here. The branch is already current coming out of the bounce/revision, and
 // re-gating them would dispatch a CONCURRENT rebase if the base advanced during
 // the bounce — racing finishSyncBounce's in-flight label cleanup and stranding the
-// PR with no status label (codex #200 r6). A rare base-advance during the bounce
+// PR with no status label. A rare base-advance during the bounce
 // is the lesser harm: ReviewAgent reviews a hair-stale branch and OpsAgent's
 // pre-merge getSyncStatus gate (ADR 0012 §Risks) refuses a behind merge anyway.
 const REVIEW_TRIGGER_KEYS = new Set<string>([

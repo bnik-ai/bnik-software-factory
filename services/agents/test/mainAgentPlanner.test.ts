@@ -1,7 +1,7 @@
 // Integration: wire-format JSON → parser → consumer loop → runPlannerAgent
 // → ack. Mirrors mainAgentSpec.test.ts / mainAgentBuild.test.ts / etc.
 // Confirms the entrypoint plumbing is end-to-end exercisable and that the
-// stamp uses a ULID (issue #109 P1 — DO NOT use message.deliveryId).
+// stamp uses a ULID (DO NOT use message.deliveryId).
 
 import { createHash } from 'node:crypto';
 import { describe, expect, test, vi } from 'vitest';
@@ -54,8 +54,8 @@ describe('mainAgentPlanner — wire-format → parser → loop → runPlannerAge
     });
 
     // Mint a fresh ULID here exactly as the entrypoint does — proves the
-    // boot path's stamp parses against the validator's ULID_RE (issue
-    // #109 P1: deliveryId is NOT ULID-shaped and was the regression).
+    // boot path's stamp parses against the validator's ULID_RE
+    // (deliveryId is NOT ULID-shaped).
     const runId = mintRunId();
     expect(ULID_REGEX.test(runId)).toBe(true);
 

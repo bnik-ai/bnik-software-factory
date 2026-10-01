@@ -31,7 +31,7 @@ describe('routeTransition — Goal lifecycle', () => {
     }
   });
 
-  test('__initial__ → proposed → PlannerAgent (ADR 0013 PR2: new Goal intake re-plans the backlog)', () => {
+  test('__initial__ → proposed → PlannerAgent (ADR 0013: new Goal intake re-plans the backlog)', () => {
     const r = routeTransition(makeMessage({ fromState: '__initial__', toState: 'proposed' }));
     expect(r.ok).toBe(true);
     if (r.ok) {
@@ -136,7 +136,7 @@ describe('routeTransition — Task lifecycle', () => {
     if (r.ok) expect(r.agent).toBe('ReviewAgent');
   });
 
-  test('in_review → done → PlannerAgent (ADR 0013 PR2: dep-clear re-plan trigger; OpsAgent already merged upstream)', () => {
+  test('in_review → done → PlannerAgent (ADR 0013: dep-clear re-plan trigger; OpsAgent already merged upstream)', () => {
     const r = routeTransition(
       makeMessage({
         kind: 'task',
@@ -153,7 +153,7 @@ describe('routeTransition — Task lifecycle', () => {
     }
   });
 
-  test('ready → done → PlannerAgent (issue #180: OpsAgent post-merge bookkeeping; same dep-clear re-plan trigger)', () => {
+  test('ready → done → PlannerAgent (OpsAgent post-merge bookkeeping; same dep-clear re-plan trigger)', () => {
     const r = routeTransition(
       makeMessage({
         kind: 'task',
@@ -176,7 +176,7 @@ describe('routeTransition — Task lifecycle', () => {
     ['in_progress', 'abandoned'],
     ['in_review', 'abandoned'],
   ] as const)(
-    'task:%s → %s → PlannerAgent (ADR 0013 PR2: any →abandoned is a dep-clear trigger)',
+    'task:%s → %s → PlannerAgent (ADR 0013: any →abandoned is a dep-clear trigger)',
     (fromState, toState) => {
       const r = routeTransition(
         makeMessage({
@@ -345,8 +345,8 @@ describe('routeTransition — Deployment lifecycle (SREAgent on failure/error on
   });
 });
 
-describe('routeTransition — rev1 fixes (codex P1 + audit gaps)', () => {
-  test('task:in_review→in_progress → BuildAgent (revision loop trigger; ADR 0010 rev1 authoritative path)', () => {
+describe('routeTransition — revision loop, re-sync bounce and actor-asymmetric dispatch', () => {
+  test('task:in_review→in_progress → BuildAgent (revision loop trigger; ADR 0010 authoritative path)', () => {
     const r = routeTransition(
       makeMessage({
         kind: 'task',
@@ -360,7 +360,7 @@ describe('routeTransition — rev1 fixes (codex P1 + audit gaps)', () => {
     if (r.ok) expect(r.agent).toBe('BuildAgent');
   });
 
-  test('pr:draft→in_review → ReviewAgent (reviewer requested on draft PR; FSM rule added in PR #48)', () => {
+  test('pr:draft→in_review → ReviewAgent (reviewer requested on draft PR; PR FSM admits draft→in_review)', () => {
     const r = routeTransition(
       makeMessage({
         kind: 'pr',
@@ -375,7 +375,7 @@ describe('routeTransition — rev1 fixes (codex P1 + audit gaps)', () => {
     if (r.ok) expect(r.agent).toBe('ReviewAgent');
   });
 
-  test('pr:in_review→changes_requested → BuildAgent (issue #182 revision dispatch on the PR FSM)', () => {
+  test('pr:in_review→changes_requested → BuildAgent (revision dispatch on the PR FSM)', () => {
     const r = routeTransition(
       makeMessage({
         kind: 'pr',
@@ -390,7 +390,7 @@ describe('routeTransition — rev1 fixes (codex P1 + audit gaps)', () => {
     if (r.ok) expect(r.agent).toBe('BuildAgent');
   });
 
-  test('pr:changes_requested→in_review → ReviewAgent (issue #182 re-review after revision)', () => {
+  test('pr:changes_requested→in_review → ReviewAgent (re-review after revision)', () => {
     const r = routeTransition(
       makeMessage({
         kind: 'pr',
@@ -405,7 +405,7 @@ describe('routeTransition — rev1 fixes (codex P1 + audit gaps)', () => {
     if (r.ok) expect(r.agent).toBe('ReviewAgent');
   });
 
-  test('pr:syncing→in_review → ReviewAgent (issue #192 re-sync bounce re-fires review)', () => {
+  test('pr:syncing→in_review → ReviewAgent (re-sync bounce re-fires review)', () => {
     const r = routeTransition(
       makeMessage({
         kind: 'pr',
@@ -420,7 +420,7 @@ describe('routeTransition — rev1 fixes (codex P1 + audit gaps)', () => {
     if (r.ok) expect(r.agent).toBe('ReviewAgent');
   });
 
-  test('pr:in_review→syncing → BuildAgent (issue #192 bounce step 2: durable syncing → finish the bounce)', () => {
+  test('pr:in_review→syncing → BuildAgent (bounce step 2: durable syncing → finish the bounce)', () => {
     const r = routeTransition(
       makeMessage({
         kind: 'pr',
@@ -449,7 +449,7 @@ describe('routeTransition — rev1 fixes (codex P1 + audit gaps)', () => {
     if (!r.ok) expect(r.reason).toBe('no_dispatch_needed');
   });
 
-  test('spec:__initial__→drafting + actor=human → SpecAgent (PR #50 rev2: human-created records need agent dispatched)', () => {
+  test('spec:__initial__→drafting + actor=human → SpecAgent (human-created records need agent dispatched)', () => {
     const r = routeTransition(
       makeMessage({
         kind: 'spec',
@@ -548,7 +548,7 @@ describe('routeTransition — rev1 fixes (codex P1 + audit gaps)', () => {
     if (!r.ok) expect(r.reason).toBe('no_dispatch_needed');
   });
 
-  test('pr:approved→in_review + actor=human → BuildAgent (PR #50 rev3: human changes-after-approval has no paired agent transition; orchestrator dispatches directly)', () => {
+  test('pr:approved→in_review + actor=human → BuildAgent (human changes-after-approval has no paired agent transition; orchestrator dispatches directly)', () => {
     const r = routeTransition(
       makeMessage({
         kind: 'pr',
@@ -564,7 +564,7 @@ describe('routeTransition — rev1 fixes (codex P1 + audit gaps)', () => {
   });
 });
 
-describe('routeTransition — Decision lifecycle (B4-PR3 fix: orchestrator now knows kind:decision)', () => {
+describe('routeTransition — Decision lifecycle (orchestrator knows kind:decision)', () => {
   test.each([
     ['__initial__', 'drafting'],
     ['drafting', 'proposed'],
@@ -627,7 +627,7 @@ describe('routeTransition — actor-irrelevance for non-__initial__ transitions'
   // The invariant: actor is NOT part of the routing key for normal
   // transitions. EXCEPTION: __initial__ transitions where human vs agent
   // distinguishes "agent already running" from "human needs agent
-  // dispatched" (PR #50 rev2 — covered in the rev2 tests above).
+  // dispatched" (covered by the actor=human tests above).
   test('Goal proposed → accepted routes to SpecAgent regardless of actor', () => {
     const actors: Actor[] = ['human', 'SpecAgent', 'system'];
     for (const actor of actors) {

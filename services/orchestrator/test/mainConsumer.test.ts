@@ -106,7 +106,7 @@ describe('resolveBranchSyncWiring (ADR 0012 item 5 activation b)', () => {
   });
 });
 
-describe('resolveTargetRepoAllowlist (issue #182, AGENT_TARGET_REPOS)', () => {
+describe('resolveTargetRepoAllowlist (AGENT_TARGET_REPOS)', () => {
   test('unset or blank → undefined (no filtering, backward compat)', () => {
     expect(withEnv({ AGENT_TARGET_REPOS: undefined }, resolveTargetRepoAllowlist)).toBeUndefined();
     expect(withEnv({ AGENT_TARGET_REPOS: '' }, resolveTargetRepoAllowlist)).toBeUndefined();
@@ -141,7 +141,7 @@ describe('resolveTargetRepoAllowlist (issue #182, AGENT_TARGET_REPOS)', () => {
   });
 });
 
-describe('runConsumerLoop — repo-targeting filter acks cleanly (issue #182)', () => {
+describe('runConsumerLoop — repo-targeting filter acks cleanly', () => {
   test('non-target-repo message acks without dispatch; targeted message dispatches', async () => {
     const consumer = new InMemoryEventQueueConsumer();
     const dispatcher = new InMemoryAgentDispatcher();
@@ -279,7 +279,7 @@ describe('runConsumerLoop — error ends the execution (session-order preserved)
   });
 });
 
-describe('runConsumerLoop — transient retry leaves message unsettled (issue #109 P2)', () => {
+describe('runConsumerLoop — transient retry leaves message unsettled', () => {
   // Stub: always reports "behind" so processMessage's branch-sync gate
   // dispatches the synthetic BuildAgent rebase. Pairs with a transient
   // dispatcher so processMessage returns action:'retry'.

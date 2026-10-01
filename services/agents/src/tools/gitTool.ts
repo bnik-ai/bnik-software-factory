@@ -2,9 +2,8 @@
 // ADR 0009 (SF-Agent/SF-Run/SF-Task commit trailers).
 // Invariants:
 //   - branch(): the name MUST match ADR 0008 grammar (validator enforces;
-//     this tool's stub doesn't validate to avoid duplicating the regex —
-//     real impl in B5-PR3+ wraps git via simple-git or @octokit/rest and
-//     should validate before calling out).
+//     this tool's stub doesn't validate to avoid duplicating the regex;
+//     a real impl should validate before calling out).
 //   - commit(): the trailers field is the substrate identity per ADR 0009.
 //     The author{Agent,Run,Task} args become the SF-Agent / SF-Run /
 //     SF-Task trailers in the commit message body.
@@ -56,7 +55,7 @@ export interface GitTool {
   // impl `git fetch origin && git checkout <head> && git rebase <base>`
   // (then BuildAgent issues a separate push with forceWithLease=true).
   // Returns { oldHeadSha, newHeadSha, treeChanged } — two independent
-  // signals (issue #112):
+  // signals:
   //   - oldHeadSha vs newHeadSha: head-equality. Drives the push gate;
   //     a rebase that rewrites commits (new parents) MUST be pushed even
   //     if the resulting tree is identical, else the remote stays behind
@@ -68,7 +67,7 @@ export interface GitTool {
   rebase(
     args: GitRebaseArgs,
   ): Promise<GitToolResult<{ oldHeadSha: string; newHeadSha: string; treeChanged: boolean }>>;
-  // Issue #180: report whether the worktree carries any uncommitted change
+  // Report whether the worktree carries any uncommitted change
   // (staged, unstaged, OR untracked). BuildAgent checks this AFTER the coding
   // run and BEFORE commit — an empty diff means the Task is already satisfied
   // by existing code (a terminal already-done outcome), which must settle the
@@ -77,37 +76,37 @@ export interface GitTool {
   // --untracked-files=all`) OR the branch carries commits ahead of
   // `origin/<baseBranch>` — the coding agent has a Bash tool and may `git
   // commit` itself, so a clean worktree ALONE does NOT prove an empty diff
-  // (codex P1 #180: that would drop committed work + falsely settle done).
+  // (treating it as one would drop committed work + falsely settle done).
   // The decision fetches the base first so it uses the LIVE base tip, not the
-  // possibly-stale clone-time ref (codex P2 #180). `changed` is false ONLY when
+  // possibly-stale clone-time ref. `changed` is false ONLY when
   // the branch's tree equals the CURRENT base tree (clean + at-tip / no net
   // diff) — a branch merely BEHIND an advanced base is `changed:true`, never a
-  // false already-satisfied (codex P1 round 5). Two extra signals let BuildAgent
+  // false already-satisfied. Two extra signals let BuildAgent
   // react precisely on a clean tree:
   //   - worktreeDirty: uncommitted edits present → BuildAgent commits (stamps
   //     ADR 0009 trailers) then push + PR.
   //   - committedAhead: the branch carries commits ahead of base — the coding
   //     agent self-committed (those commits lack the trailers) → fail closed
-  //     rather than publish un-attributed commits (codex P2 round 4).
+  //     rather than publish un-attributed commits.
   //   - clean + !committedAhead + changed → behind a freshly-advanced base
   //     (stale checkout) → fail closed for a re-run, never settle done.
   hasChanges(
     baseBranch: string,
   ): Promise<GitToolResult<{ changed: boolean; worktreeDirty: boolean; committedAhead: boolean }>>;
-  // Current HEAD commit sha (`git rev-parse HEAD`). The revision path (issue
-  // #182) captures HEAD before the coding run and compares after: the revision
+  // Current HEAD commit sha (`git rev-parse HEAD`). The revision path
+  // captures HEAD before the coding run and compares after: the revision
   // branch is legitimately AHEAD of base (the open PR's commits), so the
   // committedAhead signal can't distinguish "self-committed during this run"
   // from "already ahead". A moved HEAD means the coding agent self-committed
   // (those commits lack the ADR 0009 trailers) → BuildAgent fails closed rather
   // than push un-attributed commits, the same guard the fresh-build path enforces
-  // via committedAhead (codex #189).
+  // via committedAhead.
   headSha(): Promise<GitToolResult<{ sha: string }>>;
 }
 
 // In-memory stub: records every call so tests can assert the agent
-// behavior + reveal the wire shape. Real Git/GitHub-API impls land in
-// B5-PR3+ behind this same interface.
+// behavior + reveal the wire shape. The git-backed impl (githubGitTool.ts)
+// implements this same interface.
 export class StubGitTool implements GitTool {
   private readonly branchCalls: GitBranchArgs[] = [];
   private readonly commitCalls: GitCommitArgs[] = [];
@@ -119,13 +118,13 @@ export class StubGitTool implements GitTool {
   // vs delta review per ADR 0012 item 4). Default false — the stub
   // treats the rebase tree as unchanged for tests that don't care.
   private nextRebaseTreeChanged = false;
-  // Test override (issue #112): when true, the stub reports the rebase
+  // Test override: when true, the stub reports the rebase
   // left the head SHA unchanged (oldHeadSha === newHeadSha → BuildAgent
   // must skip the push). Default false — the stub mints a fresh head
   // every rebase, modeling the common case where main advanced and the
   // rebase rewrote commits (push MUST fire even when tree is identical).
   private nextRebaseHeadUnchanged = false;
-  // Test override (issue #180): the next hasChanges() result. Default true —
+  // Test override: the next hasChanges() result. Default true —
   // the common real-build case has a non-empty diff (commit proceeds); tests
   // exercising the already-satisfied empty-diff path set it false.
   private nextHasChanges = true;
@@ -194,14 +193,14 @@ export class StubGitTool implements GitTool {
   headShaCalls = 0;
   // Test-only setter: enqueue the head shas headSha() returns in order. Two
   // distinct values model the coding agent self-committing between the pre- and
-  // post-coding reads (codex #189).
+  // post-coding reads.
   setNextHeadShas(shas: readonly string[]): void {
     this.headShaQueue.push(...shas);
   }
 
-  // Records the baseBranch arg of each hasChanges() call (codex P1 #180: the
-  // real impl must compare against origin/<baseBranch>, so the stub asserts
-  // BuildAgent threads it).
+  // Records the baseBranch arg of each hasChanges() call (the real impl must
+  // compare against origin/<baseBranch>, so the stub asserts BuildAgent
+  // threads it).
   readonly hasChangesBaseBranches: string[] = [];
   // One-shot override for the agent-already-committed case (clean tree +
   // commits ahead → changed=true, worktreeDirty=false). Default undefined →
@@ -211,13 +210,13 @@ export class StubGitTool implements GitTool {
   // self-committed). Default undefined → false.
   private nextCommittedAhead: boolean | undefined = undefined;
 
-  // Test-only setter (issue #180): force the next hasChanges() result. false
+  // Test-only setter: force the next hasChanges() result. false
   // models the empty-diff / already-satisfied Task the settle path handles.
   setNextHasChanges(value: boolean): void {
     this.nextHasChanges = value;
   }
 
-  // Test-only setter (codex P1 #180): force the next hasChanges() worktreeDirty
+  // Test-only setter: force the next hasChanges() worktreeDirty
   // independently of `changed`. Use { changed:true, worktreeDirty:false } to
   // model the agent-already-committed case (BuildAgent must skip its own commit
   // and push the agent's commits + open the PR, not dead-letter or settle done).
@@ -225,7 +224,7 @@ export class StubGitTool implements GitTool {
     this.nextWorktreeDirty = value;
   }
 
-  // Test-only setter (codex P1 #180 r5): force the next hasChanges() committedAhead.
+  // Test-only setter: force the next hasChanges() committedAhead.
   setNextCommittedAhead(value: boolean): void {
     this.nextCommittedAhead = value;
   }
@@ -235,7 +234,7 @@ export class StubGitTool implements GitTool {
     this.nextRebaseTreeChanged = value;
   }
 
-  // Test-only setter (issue #112): force the next rebase to report
+  // Test-only setter: force the next rebase to report
   // oldHeadSha === newHeadSha so BuildAgent's push gate skips. Models
   // the truly-no-op case (already current, nothing to rewrite).
   setNextRebaseHeadUnchanged(value: boolean): void {

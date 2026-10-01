@@ -119,7 +119,7 @@ describe('StubPullTool', () => {
     expect(tool.mergeHistory()[1]?.method).toBeUndefined();
   });
 
-  test('readBaseFile: seeded path → found with contents; unseeded → clean not-found (issue #179)', async () => {
+  test('readBaseFile: seeded path → found with contents; unseeded → clean not-found', async () => {
     const tool = new StubPullTool();
     tool.seedBaseFile('PR_1', 'tests/api/conftest.py', 'def auth(): ...');
     const present = await tool.readBaseFile('PR_1', 'tests/api/conftest.py');
@@ -173,7 +173,7 @@ describe('StubPullTool', () => {
     expect(tool.syncStatusHistory()).toEqual(['PR_1', 'PR_2', 'PR_1']);
   });
 
-  test('issue #191: open() defaults to App-authored same-repo ownership; read() echoes it', async () => {
+  test('open() defaults to App-authored same-repo ownership; read() echoes it', async () => {
     const tool = new StubPullTool();
     const opened = await tool.open({
       headBranch: 'sf/T-42/01HV6/build@opus-4-7',
@@ -193,7 +193,7 @@ describe('StubPullTool', () => {
     expect(read.value.isCrossRepository).toBe(false);
   });
 
-  test('issue #191: setDefaultOwnership stamps human / fork ownership on opened PRs', async () => {
+  test('setDefaultOwnership stamps human / fork ownership on opened PRs', async () => {
     const tool = new StubPullTool();
     tool.setDefaultOwnership({ login: 'a-human', isBot: false }, true);
     const opened = await tool.open({
@@ -208,7 +208,7 @@ describe('StubPullTool', () => {
     expect(opened.value.isCrossRepository).toBe(true);
   });
 
-  test('issue #191: seedRecord round-trips explicit author + isCrossRepository through read()', async () => {
+  test('seedRecord round-trips explicit author + isCrossRepository through read()', async () => {
     const tool = new StubPullTool();
     tool.seedRecord({
       recordId: 'PR_seed',

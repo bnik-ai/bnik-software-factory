@@ -5,13 +5,12 @@
 //   - Verdict gate: dispatch only on verdict==='accept'. `flag` / `reject`
 //     mean the validator HARD-REJECTed or SOFT-FLAGed the transition; the
 //     audit ledger already recorded the outcome and the orchestrator MUST
-//     NOT turn a policy violation into agent work (B4-PR4 codex finding).
+//     NOT turn a policy violation into agent work.
 //     A missing verdict is treated as accept for v0 wire compatibility
-//     (in-memory tests and pre-B7 callers don't populate the field yet);
-//     post-B7 the field will be required, but the orchestrator's behavior
-//     under undefined stays accept-default to avoid silently dropping
-//     legitimate work during the migration.
-//   - Rebase-dispatch transient/deterministic split (issue #109 P2):
+//     (in-memory tests and older callers don't populate the field); the
+//     accept-default avoids silently dropping legitimate work from a
+//     producer that omits it.
+//   - Rebase-dispatch transient/deterministic split:
 //     when the branch-sync gate fires but the BuildAgent rebase dispatch
 //     itself fails, distinguish transient (SB throttling, network) from
 //     deterministic (auth, shape). Transient → `action: 'retry'` so
@@ -22,7 +21,7 @@
 //     operators see the gap without an infinite redelivery loop.
 //     Classification lives at the dispatcher boundary
 //     (DispatchResult.transient).
-//   - Branch-sync gate (B4-PR8 / ADR 0010 §"Re-sync onto main" / ADR 0012):
+//   - Branch-sync gate (ADR 0010 §"Re-sync onto main" / ADR 0012):
 //     for the review-trigger routing keys (pr:open→in_review and friends),
 //     the orchestrator checks that the feeder branch is current with the
 //     base branch before dispatching ReviewAgent. If the branch is behind,
@@ -70,7 +69,7 @@ const REBASE_FOR_REVIEW_TO_STATE = 'needs_sync_for_review';
 // original build, just a different message intent.
 const REBASE_AGENT_ROLE = 'BuildAgent' as const;
 
-// OpsAgent runs the post-merge Task bookkeeping for ANY merge (issue #178).
+// OpsAgent runs the post-merge Task bookkeeping for ANY merge.
 const MERGE_BOOKKEEPING_AGENT = 'OpsAgent' as const;
 
 export interface ProcessMessageDeps {
@@ -78,11 +77,11 @@ export interface ProcessMessageDeps {
   dispatcher: AgentDispatcher;
   // Optional for v0 wire compatibility. Defaults to
   // AlwaysCurrentBranchSyncChecker (pass-through) when omitted, so
-  // pre-B4-PR8 callers see no behavior change. Real impl is wired by
+  // callers without a checker get no gate. Real impl is wired by
   // mainConsumer.startConsumer() once a SubstrateClient is available
   // for branch-compare queries against GitHub.
   branchSyncChecker?: BranchSyncChecker;
-  // Required for the paired-Task review-trigger path (issue #111):
+  // Required for the paired-Task review-trigger path:
   // resolves task body → pr-ref → PR's headBranch/baseBranch so the
   // existing branch-sync gate applies. Absent in v0 (the gate is
   // skipped on the task path when no SubstrateClient is configured —
@@ -94,7 +93,7 @@ export interface ProcessMessageDeps {
   // carry one explicitly. ADR 0002 sets trunk-based main; this is the
   // seam for non-main bases in future ADRs.
   defaultBaseBranch?: string;
-  // Issue #182: optional repo-targeting allowlist (AGENT_TARGET_REPOS,
+  // Optional repo-targeting allowlist (AGENT_TARGET_REPOS,
   // comma-separated owner/repo — parsed in mainConsumer). The un-suspended
   // installation streams non-target-repo events (SF / sample-console PRs)
   // end-to-end: the validator RECORDS them (correct — full audit), but
@@ -110,7 +109,7 @@ export interface ProcessMessageDeps {
 export type ProcessingDecision =
   | { action: 'ack'; outcome: 'dispatched'; agent: string; dispatchId: string }
   | { action: 'ack'; outcome: 'no_dispatch'; transitionKey: string }
-  // Issue #182: the message targets a repo outside AGENT_TARGET_REPOS.
+  // The message targets a repo outside AGENT_TARGET_REPOS.
   // Clean ack (the validator already recorded the transition); no agent
   // routing/dispatch. mainConsumer treats this like no_dispatch.
   | { action: 'ack'; outcome: 'repo_not_targeted'; repoFullName: string; transitionKey: string }
@@ -132,12 +131,11 @@ export type ProcessingDecision =
       // rebase dispatch itself failed deterministically — in which case
       // `rebaseDispatchError` is populated and the operator sees the gap
       // without redelivery looping. Transient rebase-dispatch failures
-      // use `action: 'retry'` instead so SB redelivers (issue #109 P2).
+      // use `action: 'retry'` instead so SB redelivers.
       rebaseDispatchId?: string;
       rebaseDispatchError?: string;
     }
-  // Issue #109 P2 (revised after codex on PR #110): for transient
-  // failures the consumer MUST leave the inbound unsettled so SB
+  // Transient failures: the consumer MUST leave the inbound unsettled so SB
   // redelivers. The `deadletter` action calls consumer.deadletter()
   // which is one-way to DLQ — no redelivery. So transient signals use a
   // dedicated `retry` action; mainConsumer.ts logs the reason and exits
@@ -168,7 +166,7 @@ async function resolveBranchSyncInputs(
 ): Promise<BranchSyncInputs> {
   const baseDefault = deps.defaultBaseBranch ?? DEFAULT_BASE_BRANCH;
 
-  // Task path (issue #111): the message itself has no head/base; resolve
+  // Task path: the message itself has no head/base; resolve
   // via SubstrateClient. If no SubstrateClient is wired (v0 boot), skip
   // — matches the pr:* path's "skip when we can't see headBranch" rule.
   if (
@@ -197,7 +195,7 @@ async function resolveBranchSyncInputs(
     };
   }
 
-  // PR path: head/base arrive on the message (validator-populated, B5-PR11+).
+  // PR path: head/base arrive on the message (validator-populated).
   // When absent, skip — the existing v0 wire stays unaffected.
   if (message.headBranch !== undefined && message.headBranch.length > 0) {
     return {
@@ -214,12 +212,12 @@ export async function processMessage(
   message: ParsedTransitionMessage,
   deps: ProcessMessageDeps,
 ): Promise<ProcessingDecision> {
-  // Repo-targeting gate (issue #182) — BEFORE verdict/routing: agent work
+  // Repo-targeting gate — BEFORE verdict/routing: agent work
   // only targets allowlisted repos. The validator already recorded the
   // transition for ALL repos the installation covers; this gate only stops
   // the orchestrator from dispatching agents pinned to AGENT_DEFAULT_REPO
   // against a foreign repo (typed review_agent_pr_read_failed DLQs).
-  // Messages WITHOUT a repoFullName (installation lifecycle, pre-M2 wire)
+  // Messages WITHOUT a repoFullName (installation lifecycle, older wire)
   // pass through unfiltered.
   if (
     deps.targetRepoAllowlist !== undefined &&
@@ -234,14 +232,14 @@ export async function processMessage(
     };
   }
 
-  // Non-autonomous-merge Task bookkeeping (issue #178) — BEFORE the verdict
+  // Non-autonomous-merge Task bookkeeping — BEFORE the verdict
   // gate. A human merge (e.g. at the request-changes gate) arrives as
   // pull_request.closed merged:true → pr:<from>→merged, which the PR FSM FLAGS
   // (human is not an allowed merge actor; in_review→merged is not even a legal
   // edge) — so the verdict gate below would drop it and the paired Task would
-  // stay status:ready, blocking dependents FOREVER (issue #178: stalled Goal
-  // #227 twice). The merge is the substrate of record (already landed on
-  // GitHub) and the validator already recorded the honest flagged verdict in
+  // stay status:ready, blocking dependents FOREVER. The merge is the substrate
+  // of record (already landed on GitHub) and the validator already recorded
+  // the honest flagged verdict in
   // the audit ledger; dispatch OpsAgent for bookkeeping-only regardless of
   // verdict so dependents replan.
   //
@@ -296,16 +294,16 @@ export async function processMessage(
   }
 
   // Branch-sync gate (ADR 0010 §"Re-sync onto main"; ReviewAgent design
-  // §2 step 0 / O5). For review-trigger transitions ONLY, check that the
+  // §2 step 0). For review-trigger transitions ONLY, check that the
   // feeder branch is current with the base before dispatching ReviewAgent
   // — otherwise a stale-base review can pass yet break on merge as other
   // agents land changes.
   //
   // Two routes resolve the head/base inputs:
   //   PR path (pr:*→...) — headBranch arrives on the message itself
-  //     (validator populates via SubstrateClient lookup in B5-PR11+).
+  //     (validator populates via SubstrateClient lookup).
   //     When absent the check is skipped (v0 pass-through).
-  //   Task path (task:in_progress→in_review, issue #111) — the task
+  //   Task path (task:in_progress→in_review) — the task
   //     message carries no head/base; the orchestrator resolves them via
   //     SubstrateClient (task body's `pr-ref:` → PR's head/base ref).
   //     When SubstrateClient is unconfigured (v0 in-memory boot), skip
@@ -324,7 +322,7 @@ export async function processMessage(
     if (resolved.kind === 'skip') {
       // Either no headBranch on the wire (pr:* legacy path) or no
       // SubstrateClient configured (task:* v0 boot). Fall through to
-      // normal dispatch — semantics match the pre-issue-#111 behavior.
+      // normal dispatch without the gate.
     } else {
       const { headBranch, baseBranch, prRecordId } = resolved;
       const syncResult = await checker.checkSync({
@@ -342,7 +340,7 @@ export async function processMessage(
           eventType: 'synthetic:branch_sync_required',
           actor: 'system',
           // Force kind='pr' so BuildAgent's handler matches even when the
-          // source transition was task:in_progress→in_review (issue #111).
+          // source transition was task:in_progress→in_review.
           kind: 'pr',
           // Target the PR record — the rebase operates on PR's feeder
           // branch, not the task's record_node_id (task path) / PR record
@@ -354,7 +352,7 @@ export async function processMessage(
           deliveryId: `${message.deliveryId}:rebase`,
           headBranch,
           baseBranch,
-          // Issue #192/#119: tell BuildAgent how to re-dispatch review after the
+          // Tell BuildAgent how to re-dispatch review after the
           // rebase. A PR-kind trigger to in_review means the PR ledger is already
           // at in_review (native review-request OR a status:in_review claim) →
           // 'bounce'; everything else (pr:*→open, task:in_progress→in_review) is a
@@ -378,7 +376,7 @@ export async function processMessage(
             rebaseDispatchId: rebaseDispatch.dispatchId,
           };
         }
-        // Rebase dispatch failed — issue #109 P2: distinguish transient
+        // Rebase dispatch failed — distinguish transient
         // from deterministic. A transient SB error (throttling, network)
         // will likely succeed on the next attempt → return `retry` so
         // mainConsumer leaves the inbound unsettled and SB redelivers

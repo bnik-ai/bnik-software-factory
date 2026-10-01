@@ -1,21 +1,18 @@
 // Spec: docs/decisions/0011-agent-dispatch-topology.md — `caj-agent-review`
 // Container Apps Job consumes `agent-runs-review`.
-// Status (B5-PR10): the runner calls runReviewAgent directly so the v0
-// placeholder `approved` Review per docs/design/review-agent.md §7 is
-// actually emitted. The real multi-model adversarial loop (independent
-// review → adjudicate → revision → re-review → convergence per ADR 0010)
-// ships in B5-PR11+ once O3 resolves (codex CLI service-auth in the
-// headless Container Apps Job). The placeholder Review body names the
-// deferral explicitly so the audit ledger reads as a v0 placeholder
-// verdict, not a real adjudication.
+// The runner calls runReviewAgent directly so the v0 placeholder `approved`
+// Review per docs/design/review-agent.md §7 is actually emitted. The
+// multi-model adversarial loop (independent review → adjudicate → revision →
+// re-review → convergence per ADR 0010) is not implemented: it needs the
+// second-model review CLI authenticated headlessly in the Container Apps Job.
+// The placeholder Review body names the deferral explicitly so the audit
+// ledger reads as a v0 placeholder verdict, not a real adjudication.
 //
-// Fix history: pre-PR-107 this entrypoint dispatched through
-// runAgent('ReviewAgent', message), which routed via the LEGACY
-// AGENT_REGISTRY stub (makeStubHandler) and never actually called
-// runReviewAgent. Codex caught it on issue #105 as a P1
-// header-vs-wiring mismatch. Now the entrypoint binds runReviewAgent
-// directly with its real deps (issues + pulls + runId + repo), same
-// shape as mainAgentSpec / mainAgentDesign / mainAgentBuild.
+// The entrypoint binds runReviewAgent directly with its real deps (issues +
+// pulls + runId + repo), same shape as mainAgentSpec / mainAgentDesign /
+// mainAgentBuild. Dispatching through runAgent('ReviewAgent', message) would
+// route via the legacy AGENT_REGISTRY stub (makeStubHandler) and never call
+// runReviewAgent.
 
 import { buildAgentDeps } from './agentDeps.js';
 import { runReviewAgent } from './agents/reviewAgent.js';
@@ -40,7 +37,7 @@ export function startReviewAgentConsumer(): ReturnType<typeof startAgentConsumer
       // Per-run ULID per ADR 0008 §2 — REQUIRED by the validator's
       // attributionStamp parser (ULID_RE = /^[0-9A-HJKMNP-TV-Z]{26}$/);
       // without it the Review's sf:agent=review@<model> run=<id> attribute
-      // fails parsing and the loop breaks (issue #109 P1).
+      // fails parsing and the loop breaks.
       const runId = mintRunId();
       // Env-gated: real PullTool + content review brain when secrets present,
       // else stub tools + v0 placeholder approve (CI / in-memory boot).

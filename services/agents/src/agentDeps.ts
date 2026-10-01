@@ -8,10 +8,10 @@
 //   - STUB otherwise → StubIssueTool / StubGitTool / StubPullTool + no
 //     brains (handlers fall back to their templated placeholders). This
 //     keeps CI (no API key, no git creds) + the in-memory boot green.
-// owner/repo resolution: from the dispatch message if it carries repo info
-// (it does not in M1c — see types.ts; installation_id threading is M2),
-// else parse AGENT_DEFAULT_REPO ('owner/repo'). installation_id itself is
-// resolved by the token provider via the repo lookup — NOT from the webhook.
+// owner/repo resolution: parse AGENT_DEFAULT_REPO ('owner/repo'); the dispatch
+// message's optional repoFullName/installationId (types.ts) are not consumed
+// here. installation_id itself is resolved by the token provider via the repo
+// lookup — NOT from the webhook.
 
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -43,7 +43,7 @@ export interface AgentDepsEnv {
   ANTHROPIC_MODEL?: string;
   // App slug (e.g. example-factory). Threaded to GithubIssueTool as the trusted
   // structural-marker author: listComments only honors markers from this Bot,
-  // so forged comment markers can't drive the #182 revision loop. Same env the
+  // so forged comment markers can't drive the changes-requested revision loop. Same env the
   // validator/webhook already set (GITHUB_APP_SLUG).
   GITHUB_APP_SLUG?: string;
 }
@@ -62,7 +62,7 @@ export interface ResolvedAgentDeps {
   clone?: CloneFn;
   // The coding workdir BuildAgent's clone targets (real path only).
   workdir?: string;
-  // Configured App slug (GITHUB_APP_SLUG), echoed for BuildAgent's #191
+  // Configured App slug (GITHUB_APP_SLUG), echoed for BuildAgent's
   // auto-revision ownership guard (PR author must match the App bot). Same env
   // threaded to GithubIssueTool as appBotLogin. Undefined when unset.
   appBotLogin?: string;
@@ -86,7 +86,7 @@ export function isRealMode(env: AgentDepsEnv): boolean {
 // ANTHROPIC_API_KEY. Tools that talk only to GitHub (the planner's IssueTool
 // for the decompose read+create) gate on this so they bind the REAL GitHub
 // client whenever GitHub creds exist, even when no content brain is configured
-// (#177 P2: GitHub-creds-present + no-Anthropic must NOT downgrade the planner
+// (GitHub-creds-present + no-Anthropic must NOT downgrade the planner
 // to a StubIssueTool that reads an empty Design and deadletters; the no-brain
 // path is a separate, correct single-Task fallback). generateContent stays
 // gated on ANTHROPIC_API_KEY via isRealMode.
@@ -119,7 +119,7 @@ export function buildIssueTool(env: AgentDepsEnv): IssueTool {
 }
 
 // owner/repo from AGENT_DEFAULT_REPO. installation_id is resolved by the
-// token provider's repo lookup (M2 threads it from the webhook; M1c does not).
+// token provider's repo lookup, not threaded from the webhook.
 export function resolveRepo(env: AgentDepsEnv): { owner: string; repo: string } {
   const raw = env.AGENT_DEFAULT_REPO;
   if (raw === undefined || raw === '') {
@@ -151,9 +151,9 @@ export function buildAgentDeps(args: BuildAgentDepsArgs): ResolvedAgentDeps {
   if (!isRealMode(env)) {
     // Stub path — no secrets. Tools record in-memory; no brains so handlers
     // use their templated placeholders. CI + in-memory boot stay green.
-    // appBotLogin is deliberately NOT threaded here (codex #195): StubPullTool
+    // appBotLogin is deliberately NOT threaded here: StubPullTool
     // stamps a FIXED Bot author that won't equal a configured GITHUB_APP_SLUG, so
-    // the #191 author-login ownership check would reject the stub's own PRs and
+    // the auto-revision author-login ownership check would reject the stub's own PRs and
     // park every revision. The login-match is a real-substrate forgery guard; in
     // stub mode the fixed Bot author already satisfies isAppAuthor (undefined
     // appBotLogin → any Bot author passes). The real path (below) keeps it.
@@ -210,10 +210,10 @@ export function buildAgentDeps(args: BuildAgentDepsArgs): ResolvedAgentDeps {
 }
 
 // GitHub-only deps for OpsAgent. OpsAgent merges PRs + posts a structural
-// comment via PullTool, drives the paired Task to done via IssueTool (issue
-// #180 post-merge bookkeeping), and NEVER calls an LLM — so its real-vs-stub
+// comment via PullTool, drives the paired Task to done via IssueTool (post-merge
+// bookkeeping), and NEVER calls an LLM — so its real-vs-stub
 // gate must depend on the GitHub App credentials ALONE — decoupled from
-// ANTHROPIC_API_KEY (issue #179 review P1). Returns the same real
+// ANTHROPIC_API_KEY. Returns the same real
 // GithubPullTool buildAgentDeps wires in full real mode, but reachable
 // whenever GITHUB_APP_ID + GITHUB_APP_PRIVATE_KEY are present even if the
 // Anthropic key is absent. `issues` rides the existing buildIssueTool seam

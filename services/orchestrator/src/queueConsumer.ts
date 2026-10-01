@@ -5,8 +5,8 @@
 // guarantees).
 // Invariants:
 //   - This package defines its OWN consumer contract. Mirror of validator's
-//     services/validator/src/queueConsumer.ts; B6+ may extract a shared
-//     package, but for v0 each service is independent at the source level.
+//     services/validator/src/queueConsumer.ts; each service is independent
+//     at the source level (no shared package).
 //   - Messages are pulled in batches; consumer is responsible for ACKing
 //     or dead-lettering each one by lock token.
 //   - Order is per-session (record_node_id). The orchestrator MUST
@@ -22,8 +22,8 @@ export interface EventQueueConsumer {
   deadletter(lockToken: string, reason: string): Promise<void>;
 }
 
-// In-memory consumer for tests and v0 boot. Real Service Bus impl ships
-// in B7 (with session-keyed receivers honoring per-record ordering).
+// In-memory consumer for tests and v0 boot. The Service Bus impl is
+// ServiceBusDispatchQueueConsumer (serviceBusEventQueueConsumer.ts).
 export class InMemoryEventQueueConsumer implements EventQueueConsumer {
   private readonly pending: ParsedTransitionMessage[] = [];
   private readonly inflight: Map<string, ParsedTransitionMessage> = new Map();

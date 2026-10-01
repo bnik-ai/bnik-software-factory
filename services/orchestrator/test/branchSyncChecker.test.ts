@@ -163,7 +163,7 @@ describe('isReviewTriggerTransition + reviewTriggerKeys', () => {
     );
   });
 
-  test('true for task:in_progress→in_review (paired-Task review-trigger; issue #111)', () => {
+  test('true for task:in_progress→in_review (paired-Task review-trigger)', () => {
     expect(
       isReviewTriggerTransition(
         makeMsg({ kind: 'task', fromState: 'in_progress', toState: 'in_review' }),
@@ -201,11 +201,11 @@ describe('isReviewTriggerTransition + reviewTriggerKeys', () => {
     expect(keys.has('task:in_progress→in_review')).toBe(true);
   });
 
-  test('NOT gated: the bounce re-fire edges pr:syncing→in_review + pr:changes_requested→in_review (issue #192 r6: re-gating them races finishSyncBounce cleanup)', () => {
+  test('NOT gated: the bounce re-fire edges pr:syncing→in_review + pr:changes_requested→in_review (re-gating them races finishSyncBounce cleanup)', () => {
     // The bounce already re-dispatches review after the INITIAL rebase; re-gating
-    // its own re-fire (or the #182 post-revision re-review) would dispatch a
+    // its own re-fire (or the post-revision re-review) would dispatch a
     // concurrent rebase on a mid-bounce base-advance, racing finishSyncBounce's
-    // label cleanup and stranding the PR (codex #200 r6). The branch is current
+    // label cleanup and stranding the PR. The branch is current
     // out of the bounce; OpsAgent's pre-merge sync gate is the backstop.
     expect(
       isReviewTriggerTransition(

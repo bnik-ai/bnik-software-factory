@@ -105,7 +105,7 @@ describe('processMessage — routing failures deadletter', () => {
   });
 });
 
-describe('processMessage — verdict gate (B4-PR4)', () => {
+describe('processMessage — verdict gate', () => {
   test('verdict==="flag" → ack with verdict_gated, no dispatch (validator HARD-FLAGed)', async () => {
     const dispatcher = new InMemoryAgentDispatcher();
     // The transition would otherwise dispatch SpecAgent (goal:proposed→accepted)
@@ -177,7 +177,7 @@ describe('processMessage — verdict gate (B4-PR4)', () => {
   });
 });
 
-describe('processMessage — branch-sync gate (B4-PR8 / ADR 0010 §re-sync)', () => {
+describe('processMessage — branch-sync gate (ADR 0010 §re-sync)', () => {
   test('PR review-trigger with current branch → dispatches ReviewAgent (no behavior change)', async () => {
     const dispatcher = new InMemoryAgentDispatcher();
     const decision = await processMessage(makePrReviewTriggerMessage(), {
@@ -192,7 +192,7 @@ describe('processMessage — branch-sync gate (B4-PR8 / ADR 0010 §re-sync)', ()
     expect(dispatcher.attemptCount()).toBe(1);
   });
 
-  test('PR review-trigger with behind branch → dispatches BuildAgent rebase (B4-PR9 wire)', async () => {
+  test('PR review-trigger with behind branch → dispatches BuildAgent rebase', async () => {
     const dispatcher = new InMemoryAgentDispatcher();
     const checker = new StubBranchSyncChecker(5, 3);
     const decision = await processMessage(makePrReviewTriggerMessage(), {
@@ -222,7 +222,7 @@ describe('processMessage — branch-sync gate (B4-PR8 / ADR 0010 §re-sync)', ()
     expect(attempt?.message.eventType).toBe('synthetic:branch_sync_required');
     expect(attempt?.message.deliveryId).toBe('d-pr-1:rebase');
     expect(attempt?.message.headBranch).toBe('sf/T-42/01HZXYZ123456789ABCDEFGHJK/build@opus-4-7');
-    // Issue #192 r7: a pr:*→in_review trigger → reReviewMode='bounce' (ledger at
+    // A pr:*→in_review trigger → reReviewMode='bounce' (ledger at
     // in_review, drive the syncing bounce after the rebase).
     expect(attempt?.message.reReviewMode).toBe('bounce');
     expect(checker.callHistory()).toHaveLength(1);
@@ -271,7 +271,7 @@ describe('processMessage — branch-sync gate (B4-PR8 / ADR 0010 §re-sync)', ()
     }
   });
 
-  test('rebase dispatch TRANSIENT failure → retry (issue #109 P2; SB redelivers on fresh execution)', async () => {
+  test('rebase dispatch TRANSIENT failure → retry (SB redelivers on fresh execution)', async () => {
     const checker = new StubBranchSyncChecker(1, 2);
     const transientDispatcher = {
       dispatch: async () => ({
@@ -397,7 +397,7 @@ describe('processMessage — branch-sync gate (B4-PR8 / ADR 0010 §re-sync)', ()
   });
 });
 
-describe('processMessage — ADR 0013 PR2 continuous-intake routing keys → PlannerAgent', () => {
+describe('processMessage — ADR 0013 continuous-intake routing keys → PlannerAgent', () => {
   test('task:in_review→done dispatches PlannerAgent (dep-clear re-plan trigger)', async () => {
     const dispatcher = new InMemoryAgentDispatcher();
     const decision = await processMessage(
@@ -454,7 +454,7 @@ describe('processMessage — ADR 0013 PR2 continuous-intake routing keys → Pla
   });
 });
 
-// Helper: paired-Task review-trigger message (issue #111). Body fields are
+// Helper: paired-Task review-trigger message. Body fields are
 // not carried on the message — the orchestrator looks them up via
 // SubstrateClient.getTaskHeadBranch.
 function makeTaskReviewTriggerMessage(
@@ -477,7 +477,7 @@ function makeTaskReviewTriggerMessage(
   };
 }
 
-describe('processMessage — branch-sync gate on paired-Task path (issue #111)', () => {
+describe('processMessage — branch-sync gate on paired-Task path', () => {
   test('task:in_progress→in_review WITHOUT SubstrateClient → gate skipped, ReviewAgent dispatches', async () => {
     const dispatcher = new InMemoryAgentDispatcher();
     const checker = new StubBranchSyncChecker(5);
@@ -559,7 +559,7 @@ describe('processMessage — branch-sync gate on paired-Task path (issue #111)',
     expect(attempt?.message.eventType).toBe('synthetic:branch_sync_required');
     expect(attempt?.message.actor).toBe('system');
     expect(attempt?.message.deliveryId).toBe('d-task-1:rebase');
-    // Issue #192 r7: the paired-Task route is a CLAIM trigger (PR ledger at open) →
+    // The paired-Task route is a CLAIM trigger (PR ledger at open) →
     // reReviewMode='claim' so BuildAgent claims after the rebase, not the bounce.
     expect(attempt?.message.reReviewMode).toBe('claim');
     // Checker was consulted with the PR's recordId.
@@ -625,7 +625,7 @@ describe('processMessage — dispatch failures deadletter', () => {
   });
 });
 
-describe('processMessage — repo-targeting filter (issue #182, AGENT_TARGET_REPOS)', () => {
+describe('processMessage — repo-targeting filter (AGENT_TARGET_REPOS)', () => {
   const allowlist: ReadonlySet<string> = new Set(['example-owner/sample-app']);
 
   test('targeted repo → dispatches normally', async () => {
@@ -670,7 +670,7 @@ describe('processMessage — repo-targeting filter (issue #182, AGENT_TARGET_REP
     expect(dispatcher.attemptCount()).toBe(1);
   });
 
-  test('message without repoFullName (installation lifecycle / pre-M2 wire) passes through even with allowlist configured', async () => {
+  test('message without repoFullName (installation lifecycle / older wire) passes through even with allowlist configured', async () => {
     const dispatcher = new InMemoryAgentDispatcher();
     const decision = await processMessage(makeMessage(), {
       router: routeTransition,
@@ -694,7 +694,7 @@ describe('processMessage — repo-targeting filter (issue #182, AGENT_TARGET_REP
   });
 });
 
-describe('processMessage — any-merge Task bookkeeping (issue #178)', () => {
+describe('processMessage — any-merge Task bookkeeping', () => {
   function makeMergedMessage(
     overrides: Partial<ParsedTransitionMessage> = {},
   ): ParsedTransitionMessage {

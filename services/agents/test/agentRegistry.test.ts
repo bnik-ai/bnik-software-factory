@@ -64,7 +64,7 @@ describe('runAgent — unknown role typed failure', () => {
   });
 });
 
-describe('buildAgentRegistry — bound handlers for real agents (B5-PR3+)', () => {
+describe('buildAgentRegistry — bound handlers for real agents', () => {
   test('SpecAgent slot is the real handler bound to deps (not a stub)', async () => {
     const { buildAgentRegistry } = await import('../src/agentRegistry.js');
     const { StubIssueTool } = await import('../src/tools/issueTool.js');
@@ -96,7 +96,7 @@ describe('buildAgentRegistry — bound handlers for real agents (B5-PR3+)', () =
     expect(issues.createHistory()).toHaveLength(1);
   });
 
-  test('DesignAgent slot is the real handler bound to deps (B5-PR4)', async () => {
+  test('DesignAgent slot is the real handler bound to deps', async () => {
     const { buildAgentRegistry } = await import('../src/agentRegistry.js');
     const { StubIssueTool } = await import('../src/tools/issueTool.js');
     const { StubGitTool } = await import('../src/tools/gitTool.js');
@@ -135,7 +135,7 @@ describe('buildAgentRegistry — bound handlers for real agents (B5-PR3+)', () =
     expect(issues.createHistory()).toHaveLength(1);
   });
 
-  test('BuildAgent slot is the real handler bound to deps (B5-PR5)', async () => {
+  test('BuildAgent slot is the real handler bound to deps', async () => {
     const { buildAgentRegistry } = await import('../src/agentRegistry.js');
     const { StubIssueTool } = await import('../src/tools/issueTool.js');
     const { StubGitTool } = await import('../src/tools/gitTool.js');
@@ -178,7 +178,7 @@ describe('buildAgentRegistry — bound handlers for real agents (B5-PR3+)', () =
     expect(pulls.openHistory()).toHaveLength(1);
   });
 
-  test('OpsAgent slot is the real handler bound to deps (B5-PR6)', async () => {
+  test('OpsAgent slot is the real handler bound to deps', async () => {
     const { buildAgentRegistry } = await import('../src/agentRegistry.js');
     const { StubIssueTool } = await import('../src/tools/issueTool.js');
     const { StubGitTool } = await import('../src/tools/gitTool.js');
@@ -210,7 +210,7 @@ describe('buildAgentRegistry — bound handlers for real agents (B5-PR3+)', () =
     expect(pulls.mergeHistory()).toHaveLength(1);
   });
 
-  test('SREAgent slot is the real handler bound to deps (B5-PR7)', async () => {
+  test('SREAgent slot is the real handler bound to deps', async () => {
     const { buildAgentRegistry } = await import('../src/agentRegistry.js');
     const { StubIssueTool } = await import('../src/tools/issueTool.js');
     const { StubGitTool } = await import('../src/tools/gitTool.js');
@@ -240,7 +240,7 @@ describe('buildAgentRegistry — bound handlers for real agents (B5-PR3+)', () =
     expect(result.result).toContain('observed deployment failure on DEP_kwAOA_55');
   });
 
-  test('ReviewAgent slot is the real handler bound to deps (B5-PR10)', async () => {
+  test('ReviewAgent slot is the real handler bound to deps', async () => {
     const { buildAgentRegistry } = await import('../src/agentRegistry.js');
     const { StubIssueTool } = await import('../src/tools/issueTool.js');
     const { StubGitTool } = await import('../src/tools/gitTool.js');
@@ -255,8 +255,8 @@ describe('buildAgentRegistry — bound handlers for real agents (B5-PR3+)', () =
       baseBranch: 'main',
     });
     const { StubPlannerSubstrateClient } = await import('../src/tools/plannerSubstrateClient.js');
-    // Verdict runs on a PR at status:in_review (the verdict idempotency guard,
-    // codex #189 r7, reads the live label and fails closed if unreadable).
+    // Verdict runs on a PR at status:in_review (the verdict idempotency guard
+    // reads the live label and fails closed if unreadable).
     const reviewIssues = new StubIssueTool();
     reviewIssues.seedRecord({ recordId: 'PR_kwAOA_77', labels: ['status:in_review'], body: '' });
     const registry = buildAgentRegistry({
@@ -279,7 +279,7 @@ describe('buildAgentRegistry — bound handlers for real agents (B5-PR3+)', () =
     const result = await runAgent('ReviewAgent', reviewMessage, registry);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // Issue #178 structural review: the handler drives the FSM via status
+    // Structural review: the handler drives the FSM via status
     // labels + a findings comment, NOT the 422-blocked native review API.
     expect(result.result).toMatch(
       /^ReviewAgent: emitted v0 placeholder approved structural review on PR/,
@@ -287,7 +287,7 @@ describe('buildAgentRegistry — bound handlers for real agents (B5-PR3+)', () =
     expect(pulls.reviewHistory()).toHaveLength(0);
   });
 
-  test('PlannerAgent slot is the real handler bound to deps (ADR 0013 PR2)', async () => {
+  test('PlannerAgent slot is the real handler bound to deps (ADR 0013)', async () => {
     const { buildAgentRegistry } = await import('../src/agentRegistry.js');
     const { StubIssueTool } = await import('../src/tools/issueTool.js');
     const { StubGitTool } = await import('../src/tools/gitTool.js');

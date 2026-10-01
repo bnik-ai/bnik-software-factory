@@ -3,9 +3,9 @@
 // `/^[0-9A-HJKMNP-TV-Z]{26}$/` (excludes I/L/O/U per Crockford spec).
 //
 // Inline ULID minter — used by per-role agent entrypoints (mainAgentSpec /
-// Design / Build / Review) to mint a fresh ULID per agent run. Replaces the
-// v0 stub of `runId: message.deliveryId` which produced non-ULID stamps
-// that the validator's attributionStamp parser rejected (issue #109 P1).
+// Design / Build / Review) to mint a fresh ULID per agent run.
+// message.deliveryId is NOT a valid run id: it is not ULID-shaped, so the
+// validator's attributionStamp parser rejects the stamp.
 //
 // We inline rather than pull the `ulid` npm package because:
 //   - One function, ~25 lines; less surface than a dep.
@@ -15,8 +15,8 @@
 //
 // Real wire-envelope run-id (the proper fix per ADR 0011 §"per-run
 // dispatch") still TODO — the dispatch message would carry SF's
-// canonical run-id and entrypoints would consume it. Until that lands
-// (B5-PR11+), this minter ensures the stamp parses.
+// canonical run-id and entrypoints would consume it. Until that lands,
+// this minter ensures the stamp parses.
 
 import { randomBytes } from 'node:crypto';
 

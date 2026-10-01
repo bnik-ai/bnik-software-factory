@@ -35,8 +35,7 @@
 //     The planner NEVER overrides Priority or committed_*; it only sets
 //     target_* within. This v0 implementation reads Priority/committed_*/
 //     target_* from PlannerTaskMetadata but does NOT yet write target_*
-//     back (that is a B5-PR11+ extension once the SubstrateClient impl
-//     can edit Task body fields).
+//     back (that needs a SubstrateClient that can edit Task body fields).
 //   - Dependency check: a `proposed` Task is promotable to `ready` iff
 //     every recordId in its `blocked-by` list resolves to a Task in `done`.
 //     Abandoned blockers also clear the dependency (per ADR 0013 §4 —
@@ -49,12 +48,12 @@
 //   - The handler is async; the substrate-client + ordering work is I/O-
 //     bound (list + per-task fetch) and the real impl pages through
 //     GitHub. v0 stub returns immediately.
-//   - DECOMPOSE branch (issue #177): the `design:ready_for_review→ratified`
+//   - DECOMPOSE branch: the `design:ready_for_review→ratified`
 //     trigger is NOT a promote-by-dep-order backlog scan. Instead PlannerAgent
 //     reads the ratified Design and fans it out into `kind:task` Issues (one
 //     per unit of buildable work), each body carrying the ADR 0003 link fields
 //     (`parent-goal` / `spec-ref` / `design-ref`) + any `blocked-by` ordering
-//     the Design implies. CRITICAL (actor-asymmetry — broke the live M4 run):
+//     the Design implies. CRITICAL (actor-asymmetry):
 //     these Tasks are authored by PlannerAgent (the App), so their
 //     `task:__initial__→proposed` webhooks resolve actor=PlannerAgent, which
 //     the orchestrator routingTable treats as `no_dispatch_needed` (only
@@ -143,7 +142,7 @@ const REPLAN_TRIGGER_KEYS: ReadonlySet<string> = new Set([
   'task:__initial__→proposed',
   'design:ready_for_review→ratified',
   // Dependency-clear. ready→done is driven by OpsAgent (v0 post-merge
-  // bookkeeping) OR BuildAgent (already-satisfied empty-diff settle, #180 — v0
+  // bookkeeping) OR BuildAgent (already-satisfied empty-diff settle — v0
   // BuildAgent never drives the intermediate states); both done edges replan
   // identically regardless of actor.
   'task:ready→done',
@@ -273,7 +272,7 @@ export async function runPlannerAgent(
   summaryParts.push(`run=${deps.runId}`);
   const summary = summaryParts.join(' ');
 
-  // Partial-failure surfacing (codex PR2 rev1 P2 finding): any non-empty
+  // Partial-failure surfacing: any non-empty
   // fetchFailures / promoteFailures means substrate reads or FSM
   // transitions did not all succeed. Returning ok:true here would cause
   // the consumer to ack-and-forget — hiding the gap in the audit ledger
@@ -367,7 +366,7 @@ async function decomposeDesign(
   // createdIds[i] = the recordId once plan[i] is created, else undefined.
   const createdIds: Array<string | undefined> = new Array(plan.length).fill(undefined);
   const createFailures: string[] = [];
-  // P2: a Task whose blocker FAILED to create (or was itself skipped) MUST NOT
+  // A Task whose blocker FAILED to create (or was itself skipped) MUST NOT
   // be materialized — otherwise its `blocked-by:` line silently drops the
   // missing blocker, yielding an apparently-unblocked Task that could be
   // promoted/built out of order. Track which plan indices were skipped for
@@ -387,7 +386,7 @@ async function decomposeDesign(
       if (blockerId === undefined) {
         // The blocker did not get a recordId (failed create or was itself
         // skipped). Materializing this Task without the link would let it run
-        // ahead of its dependency — skip it instead (P2).
+        // ahead of its dependency — skip it instead.
         missingBlocker = blockerIndex;
         break;
       }
@@ -422,7 +421,7 @@ async function decomposeDesign(
 
   const createdRecordIds = createdIds.filter((id): id is string => id !== undefined);
 
-  // P1 (stranded-tasks / actor-asymmetry): the Tasks we just created are
+  // Stranded-tasks guard (actor-asymmetry): the Tasks we just created are
   // authored by PlannerAgent (the App), so their `task:__initial__→proposed`
   // webhooks resolve actor=PlannerAgent, which the orchestrator routingTable
   // treats as `no_dispatch_needed` (only HUMAN-created Task initial
@@ -581,7 +580,7 @@ function extractLinkField(body: string, prefix: string, fallback: string): strin
 
 // Render one Task body carrying the ADR 0003 link fields + an actionable
 // "What to build" section + any blocked-by ordering. Field shape matches the
-// M4 seed Task + the validator's crossRecordAssertions parser
+// validator's crossRecordAssertions parser
 // (`parent-goal:` / `spec-ref:` / `design-ref:` / `blocked-by:`).
 function renderTaskBody(args: {
   parentGoal: string;

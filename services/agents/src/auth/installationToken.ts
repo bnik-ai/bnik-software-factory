@@ -10,7 +10,7 @@
 //     inside GitHub's 10-minute JWT ceiling. No third-party JWT lib.
 //   - getToken(owner, repo) resolves the installation via the repo lookup
 //     (GET /repos/{owner}/{repo}/installation) — installation_id is NOT
-//     threaded from the webhook (that is M2). It then mints an
+//     threaded from the webhook. It then mints an
 //     installation access token and caches it per-repo in-process with a
 //     5-minute safety margin before the GitHub expiry.
 //   - SECURITY: the App JWT, the PEM, and the installation token MUST NEVER
@@ -76,9 +76,9 @@ export class InstallationTokenError extends Error {
   }
 }
 
-// Resolve the installation id for a repo. installation_id is NOT carried on
-// the dispatch message in M1c (that is M2); we look it up via the repo
-// endpoint authenticated with the App JWT.
+// Resolve the installation id for a repo. installation_id is NOT taken from
+// the dispatch message; we look it up via the repo endpoint authenticated
+// with the App JWT.
 export async function resolveInstallationId(
   owner: string,
   repo: string,

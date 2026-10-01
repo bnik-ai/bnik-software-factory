@@ -35,7 +35,7 @@ import type { AgentDispatcher, DispatchRequest, DispatchResult } from './agentDi
 import type { AgentRole } from './types.js';
 
 // Classify a thrown error as transient vs deterministic for retry-vs-ack
-// semantics (issue #109 P2). @azure/service-bus surfaces transient
+// semantics. @azure/service-bus surfaces transient
 // conditions via `ServiceBusError.code`:
 //   - 'ServiceBusy' / 'ServerBusy' — namespace throttling
 //   - 'ServiceTimeout' / 'OperationCanceled' — network/timeout
@@ -71,8 +71,8 @@ function classifyTransient(err: unknown): boolean {
 }
 
 // Per-role queue names. Per ADR 0011 the VHQ infra provisions
-// agent-runs-{spec,design,planner,build,review,ops,sre} (ADR 0013 PR1
-// renames `project` → `planner`; VHQ-side migration tracked separately).
+// agent-runs-{spec,design,planner,build,review,ops,sre} (ADR 0013 names the
+// planner queue `planner`, formerly `project`).
 export const DEFAULT_QUEUE_NAMES: Readonly<Record<AgentRole, string>> = {
   SpecAgent: 'agent-runs-spec',
   DesignAgent: 'agent-runs-design',
@@ -132,7 +132,7 @@ export class ServiceBusAgentDispatcher implements AgentDispatcher {
 
   // Close pooled senders + the ServiceBusClient so the Container Apps Job can
   // exit cleanly after the idle-drain (open AMQP handles otherwise keep the
-  // process alive — codex PR #143). No-op for the senderFactory test seam.
+  // process alive). No-op for the senderFactory test seam.
   async close(): Promise<void> {
     for (const sender of this.senders.values()) {
       await sender.close().catch(() => undefined);
@@ -245,12 +245,11 @@ export class InMemoryServiceBusAgentDispatcher implements AgentDispatcher {
 // works on both sides during migration.
 export function serializeMessage(message: DispatchRequest['message']): Record<string, unknown> {
   // Optional review-trigger fields. Emitted only when defined so the wire
-  // shape stays unchanged for non-PR transitions (b3-pr11 payloadParser
+  // shape stays unchanged for non-PR transitions (the agents' payloadParser
   // accepts string|undefined). The branch-sync gate (ADR 0010 / 0012)
   // populates these on the synthetic rebase-intent message dispatched to
   // BuildAgent; if dropped on the wire BuildAgent's runRebaseForReview
-  // deadletters with build_agent_rebase_missing_head_branch (issue #109
-  // P1 codex finding on PR #110).
+  // deadletters with build_agent_rebase_missing_head_branch.
   const out: Record<string, unknown> = {
     lockToken: message.lockToken,
     deliveryId: message.deliveryId,
@@ -268,7 +267,7 @@ export function serializeMessage(message: DispatchRequest['message']): Record<st
   };
   if (message.headBranch !== undefined) out.headBranch = message.headBranch;
   if (message.baseBranch !== undefined) out.baseBranch = message.baseBranch;
-  // M2: forward repo slug + installation id so agents authenticate as the
+  // Forward repo slug + installation id so agents authenticate as the
   // right installation (multi-repo dispatch). Emitted only when defined so
   // the wire shape is unchanged for transitions lacking them.
   if (message.repoFullName !== undefined) out.repoFullName = message.repoFullName;

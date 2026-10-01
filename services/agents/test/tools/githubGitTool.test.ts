@@ -225,7 +225,7 @@ describe('GithubGitTool', () => {
     expect(calls.some((c) => c.args.includes('rebase') && c.args.includes('--abort'))).toBe(true);
   });
 
-  test('hasChanges: dirty worktree, NO self-commit → changed=true, worktreeDirty=true, committedAhead=false (issue #180)', async () => {
+  test('hasChanges: dirty worktree, NO self-commit → changed=true, worktreeDirty=true, committedAhead=false', async () => {
     const { exec, calls } = makeExec((args) => {
       if (args.includes('status')) return ' M src/loader.ts\n?? new.ts\n';
       if (args.includes('rev-list')) return '0\n'; // no commits ahead
@@ -239,11 +239,11 @@ describe('GithubGitTool', () => {
     const statusCall = calls.find((c) => c.args.includes('status'));
     expect(statusCall?.args).toContain('--porcelain');
     expect(statusCall?.args).toContain('--untracked-files=all');
-    // committedAhead is computed even on a dirty worktree (codex P2 r6).
+    // committedAhead is computed even on a dirty worktree.
     expect(calls.find((c) => c.args.includes('rev-list'))).toBeDefined();
   });
 
-  test('hasChanges: dirty worktree AND self-commit (mixed) → committedAhead=true (codex P2 r6)', async () => {
+  test('hasChanges: dirty worktree AND self-commit (mixed) → committedAhead=true', async () => {
     const { exec } = makeExec((args) => {
       if (args.includes('status')) return ' M leftover.ts\n';
       if (args.includes('rev-list')) return '1\n'; // agent also committed
@@ -256,7 +256,7 @@ describe('GithubGitTool', () => {
     });
   });
 
-  test('hasChanges: clean tree, at base tip (no commits ahead, no tree diff) → changed=false (issue #180)', async () => {
+  test('hasChanges: clean tree, at base tip (no commits ahead, no tree diff) → changed=false', async () => {
     // rev-list count 0 AND diff --name-only empty → HEAD == base → already satisfied.
     const { exec } = makeExec((args) => (args.includes('rev-list') ? '0\n' : ''));
     const r = await gitTool(exec).hasChanges('main');
@@ -266,7 +266,7 @@ describe('GithubGitTool', () => {
     });
   });
 
-  test('hasChanges: clean tree BEHIND an advanced base (no commits ahead, tree DIFFERS) → changed=true, committedAhead=false (codex P1 r5: never a false already-satisfied)', async () => {
+  test('hasChanges: clean tree BEHIND an advanced base (no commits ahead, tree DIFFERS) → changed=true, committedAhead=false (never a false already-satisfied)', async () => {
     const { exec } = makeExec((args) => {
       if (args.includes('rev-list')) return '0\n';
       if (args.includes('diff')) return 'src/loader.ts\n'; // base advanced → tree differs
@@ -279,8 +279,8 @@ describe('GithubGitTool', () => {
     });
   });
 
-  test('hasChanges: clean tree BUT commits ahead of base (agent ran git commit) → changed=true, worktreeDirty=false (codex P1 #180)', async () => {
-    // The exact regression: a clean worktree does NOT prove an empty diff — the
+  test('hasChanges: clean tree BUT commits ahead of base (agent ran git commit) → changed=true, worktreeDirty=false', async () => {
+    // A clean worktree does NOT prove an empty diff — the
     // coding agent committed its work, so rev-list origin/main..HEAD > 0.
     const { exec, calls } = makeExec((args) => (args.includes('rev-list') ? '2\n' : ''));
     const r = await gitTool(exec).hasChanges('main');
@@ -323,7 +323,7 @@ describe('GithubGitTool', () => {
     }
   });
 
-  test('headSha runs `rev-parse HEAD` in the workdir and trims the sha (issue #182)', async () => {
+  test('headSha runs `rev-parse HEAD` in the workdir and trims the sha', async () => {
     const { exec, calls } = makeExec((args) =>
       args.includes('rev-parse') ? 'abc123def456\n' : '',
     );

@@ -107,7 +107,7 @@ describe('GithubPlannerSubstrateClient.listTasks', () => {
     if (!r.ok) expect(r.reason).toMatch(/^list_tasks_failed:503:/);
   });
 
-  test('pages through ALL results when the first page is full (codex PR #150)', async () => {
+  test('pages through ALL results when the first page is full', async () => {
     // Page 1 returns a full page (100) → the client must fetch page 2; page 2
     // returns 30 (partial) → stop. No Task beyond the first page is stranded.
     const page1 = Array.from({ length: 100 }, (_unused, i) => ({ node_id: `I_p1_${i}` }));
@@ -158,7 +158,7 @@ describe('GithubPlannerSubstrateClient.getTaskMetadata', () => {
     expect(r.value.createdAt).toBe('2026-05-30T18:00:00Z');
   });
 
-  test('parses the GitHub issue-form `### blocked-by` heading format (codex PR #150)', async () => {
+  test('parses the GitHub issue-form `### blocked-by` heading format', async () => {
     // task.yml renders the blocked-by INPUT as a heading + value, not a line.
     const body = [
       '### parent-goal',
@@ -241,7 +241,7 @@ describe('GithubPlannerSubstrateClient.getTaskMetadata', () => {
     if (!r.ok) expect(r.reason).toBe('record_not_found:I_missing');
   });
 
-  test('resolves an owner/repo#number blocked-by ref via repository.issue (codex PR #150)', async () => {
+  test('resolves an owner/repo#number blocked-by ref via repository.issue', async () => {
     // The blocked-by form (task.yml + ADR 0003) is owner/repo#number, not a node
     // id — getTaskMetadata must query repository.issue so the blocker resolves.
     const { fetchImpl, calls } = makeFetch(() => ({
@@ -271,7 +271,7 @@ describe('GithubPlannerSubstrateClient.getTaskMetadata', () => {
     expect(sent.variables).toEqual({ owner: 'example-org', name: 'software-factory', number: 123 });
   });
 
-  test('non-Issue node (no Issue fields) → record_not_found, never throws (codex PR #150)', async () => {
+  test('non-Issue node (no Issue fields) → record_not_found, never throws', async () => {
     // A malformed blocked-by ref resolves to a non-Issue node: non-null, but the
     // `... on Issue` fragment yielded no `labels`/`createdAt`. Must surface the
     // typed not-found, not throw on node.labels.nodes.
@@ -281,7 +281,7 @@ describe('GithubPlannerSubstrateClient.getTaskMetadata', () => {
     if (!r.ok) expect(r.reason).toBe('record_not_found:U_not_an_issue');
   });
 
-  test('no status label → proposed (the implicit initial state; codex PR #150)', async () => {
+  test('no status label → proposed (the implicit initial state)', async () => {
     const { fetchImpl } = makeFetch(() => ({
       json: {
         data: {
@@ -408,7 +408,7 @@ describe('GithubPlannerSubstrateClient — token never logged', () => {
   });
 });
 
-describe('GithubPlannerSubstrateClient.getTaskMetadata — dual-label precedence (issue #180 rev3)', () => {
+describe('GithubPlannerSubstrateClient.getTaskMetadata — dual-label precedence', () => {
   test('leftover status:ready BEFORE status:done derives done (terminal-first), unblocking dependents', async () => {
     const { fetchImpl } = makeFetch(() => ({
       json: {

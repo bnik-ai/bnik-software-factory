@@ -243,7 +243,7 @@ describe('ServiceBusAgentDispatcher — wire format', () => {
     expect(body.message.verdict).toBe('accept');
   });
 
-  test('headBranch + baseBranch are serialized when present (issue #109 P1 codex finding on PR #110)', async () => {
+  test('headBranch + baseBranch are serialized when present', async () => {
     // ADR 0010 / 0012: the branch-sync gate populates headBranch +
     // baseBranch on the synthetic BuildAgent rebase-intent dispatch.
     // If these are dropped on the wire BuildAgent.runRebaseForReview
@@ -286,7 +286,7 @@ describe('ServiceBusAgentDispatcher — wire format', () => {
     expect('baseBranch' in body.message).toBe(false);
   });
 
-  test('M2: repoFullName + installationId are serialized when present (issue #164)', async () => {
+  test('repoFullName + installationId are serialized when present', async () => {
     const calls: FakeSenderCall[] = [];
     const dispatcher = new ServiceBusAgentDispatcher({
       auth: { connectionString: TEST_CONNECTION_STRING },
@@ -306,7 +306,7 @@ describe('ServiceBusAgentDispatcher — wire format', () => {
     expect(body.message.installationId).toBe(42);
   });
 
-  test('M2: repoFullName + installationId are omitted when undefined (wire shape unchanged)', async () => {
+  test('repoFullName + installationId are omitted when undefined (wire shape unchanged)', async () => {
     const calls: FakeSenderCall[] = [];
     const dispatcher = new ServiceBusAgentDispatcher({
       auth: { connectionString: TEST_CONNECTION_STRING },
@@ -359,7 +359,7 @@ describe('ServiceBusAgentDispatcher — failure modes', () => {
   });
 });
 
-describe('ServiceBusAgentDispatcher — transient/deterministic classification (issue #109 P2)', () => {
+describe('ServiceBusAgentDispatcher — transient/deterministic classification', () => {
   function makeServiceBusError(code: string, message = 'simulated SB error'): Error {
     const err = new Error(message);
     (err as Error & { code: string }).code = code;
@@ -588,7 +588,7 @@ describe('resolveServiceBusAgentDispatcherBootConfig — env-driven boot', () =>
   });
 });
 
-describe('ServiceBusAgentDispatcher.close — releases pooled sender handles (codex PR #143)', () => {
+describe('ServiceBusAgentDispatcher.close — releases pooled sender handles', () => {
   test('closes every pooled sender so the Container Apps Job can exit on idle-drain', async () => {
     const closedQueues: string[] = [];
     const senderFactory = (queueName: string) =>

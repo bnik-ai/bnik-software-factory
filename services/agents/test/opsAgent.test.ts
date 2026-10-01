@@ -25,10 +25,10 @@ function makeMessage(overrides: Partial<ParsedTransitionMessage> = {}): ParsedTr
   };
 }
 
-// Default fixture is the issue #180 live shape: the PR body carries
+// Default fixture is the live post-merge shape: the PR body carries
 // BuildAgent's `task-ref:` line, the Task body carries the REQUIRED `pr-ref:`
-// backlink pointing back at this PR (BuildAgent writes it at PR-open — codex
-// round 3 bidirectional-pairing enforcement), and the paired Task still sits
+// backlink pointing back at this PR (BuildAgent writes it at PR-open —
+// bidirectional-pairing enforcement), and the paired Task still sits
 // at status:ready (v0 BuildAgent never claims it), so the post-merge
 // bookkeeping drives ready→done.
 // `null` seeds the Task with NO status label (implicit `proposed`).
@@ -85,7 +85,7 @@ describe('runOpsAgent — happy path on pr:in_review→approved', () => {
   });
 });
 
-describe('runOpsAgent — pre-merge stale-base gate (issue #105 / ADR 0012)', () => {
+describe('runOpsAgent — pre-merge stale-base gate (ADR 0012)', () => {
   test('happy path consults pulls.getSyncStatus before merging (default current → merge proceeds)', async () => {
     const deps = makeDeps();
     const result = await runOpsAgent(makeMessage(), deps);
@@ -174,7 +174,7 @@ describe('runOpsAgent — defensive guards', () => {
   });
 });
 
-describe('runOpsAgent — post-merge Task bookkeeping (issue #180)', () => {
+describe('runOpsAgent — post-merge Task bookkeeping', () => {
   test('happy path: task-ref resolved → marker comment, then status:done applied, then status:ready removed', async () => {
     const deps = makeDeps();
     const result = await runOpsAgent(makeMessage(), deps);
@@ -204,7 +204,7 @@ describe('runOpsAgent — post-merge Task bookkeeping (issue #180)', () => {
       { recordId: TASK_RECORD_ID, label: 'status:ready' },
     ]);
 
-    // Issue #181: the status:done Task is also CLOSED with reason=completed so
+    // The status:done Task is also CLOSED with reason=completed so
     // the board never shows open-but-done records.
     expect(deps.issues.closeHistory()).toEqual([{ recordId: TASK_RECORD_ID, reason: 'completed' }]);
   });
@@ -410,8 +410,8 @@ describe('runOpsAgent — idempotent merge (at-least-once redelivery / replay re
     expect(deps.pulls.mergeHistory()).toHaveLength(0);
     expect(deps.issues.commentHistory()).toHaveLength(0);
     expect(deps.issues.labelApplyHistory()).toHaveLength(0);
-    // The approved-event redelivery is the autonomous close-retry path (#181
-    // codex): no transition re-driven, but the close is retried (idempotent).
+    // The approved-event redelivery is the autonomous close-retry path: no
+    // transition re-driven, but the close is retried (idempotent).
     expect(deps.issues.closeHistory()).toEqual([{ recordId: TASK_RECORD_ID, reason: 'completed' }]);
   });
 
@@ -436,7 +436,7 @@ describe('runOpsAgent — idempotent merge (at-least-once redelivery / replay re
   });
 });
 
-describe('runOpsAgent — task-ref target validation (codex P2)', () => {
+describe('runOpsAgent — task-ref target validation', () => {
   test('task-ref pointing at a non-Task record → typed skip, no writes', async () => {
     const deps = makeDeps();
     deps.issues.seedRecord({
@@ -451,7 +451,7 @@ describe('runOpsAgent — task-ref target validation (codex P2)', () => {
     expect(deps.issues.labelApplyHistory()).toHaveLength(0);
   });
 
-  test('Task with NO pr-ref backlink → typed skipped_no_pr_ref_backlink, no writes (codex round 3: backlink is REQUIRED)', async () => {
+  test('Task with NO pr-ref backlink → typed skipped_no_pr_ref_backlink, no writes (backlink is REQUIRED)', async () => {
     const deps = { ...makeDeps(), backlinkRetryAttempts: 0, backlinkRetryDelayMs: 0 };
     deps.issues.seedRecord({
       recordId: TASK_RECORD_ID,
@@ -497,7 +497,7 @@ describe('runOpsAgent — task-ref target validation (codex P2)', () => {
   });
 });
 
-describe('runOpsAgent — multiple pr-ref backlinks: newest wins (codex rev6+rev10)', () => {
+describe('runOpsAgent — multiple pr-ref backlinks: newest wins', () => {
   test('merged PR IS the newest pr-ref (replacement-PR shape) → bookkeeping proceeds', async () => {
     const deps = makeDeps();
     deps.issues.seedRecord({
@@ -526,7 +526,7 @@ describe('runOpsAgent — multiple pr-ref backlinks: newest wins (codex rev6+rev
   });
 });
 
-describe('runOpsAgent — bookkeeping survives merge-note failure (#180 rev8)', () => {
+describe('runOpsAgent — bookkeeping survives merge-note failure', () => {
   test('note submitReview fails after merge → Task still driven to done; reason carries the token', async () => {
     const deps = makeDeps();
     deps.pulls.failNextSubmitReview('boom');
@@ -539,7 +539,7 @@ describe('runOpsAgent — bookkeeping survives merge-note failure (#180 rev8)', 
   });
 });
 
-describe('runOpsAgent — backlink write race (codex residual on #165)', () => {
+describe('runOpsAgent — backlink write race', () => {
   test('missing backlink on an sf/ PR is re-read; backlink appearing on retry → bookkeeping proceeds', async () => {
     const deps = makeDeps();
     deps.issues.seedRecord({
@@ -591,7 +591,7 @@ describe('runOpsAgent — backlink write race (codex residual on #165)', () => {
   });
 });
 
-describe('runOpsAgent — close the Task issue on done (issue #181)', () => {
+describe('runOpsAgent — close the Task issue on done', () => {
   test('close failure AFTER the transition landed → done with close-gap token; Task still done', async () => {
     const deps = makeDeps();
     deps.issues.close = async () => ({ ok: false as const, reason: 'close_api_502' });
@@ -622,7 +622,7 @@ describe('runOpsAgent — close the Task issue on done (issue #181)', () => {
     );
   });
 
-  test('a skipped (already-done) Task STILL retries the close (codex: recover a prior close failure on replay)', async () => {
+  test('a skipped (already-done) Task STILL retries the close (recovers a prior close failure on replay)', async () => {
     const deps = makeDeps('status:done');
     const result = await runOpsAgent(makeMessage(), deps);
 
@@ -650,7 +650,7 @@ describe('runOpsAgent — close the Task issue on done (issue #181)', () => {
   });
 });
 
-describe('runOpsAgent — any-merge bookkeeping (issue #178)', () => {
+describe('runOpsAgent — any-merge bookkeeping', () => {
   // A human merge (e.g. at the request-changes gate) arrives as
   // pull_request.closed merged:true → pr:<from>→merged. The orchestrator
   // dispatches OpsAgent for THIS transition; OpsAgent runs bookkeeping-only.
@@ -675,7 +675,7 @@ describe('runOpsAgent — any-merge bookkeeping (issue #178)', () => {
     expect(deps.pulls.syncStatusHistory()).toHaveLength(0);
     expect(deps.pulls.reviewHistory()).toHaveLength(0);
 
-    // Full bookkeeping: marker comment + label swap + issue close (#181).
+    // Full bookkeeping: marker comment + label swap + issue close.
     expect(deps.issues.commentHistory()).toHaveLength(1);
     expect(deps.issues.commentHistory()[0]?.body).toContain('merged (post-merge bookkeeping)');
     expect(deps.issues.labelApplyHistory()).toEqual([
@@ -707,7 +707,7 @@ describe('runOpsAgent — any-merge bookkeeping (issue #178)', () => {
     // No transition re-driven (no marker comment, no label apply)...
     expect(deps.issues.commentHistory()).toHaveLength(0);
     expect(deps.issues.labelApplyHistory()).toHaveLength(0);
-    // ...but the close IS retried so a prior close failure converges (#181 codex).
+    // ...but the close IS retried so a prior close failure converges.
     expect(deps.issues.closeHistory()).toEqual([{ recordId: TASK_RECORD_ID, reason: 'completed' }]);
   });
 

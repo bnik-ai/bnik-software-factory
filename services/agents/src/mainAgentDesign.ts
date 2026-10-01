@@ -15,7 +15,7 @@ export function startDesignAgentConsumer(): ReturnType<typeof startAgentConsumer
     role: ROLE,
     defaultQueueName: DEFAULT_QUEUE_NAME,
     handler: (message) => {
-      // Per-run ULID per ADR 0008 §2 (issue #109 P1).
+      // Per-run ULID per ADR 0008 §2 (see runId.ts).
       const runId = mintRunId();
       const deps = buildAgentDeps({ env: process.env, runId });
       return runDesignAgent(message, {

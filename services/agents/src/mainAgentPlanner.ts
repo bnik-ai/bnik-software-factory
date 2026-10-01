@@ -7,7 +7,7 @@
 //   - One entrypoint per role; shape mirrors mainAgentSpec / mainAgentDesign
 //     / mainAgentBuild / mainAgentReview. Per-role Job names match the
 //     VHQ-provisioned `caj-agent-<role>` + `agent-runs-<role>` topology
-//     (ADR 0011); the physical names are stable post-PR1 rename per ADR
+//     (ADR 0011); the physical names are unchanged by the role rename per ADR
 //     0013 §6 (only the role identifier moved — infra names follow on
 //     the VHQ-side migration).
 //   - Reads from the queue named by env AGENT_QUEUE_NAME, defaulting to
@@ -22,8 +22,8 @@
 //     CI (no GitHub creds) stays green.
 //   - Per-run ULID per ADR 0008 §2 (validator's attributionStamp parser
 //     requires `run` to match /^[0-9A-HJKMNP-TV-Z]{26}$/). We mint via
-//     mintRunId() — DO NOT use message.deliveryId (it isn't ULID-shaped
-//     and was the issue #109 P1 root cause for the other entrypoints).
+//     mintRunId() — DO NOT use message.deliveryId (it isn't ULID-shaped,
+//     so the validator rejects the stamp).
 
 import { buildAgentDeps, buildIssueTool } from './agentDeps.js';
 import { runPlannerAgent } from './agents/plannerAgent.js';
@@ -89,14 +89,14 @@ export function startPlannerAgentConsumer(): ReturnType<typeof startAgentConsume
     role: ROLE,
     defaultQueueName: DEFAULT_QUEUE_NAME,
     handler: (message) => {
-      // Per-run ULID per ADR 0008 §2 — see issue #109 P1 for why we mint
-      // here instead of reusing message.deliveryId.
+      // Per-run ULID per ADR 0008 §2, minted here because message.deliveryId
+      // is not ULID-shaped (see runId.ts).
       const runId = mintRunId();
       const repo = resolveRepo();
       const substrate = buildPlannerSubstrate(runId, repo);
       // The PROMOTE path uses `substrate` (backlog query). The DECOMPOSE path
-      // (design:ratified → Tasks, issue #177) needs the per-record IssueTool +
-      // content brain. These gate INDEPENDENTLY (#177 P2):
+      // (design:ratified → Tasks) needs the per-record IssueTool +
+      // content brain. These gate INDEPENDENTLY:
       //   - issues: GitHub creds ALONE (buildIssueTool / isGithubAppMode) — a
       //     real GithubIssueTool whenever GitHub creds exist, even with no
       //     ANTHROPIC_API_KEY. Otherwise decompose would read an empty Design

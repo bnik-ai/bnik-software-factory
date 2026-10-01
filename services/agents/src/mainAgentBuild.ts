@@ -24,7 +24,7 @@ export function startBuildAgentConsumer(): ReturnType<typeof startAgentConsumer>
     defaultQueueName: DEFAULT_QUEUE_NAME,
     handler: (message) => {
       // Per-run ULID per ADR 0008 §2 — also the {ulid} segment of the branch
-      // ref sf/T-<id>/<ulid>/build@<model> (issue #109 P1).
+      // ref sf/T-<id>/<ulid>/build@<model>.
       const runId = mintRunId();
       // Env-gated: real GitTool (clone+commit+push) + coding brain when
       // secrets present, else stub tools + scaffold-only path (CI / boot).

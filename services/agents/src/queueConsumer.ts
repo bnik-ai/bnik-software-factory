@@ -5,7 +5,7 @@
 // Invariants:
 //   - Symmetric to the validator's EventQueueConsumer / ParsedTransitionMessage
 //     contract — the agents service owns its consumer interface so the wire
-//     boundary is explicit. B7 wires both validator and agents to one Service
+//     boundary is explicit. Deployed, validator and agents share one Service
 //     Bus namespace; tests use the in-memory impls.
 //   - Per-role queue ordering: a single Container Apps Job execution drains
 //     one role-scoped queue (`agent-runs-spec` etc.). Session-locking at the
@@ -45,7 +45,7 @@ export interface AgentRunQueueConsumer {
 
 // In-memory consumer for tests and v0 boot. Enqueue messages via `enqueue`
 // (test helper); the entrypoint main loop calls `receive`. The real Service
-// Bus impl ships in B7 — same interface, swap-in behind a factory.
+// Bus impl (serviceBusAgentRunConsumer.ts) implements the same interface.
 export class InMemoryAgentRunQueueConsumer implements AgentRunQueueConsumer {
   private readonly pending: AgentRunMessage[] = [];
   private readonly inflight: Map<string, AgentRunMessage> = new Map();
