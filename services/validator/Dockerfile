@@ -10,8 +10,9 @@
 #     it has no HTTP ingress to probe. Job health is observed via execution
 #     state in Azure.
 #   - No EXPOSE: Container Apps Jobs receive no inbound network.
-#   - Boot wires in-memory deps; B7 swaps in Service Bus + Postgres impls
-#     behind the EventQueueConsumer / AuditLedgerWriter interfaces.
+#   - Boot wires in-memory deps unless Service Bus / Postgres env is set;
+#     with it, the Service Bus + Postgres impls sit behind the
+#     EventQueueConsumer / AuditLedgerWriter interfaces.
 
 # ---- deps-prod (runtime-only, --omit=dev) -------------------------------
 FROM node:20-alpine AS deps-prod

@@ -1,11 +1,11 @@
 // Spec: docs/design/validator-bot.md "Service Bus session-keyed consumer" +
 // the session-enabled `validator-events` queue.
 // Invariants:
-//   - The queue is SESSION-ENABLED (VHQ TF). Each receive() opens ONE
-//     session via acceptNextSession(), drains up to maxMessages, and the
-//     session receiver is close()'d in a finally so the session lock is
-//     released before the next receive(). Leaving a session receiver open
-//     across receive() calls leaks session locks.
+//   - The queue is SESSION-ENABLED (infrastructure Terraform). Each
+//     receive() opens ONE session via acceptNextSession(), drains up to
+//     maxMessages, and the session receiver is close()'d in a finally so
+//     the session lock is released before the next receive(). Leaving a
+//     session receiver open across receive() calls leaks session locks.
 //   - The github-app producer (serviceBusEventQueue.ts) serializes the SB body as
 //     { deliveryId, event, payload } where `payload` is the raw webhook
 //     body JSON string. The consumer rebuilds a RawWebhookDelivery, runs

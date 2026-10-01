@@ -26,7 +26,7 @@ export function buildAdminApp(config: AdminAppConfig = {}): Hono {
       {
         error: 'not_implemented_v0',
         detail:
-          'install-status read against audit_ledger + tenants table lands in B7 alongside Postgres mirror DB',
+          'install-status read against audit_ledger + tenants table is not implemented in this release',
       },
       503,
     ),
@@ -36,7 +36,7 @@ export function buildAdminApp(config: AdminAppConfig = {}): Hono {
     c.json(
       {
         error: 'not_implemented_v0',
-        detail: 'dead-letter replay against Service Bus DLQ lands in B7 alongside real SB topology',
+        detail: 'dead-letter replay against Service Bus DLQ is not implemented in this release',
       },
       503,
     ),

@@ -2,14 +2,14 @@
 // Bus fan-out — `caj-agent-planner` Container Apps Job consumes
 // `agent-runs-planner` queue) + docs/decisions/0013-planner-agent.md
 // §Decision items 1, 4, 6 (continuous triage / dependency-order / ready-
-// gate engine; opus-4-7's lane).
+// gate engine).
 // Invariants:
 //   - One entrypoint per role; shape mirrors mainAgentSpec / mainAgentDesign
 //     / mainAgentBuild / mainAgentReview. Per-role Job names match the
-//     VHQ-provisioned `caj-agent-<role>` + `agent-runs-<role>` topology
-//     (ADR 0011); the physical names are unchanged by the role rename per ADR
-//     0013 §6 (only the role identifier moved — infra names follow on
-//     the VHQ-side migration).
+//     infrastructure-provisioned `caj-agent-<role>` + `agent-runs-<role>`
+//     topology (ADR 0011); the physical names are unchanged by the role
+//     rename per ADR 0013 §6 (only the role identifier moved — infra names
+//     follow on the infrastructure repository's migration).
 //   - Reads from the queue named by env AGENT_QUEUE_NAME, defaulting to
 //     `agent-runs-planner`.
 //   - PlannerAgent's substrate seam is PlannerSubstrateClient — NOT the

@@ -4,7 +4,7 @@
 #   - Same shape as Dockerfile (ca-webhook); CMD = mainTerraform.ts;
 #     HEALTHCHECK path = /health.
 #   - TERRAFORM_HMAC_SECRET MUST be bound at runtime (Key Vault `secretRef`).
-#   - Future B7+ work: this runtime needs the `terraform` binary on PATH
+#   - Future work: this runtime needs the `terraform` binary on PATH
 #     to actually plan/apply. v0 returns 503 not_implemented; the binary
 #     install lands in the same PR as the real handler so it's not bloat
 #     against a stub.

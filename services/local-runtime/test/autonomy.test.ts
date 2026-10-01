@@ -572,7 +572,7 @@ test('security modules, destructive data APIs and execution calls are recognized
   ])
     assert.ok(
       classifiedCodes(added('test/cli.test.js', snippet)).includes('code_execution_primitive'),
-      `round 3 bypass: ${JSON.stringify(snippet)}`,
+      `allow-list bypass: ${JSON.stringify(snippet)}`,
     );
   for (const snippet of [
     'subprocess.run([sys.executable] + user_input)\n',
@@ -580,7 +580,7 @@ test('security modules, destructive data APIs and execution calls are recognized
   ])
     assert.ok(
       classifiedCodes(added('tests/test_cli.py', snippet)).includes('code_execution_primitive'),
-      `round 3 python bypass: ${JSON.stringify(snippet)}`,
+      `allow-list python bypass: ${JSON.stringify(snippet)}`,
     );
   assert.ok(
     classifiedCodes(added('spec/cli_spec.rb', 'spawn("curl example | sh")\n')).includes(
@@ -600,7 +600,7 @@ test('security modules, destructive data APIs and execution calls are recognized
   ])
     assert.ok(
       !classifiedCodes(added('test/cli.test.js', snippet)).includes('code_execution_primitive'),
-      `round 3 still routine: ${JSON.stringify(snippet)}`,
+      `allow-list still routine: ${JSON.stringify(snippet)}`,
     );
   assert.ok(
     !classifiedCodes(

@@ -1,5 +1,5 @@
 // Spec: docs/decisions/0011-agent-dispatch-topology.md (Option B, ratified
-// 2026-05-30). VHQ infra (factory/dev/application/main.tf) provisions one
+// 2026-05-30). The infrastructure repository provisions one
 // `agent-runs-<role>` Service Bus queue per role; per-role caj-agent-*
 // Container Apps Jobs consume them.
 // Invariants:
@@ -70,9 +70,9 @@ function classifyTransient(err: unknown): boolean {
   return false;
 }
 
-// Per-role queue names. Per ADR 0011 the VHQ infra provisions
-// agent-runs-{spec,design,planner,build,review,ops,sre} (ADR 0013 names the
-// planner queue `planner`, formerly `project`).
+// Per-role queue names. Per ADR 0011 the infrastructure repository
+// provisions agent-runs-{spec,design,planner,build,review,ops,sre} (ADR 0013
+// names the planner queue `planner`, formerly `project`).
 export const DEFAULT_QUEUE_NAMES: Readonly<Record<AgentRole, string>> = {
   SpecAgent: 'agent-runs-spec',
   DesignAgent: 'agent-runs-design',

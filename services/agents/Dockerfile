@@ -12,14 +12,14 @@
 #   - tsx is a RUNTIME dep, so it lands in deps-prod and ships.
 #   - git is installed in the runtime image: the coding "brain"
 #     (src/runtime/codingAgent.ts → @anthropic-ai/claude-agent-sdk) drives
-#     Bash tool calls, and the downstream GitTool layer (src/tools/, M1b)
+#     Bash tool calls, and the downstream GitTool layer (src/tools/)
 #     clones/commits/pushes — both need the git binary present.
 #   - The Agent SDK bundles the claude-code runtime (npm install pulls ~100
 #     packages); it is a regular `dependencies` entry, so `npm ci
 #     --omit=dev` in deps-prod ships it into the runtime image.
 #   - caj-agent-build CPU/mem are bumped at DEPLOY time (Container Apps Job
-#     resources in VHQ infra), not here — the coding agent is heavier than
-#     the other roles.
+#     resources in the infrastructure repository), not here — the coding
+#     agent is heavier than the other roles.
 #   - No HEALTHCHECK: Container Apps Jobs have no HTTP ingress.
 #   - No EXPOSE: Container Apps Jobs receive no inbound network.
 #   - SINGLE IMAGE, MULTI-ROLE: one built artifact is deployed as each of

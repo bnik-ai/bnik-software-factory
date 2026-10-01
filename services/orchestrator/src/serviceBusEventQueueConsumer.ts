@@ -3,9 +3,9 @@
 // backed by the `agent-runs-dispatch` queue the validator's outgoingPublisher
 // feeds (services/validator/src/outgoingPublisher.ts).
 // Invariants:
-//   - The `agent-runs-dispatch` queue is NON-session (VHQ TF
-//     requiresSession:false). Each receive() pulls a batch via a single
-//     long-lived plain receiver (createReceiver, peekLock) — NO
+//   - The `agent-runs-dispatch` queue is NON-session (infrastructure
+//     Terraform requiresSession:false). Each receive() pulls a batch via a
+//     single long-lived plain receiver (createReceiver, peekLock) — NO
 //     acceptNextSession, so none of the validator consumer's session-lock /
 //     session-timeout machinery applies. An empty queue resolves to [] from
 //     receiveMessages(maxWaitTimeInMs) rather than throwing, so the loop's

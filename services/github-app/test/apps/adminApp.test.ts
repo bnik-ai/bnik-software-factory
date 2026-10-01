@@ -16,7 +16,7 @@ describe('buildAdminApp', () => {
     expect(res.status).toBe(503);
     const body = (await res.json()) as { error: string; detail: string };
     expect(body.error).toBe('not_implemented_v0');
-    expect(body.detail).toContain('B7');
+    expect(body.detail).toContain('not implemented in this release');
   });
 
   test('POST /admin/replay returns 503 not_implemented_v0', async () => {

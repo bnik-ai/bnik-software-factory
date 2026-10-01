@@ -612,7 +612,7 @@ async function runRevision(
     }
     return {
       ok: true,
-      result: `BuildAgent: revision already pushed for round ${requestChangesRounds.length}/${MAX_REVISION_ATTEMPTS} on PR ${prRecordId} (#${pr.value.number}) — resumed drive changes_requested→in_review without rebuild (issue #190 redelivery)`,
+      result: `BuildAgent: revision already pushed for round ${requestChangesRounds.length}/${MAX_REVISION_ATTEMPTS} on PR ${prRecordId} (#${pr.value.number}) — resumed drive changes_requested→in_review without rebuild (redelivery)`,
     };
   }
 
@@ -665,7 +665,7 @@ async function runRevision(
   // load-bearing step and must always run.
   const pushedMarker = await deps.issues.comment({
     recordId: prRecordId,
-    body: `BuildAgent: pushed a revision for request-changes round ${requestChangesRounds.length} — recording a resume marker before driving this PR back to in_review (issue #190). (Run ${deps.runId})`,
+    body: `BuildAgent: pushed a revision for request-changes round ${requestChangesRounds.length} — recording a resume marker before driving this PR back to in_review. (Run ${deps.runId})`,
     structural: {
       role: `${BRANCH_ROLE}@${deps.model}`,
       run: deps.runId,
@@ -674,7 +674,7 @@ async function runRevision(
   });
   const resumeMarkerNote = pushedMarker.ok
     ? ''
-    : ` (resume-marker write failed: ${pushedMarker.reason} — proceeding to drive anyway, issue #190)`;
+    : ` (resume-marker write failed: ${pushedMarker.reason} — proceeding to drive anyway)`;
 
   // Drive the PR back to review (status:in_review), re-dispatching ReviewAgent.
   const returned = await drivePrToReview(prRecordId, deps);
@@ -837,7 +837,7 @@ async function runRevisionScaffold(
 async function drivePrToReview(prRecordId: string, deps: BuildAgentDeps): Promise<AgentResult> {
   const marker = await deps.issues.comment({
     recordId: prRecordId,
-    body: `BuildAgent: pushed a revision addressing the review findings — returning this PR to in_review for re-review (issue #182). (Run ${deps.runId})`,
+    body: `BuildAgent: pushed a revision addressing the review findings — returning this PR to in_review for re-review. (Run ${deps.runId})`,
     structural: { role: `${BRANCH_ROLE}@${deps.model}`, run: deps.runId },
   });
   if (!marker.ok) {
@@ -978,7 +978,7 @@ function renderRevisionCommitMessage(args: { taskTitle: string; taskIdSegment: s
   // commit-conventions: <intent>(<scope>): <what>. ADR 0009 SF-* trailers are
   // stamped by GithubGitTool.commit, not here (mirrors renderRealCommitMessage).
   void args.taskTitle;
-  return `fix(${args.taskIdSegment}): address review findings [#182 revision]`;
+  return `fix(${args.taskIdSegment}): address review findings [revision]`;
 }
 
 function renderScaffoldRevisionCommitMessage(args: {
@@ -989,7 +989,7 @@ function renderScaffoldRevisionCommitMessage(args: {
   // commit-conventions format + ADR 0009 SF-* trailers (the scaffold path's stub
   // commit layer does not stamp them, so the placeholder body carries them —
   // mirrors renderCommitMessage).
-  const subject = `fix(build): revise ${args.taskIdSegment} [v0 placeholder — address review findings #182]`;
+  const subject = `fix(build): revise ${args.taskIdSegment} [v0 placeholder — address review findings]`;
   return [
     subject,
     '',
@@ -1251,7 +1251,7 @@ function leftReviewSurface(
 async function claimApply(prRecordId: string, deps: BuildAgentDeps): Promise<AgentResult> {
   const marker = await deps.issues.comment({
     recordId: prRecordId,
-    body: `BuildAgent: rebased this PR's feeder branch onto its base before review (ADR 0012; issue #192) and is claiming review (status:in_review) so the now-current branch is reviewed. (Run ${deps.runId})`,
+    body: `BuildAgent: rebased this PR's feeder branch onto its base before review (ADR 0012) and is claiming review (status:in_review) so the now-current branch is reviewed. (Run ${deps.runId})`,
     structural: { role: `${BRANCH_ROLE}@${deps.model}`, run: deps.runId },
   });
   if (!marker.ok) {
@@ -1389,7 +1389,7 @@ function renderPrBody(args: {
     '',
     '## Status',
     'v0 placeholder. The agent has scaffolded a branch + commit + draft PR per ADR 0008 +',
-    'ADR 0009. Real model-authored implementation lands in B5-PR9+. ReviewAgent dispatch',
+    'ADR 0009. Real model-authored implementation needs a configured coding agent. ReviewAgent dispatch',
     'is gated on the draft → in_review transition (which BuildAgent will trigger when',
     'the implementation is complete).',
     '',

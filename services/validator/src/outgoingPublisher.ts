@@ -4,8 +4,8 @@
 //   - The validator publishes ONE outbound message per inbound message
 //     it acks. The outbound payload is the same ParsedTransitionMessage
 //     it consumed, with `verdict` populated from the FSM evaluation
-//     result. caj-orchestrator consumes this queue (per VHQ
-//     factory/dev/application: `agent-runs-dispatch`).
+//     result. caj-orchestrator consumes this queue
+//     (`agent-runs-dispatch`, provisioned by the infrastructure repository).
 //   - Wire format: JSON. Buffer (`payloadHash`) → hex string; Date
 //     (`receivedAt`) → ISO 8601. Matches the shape the orchestrator's
 //     ServiceBusAgentDispatcher uses for downstream per-role queues.

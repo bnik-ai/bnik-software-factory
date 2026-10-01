@@ -14,7 +14,7 @@
 //     access instead of minting their own installation tokens from
 //     sf-app-private-key. v0 stub returns 503; the per-verb GitHub
 //     adapters are not implemented.
-//   - Centralization is OPTIONAL — per VHQ's factory/dev/application
+//   - Centralization is OPTIONAL — per the infrastructure repository's
 //     Terraform, every caj-agent-* Job already has sf-app-private-key
 //     bound as an env_var_from_kv, so agents CAN mint installation
 //     tokens directly via agentClient() without going through this

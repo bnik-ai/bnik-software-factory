@@ -11,8 +11,8 @@
 #     SERVICE_BUS_CONNECTION_STRING or SERVICE_BUS_NAMESPACE env vars
 #     at runtime swap the dispatcher to the real ServiceBusAgentDispatcher
 #     (see services/orchestrator/src/mainConsumer.ts resolveDispatcher) per
-#     ADR 0011 (per-role Service Bus fan-out). B7 swaps the input queue
-#     behind the EventQueueConsumer interface as well.
+#     ADR 0011 (per-role Service Bus fan-out). The same env vars swap the
+#     input queue behind the EventQueueConsumer interface as well.
 
 # ---- deps-prod (runtime-only, --omit=dev) -------------------------------
 FROM node:20-alpine AS deps-prod

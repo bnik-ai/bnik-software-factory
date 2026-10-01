@@ -42,6 +42,6 @@ export async function runSreAgent(
   const failureMode = message.toState as FailureMode;
   return {
     ok: true,
-    result: `SREAgent: observed deployment ${failureMode} on ${message.recordId} (run ${deps.runId}); alerting deferred to B5-PR9+ adapter`,
+    result: `SREAgent: observed deployment ${failureMode} on ${message.recordId} (run ${deps.runId}); alerting adapter not implemented in this release`,
   };
 }
