@@ -372,8 +372,16 @@ export class AutonomyController {
         task.status === 'status:proposed' || latest?.state === 'published',
         'task_not_proposed',
       );
-      if (latest !== null && !options.newAttempt)
+      if (latest !== null && !options.newAttempt) {
+        // Pairing writes the Task's backlink and status: a halted ledger or scope changes nothing.
+        const halted = await this.adapters.ledger.halted(
+          this.adapters.repository.id,
+          latest.scopeId,
+          this.now(),
+        );
+        if (halted !== null) throw new AutonomyError(halted);
         return { run: await this.pairPublication(latest), decisions };
+      }
       // A halted ledger or scope refuses before any attempt is recorded.
       const refusal = await this.adapters.ledger.halted(
         this.adapters.repository.id,

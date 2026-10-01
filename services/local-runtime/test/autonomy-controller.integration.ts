@@ -1019,6 +1019,25 @@ test('a worker failure after the paid container started keeps the spend uncertai
   assert.equal(Number(reservation.settled_microusd), 0);
 });
 
+test('pause refuses pairing a published attempt; the next run after resume pairs it', async () => {
+  const h = harness({ patch: JSON.stringify({ 'sum.js': 'module.exports = (a, b) => a + b;\n' }) });
+  await grant(h.ledger);
+  let pairings = 0;
+  h.adapters.afterPublish = async () => {
+    pairings++;
+    if (pairings === 1) throw new Error('pairing_failed');
+  };
+  await assert.rejects(h.controller.process(7, 'goal-1', signal()), /pairing_failed/);
+  await h.ledger.setPaused(REPOSITORY.id, true, 'incident', 'owner', now());
+  // Pairing writes the Task's backlink and status: a paused ledger changes nothing.
+  await assert.rejects(h.controller.process(7, 'goal-1', signal()), /autonomy_paused/);
+  assert.equal(pairings, 1);
+  assert.notEqual((await h.runs.latest(REPOSITORY.id, 'I_TASK_7'))?.publication?.paired, true);
+  await h.ledger.setPaused(REPOSITORY.id, false, null, 'owner', now());
+  assert.equal((await h.controller.process(7, 'goal-1', signal())).run.publication?.paired, true);
+  assert.equal(pairings, 2);
+});
+
 test('pause and revocation stop resumption of open attempts, not only admission', async () => {
   const h = harness({
     patch: JSON.stringify({ 'sum.js': 'module.exports = (a, b) => a + b;\n' }),
