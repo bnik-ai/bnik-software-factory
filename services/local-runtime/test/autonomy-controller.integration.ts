@@ -670,6 +670,27 @@ test('a publication failure before any write leaves the attempt retryable and re
   assert.equal(attempts, 2);
 });
 
+test('a changed Task under an attempt admitted for publication makes it uncertain, never a clean failure', async () => {
+  const h = harness({ patch: JSON.stringify({ 'sum.js': 'module.exports = (a, b) => a + b;\n' }) });
+  await grant(h.ledger);
+  const publish = h.adapters.publisher as NonNullable<ControllerAdapters['publisher']>;
+  let attempts = 0;
+  h.adapters.publisher = async (input) => {
+    attempts++;
+    if (attempts === 1) throw new AutonomyError('github_commit_unavailable');
+    return publish(input);
+  };
+  await assert.rejects(h.controller.process(7, 'goal-1', signal()), /github_commit_unavailable/);
+  assert.equal((await h.runs.open(REPOSITORY.id, 'I_TASK_7'))?.state, 'publish_admitted');
+  // A controller that crashed after the publisher's branch write leaves this same state: the
+  // publication may exist on GitHub, so the attempt is the operator's to reconcile.
+  h.task.body = `${h.task.body}\nchanged after admission`;
+  const result = await h.controller.process(7, 'goal-1', signal());
+  assert.equal(result.run.state, 'unknown');
+  assert.equal(result.run.reason, 'task_changed_during_attempt');
+  assert.equal(attempts, 1, 'no publication after the change');
+});
+
 test('pairing that fails after publication is retried by the next run and recorded on the publication', async () => {
   const h = harness({ patch: JSON.stringify({ 'sum.js': 'module.exports = (a, b) => a + b;\n' }) });
   await grant(h.ledger);

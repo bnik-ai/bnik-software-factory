@@ -197,11 +197,11 @@ receipts for checks the policy has not enabled.
 | --- | --- | --- |
 | Acceptance | repository, Task, base, tested tree, change digest; suite, harness and runner-image digests | Fresh; `passed` with a non-empty suite, no failures or skips; tests did not modify candidate source; bug fixes have a reproducer that fails on base and passes on the candidate. |
 | Review | same subject, intent digest, reviewer configuration digest | Fresh-context, `complete`, no limitations, risk consistent with categories, no high or medium findings. Low findings are nits and never interrupt. |
-| Merge gate | repository, base branch, PR head, head tree, base | Observed within 5 minutes; PR open; head tree equals the tested tree; base unchanged; protection verified; required checks passed; no human change request. |
+| Merge gate | repository, base branch, PR head, head tree, base | Observed within 5 minutes; PR open; head tree equals the tested tree; base unchanged; protection verified; required checks passed; no change request from a human with write access or an installed App. |
 | Approval | action digest (policy, Task, base, attempt for execute, head, tree, changes, limits) | From a configured human GitHub user for that exact action. A new head, base, tree or policy needs a new approval. |
 | Dependency | same subject; scanner adapter and image from the policy; the manifest paths it covered | Fresh; scanner database within its maximum age at scan time; `complete`; lockfiles reproduced from the manifests; no manifest field outside dependency specifications changed; the set of packages whose install scripts run is unchanged; every added or upgraded package comes from a registry; no new dependency, major upgrade or downgrade unless the policy allows it; every added or upgraded license in the allowlist; no finding at or above `holdSeverity` and none of unknown severity. Passing makes `dependency_manifest` routine for exactly the listed paths; each failed check holds for a human instead; `unsupported` holds; `error`, `timeout`, a stale database, an inconsistent package story or omitted findings at the threshold block. |
 
-A human change request blocks any PR, routine or not. Failed required checks
+A change request from a human with write access or an installed App blocks any PR, routine or not. Failed required checks
 send the change to repair.
 
 ### Protected acceptance trust root

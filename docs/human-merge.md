@@ -46,7 +46,9 @@ App itself made; a human merge under this profile still needs a listed reviewer'
 Under this profile GitHub itself no longer enforces code-owner review for human merges: the
 merger dismisses its approval whenever its attempt does not merge, and reconciliation parks a
 human merge that rested on it, so that check moves from preventive (GitHub) to detective
-(the gate).
+(the gate). That dismissal needs review dismissal to be unrestricted, or the merger App in the
+branch protection's dismissal list: GitHub lets only administrators and the listed actors
+dismiss reviews when dismissal is restricted, and the runtime does not verify that setting.
 
 Commit `.github/CODEOWNERS` to the base branch with a single global rule:
 

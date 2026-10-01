@@ -414,6 +414,12 @@ export class AutonomyController {
             .settle(run.reservationId, { state: 'unknown' }, this.now())
             .catch(() => undefined);
         run = await this.adapters.runs.transition(run.runId, ['executing'], 'unknown', { reason });
+      } else if (run.state === 'publish_admitted') {
+        // A controller that stopped after the publisher's branch write leaves this state too: the
+        // publication may exist, so the attempt is uncertain until an operator reconciles it.
+        run = await this.adapters.runs.transition(run.runId, ['publish_admitted'], 'unknown', {
+          reason,
+        });
       } else
         run = await this.adapters.runs.transition(run.runId, [run.state], 'failed', { reason });
       return { run, decisions };

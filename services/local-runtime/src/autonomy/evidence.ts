@@ -532,9 +532,10 @@ function compareNumeric(left: number[], right: number[]): number {
 }
 /** Breaking by digits alone: a different leading component, or a different second component under 0.x. */
 /**
- * SPDX expression against the allowlist: a single identifier (including `WITH`
- * exceptions) must be listed verbatim; an `OR` choice needs one listed operand; an
- * `AND` conjunction needs all. Parentheses or mixed operators are not accepted.
+ * SPDX expression against the allowlist: a single identifier must be listed verbatim; an
+ * `OR` choice needs one listed operand; an `AND` conjunction needs all. Parentheses or mixed
+ * operators are not accepted. A `WITH` expression never matches: the policy's allowlist holds
+ * bare identifiers only (policy.ts SPDX_IDENTIFIER).
  */
 export function licenseAllowed(license: string, allowlist: readonly string[]): boolean {
   if (allowlist.includes(license)) return true;
