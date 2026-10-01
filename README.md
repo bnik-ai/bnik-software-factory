@@ -1,6 +1,6 @@
 # BNIK Software Factory
 
-BNIK Software Factory turns coding agents into a recoverable, policy-controlled GitHub workflow that you operate locally.
+BNIK Software Factory, a [bnik.ai](https://bnik.ai) project, turns coding agents into a recoverable, policy-controlled GitHub workflow that you operate locally.
 
 Turn a bounded GitHub Task into a reviewed change using your own repository,
 credentials and local runtime. In the default install, a human authorizes each
