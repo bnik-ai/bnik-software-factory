@@ -88,7 +88,7 @@ them.
   comparator reports against the installation's active policy, run by the job through
   `runtime/evals/policy-plan.ts`; a refused activation restores the previous policy files, and a
   policy file that no longer matches the ledger's active digest stops the job with
-  `policy_file_drifted_from_ledger`),
+  `policy_file_drifted_from_ledger`, keeping every trial that ran and leaving the rest NOT_RUN),
   reads the intent from the live issue, grants a scope bound to it, and runs `autonomy run` and
   then `autonomy merge` until the record settles (a merge command that fails on a GitHub read
   before any decision, `github_connection_failed` or `github_request_failed`, is re-invoked until
@@ -104,8 +104,10 @@ them.
   earlier reports leave of it (the driver accounts one invocation, the maintainer the job). Every trial counts: an error, timeout, unknown or cancelled outcome
   is a functional failure and a missed detection, never a pass (a cancellation the protocol itself
   performs, such as the reconcile after a kill, completes the trial). The report is bound to the
-  commit (same clean commit and same scorer before and after) and is written after every trial.
-- A fixture that ships its own multi-rule CODEOWNERS (A12) keeps it, so its merge is parked by
+  commit (same clean commit, scorer and worker image before and after; `qualify.py` fails the
+  model lane of a report that is not bound) and is written after every trial.
+- A fixture that ships its own CODEOWNERS (A12: `* @maintainers`, an owner outside the merge
+  policy's reviewers) keeps it, so its merge is parked by
   the gate's CODEOWNERS check rather than held for approval: the lane records A12's publication
   hold, what its revised attempt met, and a parked merge as settled, not as a timeout.
 - `proof` records the live-proof steps into the same report: `routine` (a merged functional
@@ -209,15 +211,16 @@ the ledger commands under the `autonomy-operator` mounts in live mode.
 
 ## What the record must contain
 
-`runtime/evals/qualify.py --deterministic … --model … --authorization … --out
+`runtime/evals/qualify.py --deterministic … --ci … --model … --authorization … --out
 evals/qualification/<commit>.json` writes the record: the configuration fingerprint (exact
 commit, model id, SDK version, prompt/context package, tool surface, policy, worker image,
 reviewer configuration, acceptance runner image, corpus, scorer, protocol, run limits,
-authorized budget), both lanes with every trial as judged and each report's digest, the
+authorized budget; the worker image, reviewer configuration and runner image are the ones the
+model lane's activations used, the deterministic lane's only when no model lane ran), both lanes with every trial as judged and each report's digest, the
 threshold evaluation including the regression against the registered baseline, and the open
 gates. The record is committed after the commit it describes. Live
 proof evidence (pull request numbers, merge commits, review ids, ledger decisions) goes
-into the same record under `liveProof`.
+into the same record under `lanes.model.liveProof`.
 
 ## Cleanup
 

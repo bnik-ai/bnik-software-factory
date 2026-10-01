@@ -308,6 +308,23 @@ def register_baseline(record_path, report_path, registry_path, protocol, replace
     return entry
 
 
+def fingerprint_value(lanes, deterministic, key):
+    """A configuration pin as the model lane ran it (the release reviewer), else as the deterministic lane did."""
+    model = (lanes['model'].get('activationPins') or {}).get(key)
+    if model:
+        return model
+    return deterministic['activations'][0]['pins'].get(key) if deterministic and deterministic.get('activations') else None
+
+
+def activation_pins(activations):
+    """Each reviewer/runner pin the run's activations used: the one value, or every distinct value when they differ."""
+    pins = {}
+    for key in ('REVIEWER_CONFIG_SHA256', 'ACCEPTANCE_RUNNER_IMAGE'):
+        values = sorted({a.get('pins', {}).get(key) for a in activations if a.get('pins', {}).get(key)})
+        pins[key] = values[0] if len(values) == 1 else (values or None)
+    return pins
+
+
 def model_lane(report_path, authorization_path, protocol):
     """The model lane counts only from an authorized job's report; every trial counts, none is dropped."""
     if not report_path:
@@ -355,13 +372,20 @@ def model_lane(report_path, authorization_path, protocol):
     success, escalation, detection = rates['functionalSuccessRate'], rates['falseEscalationRate'], rates['criticalDetectionRate']
     thresholds = protocol['thresholds']
     executed_ok = violations == 0 and (success is None or success >= thresholds['functionalSuccessRateMin']) and (escalation or 0) <= thresholds['falseEscalationRateMax']
-    met = complete and same_commit and success is not None and executed_ok
+    # The driver binds a report to one clean commit, scorer and worker image from its start to its end (live.py
+    # finish_report); an unbound report is not evidence of that commit.
+    bound = report.get('bound') is True
+    met = complete and same_commit and bound and success is not None and executed_ok
     # A job that stopped at its budget leaves cases NOT_RUN: what ran is judged, what did not run is
     # neither a pass nor a failure, and the lane cannot be PASS (protocol `counting.notRun`).
-    status = 'PASS' if met else ('INCOMPLETE' if executed_ok and same_commit and not complete else 'FAIL')
+    status = 'PASS' if met else ('INCOMPLETE' if executed_ok and same_commit and bound and not complete else 'FAIL')
     lane = {
         'status': status,
         'sameCommit': same_commit,
+        'bound': bound,
+        # The live configuration the trials ran under: the activations' trust-root pins and the worker image.
+        'activationPins': activation_pins(report.get('activations') or []),
+        'workerImageId': report.get('workerImageId'),
         'casesMissingOrShort': [c for c in expected_cases if len(per_case.get(c, [])) < protocol['trialsPerCase']],
         'casesNotRun': [c for c in expected_cases if not per_case.get(c)],
         'repairCount': sum(int(t.get('repairCount') or 0) for t in trials),
@@ -526,10 +550,10 @@ def main():
             'promptAndContextPackageSha256': sha256_files(PROMPT_AND_CONTEXT_PACKAGE),
             'toolSurfaceSha256': sha256_files(TOOL_SURFACE),
             'autonomyPolicySha256': hashlib.sha256(json.dumps(policy, sort_keys=True, separators=(',', ':')).encode()).hexdigest(),
-            'workerImage': (deterministic or {}).get('workerImageId'),
+            'workerImage': lanes['model'].get('workerImageId') or (deterministic or {}).get('workerImageId'),
             'evalProtocolPinnedByPolicy': protocol_pinned,
-            'reviewerConfigSha256': deterministic['activations'][0]['pins'].get('REVIEWER_CONFIG_SHA256') if deterministic and deterministic.get('activations') else None,
-            'acceptanceRunnerImage': deterministic['activations'][0]['pins'].get('ACCEPTANCE_RUNNER_IMAGE') if deterministic and deterministic.get('activations') else None,
+            'reviewerConfigSha256': fingerprint_value(lanes, deterministic, 'REVIEWER_CONFIG_SHA256'),
+            'acceptanceRunnerImage': fingerprint_value(lanes, deterministic, 'ACCEPTANCE_RUNNER_IMAGE'),
             'corpusSha256': hashlib.sha256(corpus_bytes).hexdigest(),
             'scorerSha256': sha256_files(SCORER),
             'fixturesPinSha256': fixtures_pin_file.read_text().strip() if fixtures_pin_file.exists() else None,

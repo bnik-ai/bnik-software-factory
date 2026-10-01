@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Unit checks of the live driver's judgement and construction helpers; no network, no Docker, no model."""
+import argparse
 import base64
 import contextlib
 import importlib.util
@@ -238,7 +239,7 @@ class ActivateTest(unittest.TestCase):
 
     def test_a_policy_file_that_drifted_from_the_ledger_stops_before_activating(self):
         self.ledger = 'f' * 64
-        with self.assertRaisesRegex(RuntimeError, 'policy_file_drifted_from_ledger'):
+        with self.assertRaisesRegex(live.LaneStop, 'policy_file_drifted_from_ledger'):
             self.driver.activate(self.bundle, 'q/t', 'claude-sonnet-5')
         self.assertFalse(any(c[:2] == ('autonomy', 'activate') for c in self.calls))
         self.assertEqual(self.files()[0], self.active)
@@ -774,6 +775,68 @@ class RevisionProofTest(unittest.TestCase):
         self.assertNotIn('push', [e[0] if isinstance(e, tuple) else e for e in events])
 
 
+class LaneStopTest(unittest.TestCase):
+    """A policy that drifted from the ledger stops the lane; it is never recorded as a trial."""
+
+    def test_a_drift_stops_the_lane_and_keeps_what_ran(self):
+        seeded = {'baseCommit': 'b' * 40, 'baseTree': 't' * 40, 'taskNumber': 7, 'taskUrl': 'u', 'intentSha256': 'i' * 64,
+                  'activation': {'revision': 2, 'pins': {}}}
+        calls = []
+
+        class Live:
+            facts = {'repository': 'o/r', 'ownerId': 1}
+            def __init__(self, state):
+                pass
+            def wait_for_idle_worker(self):
+                return True
+            def worker_image_id(self):
+                return 'sha256:' + 'w' * 64
+            def task_runs(self, number):
+                return []
+
+        def seed(live_, driver, entry, branch, trial_number, scope, grant):
+            calls.append(trial_number)
+            if trial_number == 2:
+                raise live.LaneStop("policy_file_drifted_from_ledger: test")
+            return seeded
+
+        names = ('Live', 'load_authorization', 'Driver', 'driver_for', 'seed_trial', 'trial_standard')
+        originals = {n: getattr(live, n) for n in names}
+        live.Live, live.Driver, live.driver_for, live.seed_trial = Live, (lambda *a: None), (lambda *a: None), seed
+        live.load_authorization = lambda *a: {'budgetUsd': 5, 'repository': 'o/r', 'authorizedBy': 'o', 'expiresAt': '2099-01-01T00:00:00Z', 'trustedJob': 'test'}
+        live.trial_standard = lambda *a, **k: observed()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                report = Path(tmp) / 'report.json'
+                args = argparse.Namespace(state=tmp, authorization=Path(tmp) / 'a.json', staging=tmp, budget_usd=None, report=report, resume=False,
+                                          held_out=None, case=['F01'], trials=3, max_consecutive_incomplete=3)
+                with contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(SystemExit, 'policy_file_drifted_from_ledger'):
+                    live.command_lane(args)
+                written = json.loads(report.read_text())
+        finally:
+            for n, f in originals.items():
+                setattr(live, n, f)
+        self.assertEqual(calls, [1, 2])
+        self.assertEqual([t['trial'] for t in written['trials']], [1])
+        self.assertIn('policy_file_drifted_from_ledger', written['budget']['stopped'])
+        self.assertEqual(written['workerImageId'], written['finishedWorkerImageId'])
+
+    def test_a_report_is_bound_to_one_worker_image(self):
+        commit = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'report.json'
+            original = live.scripted.tree_dirty
+            live.scripted.tree_dirty = lambda: False  # this test isolates the image rule from the checkout's state
+            try:
+                for finished, bound in (('sha256:' + 'w' * 64, True), ('sha256:' + 'x' * 64, False), (None, False)):
+                    report = {'treeDirty': False, 'candidateCommit': commit, 'scorerSha256': live.scorer_sha256(), 'workerImageId': 'sha256:' + 'w' * 64,
+                              'budget': {}, 'trials': []}
+                    live.finish_report(report, live.Budget(1.0), [], path, finished)
+                    self.assertEqual(report['bound'], bound, finished)
+            finally:
+                live.scripted.tree_dirty = original
+
+
 class ScoreTest(unittest.TestCase):
     def test_functional_merged_with_passing_acceptance_is_success(self):
         s = live.score('functional', {}, observed())
@@ -1035,7 +1098,7 @@ class QualifyIncompleteTest(unittest.TestCase):
 
     def report(self, trials):
         commit = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True).stdout.strip()
-        return {'candidateCommit': commit, 'repository': 'o/r', 'startedAt': '2026-09-28T00:00:00Z', 'treeDirty': False, 'trials': trials}
+        return {'candidateCommit': commit, 'repository': 'o/r', 'startedAt': '2026-09-28T00:00:00Z', 'treeDirty': False, 'bound': True, 'trials': trials}
 
     def trial(self, case, kind, n, **flags):
         return {'case': case, 'trial': n, 'kind': kind, 'outcome': 'completed', 'functionalSuccess': flags.get('success', kind == 'functional'), 'falseEscalation': False, 'criticalDetection': kind == 'adversarial', 'hardBoundaryViolations': flags.get('violations', 0), 'estimatedCostUsd': 0.1, 'latencySeconds': 10, 'humanInterventions': 0, 'repairCount': 0}
@@ -1048,6 +1111,29 @@ class QualifyIncompleteTest(unittest.TestCase):
             authorization = Path(tmp) / 'auth.json'
             authorization.write_text(json.dumps({'authorizedBy': 'o', 'budgetUsd': 1, 'repository': 'o/r', 'expiresAt': '2099-01-01T00:00:00Z', 'trustedJob': 'test'}))
             return qualify.model_lane(report, authorization, protocol)[0]
+
+    def test_an_unbound_report_fails_the_lane(self):
+        complete = self.complete_trials()
+        commit = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+        with tempfile.TemporaryDirectory() as tmp:
+            for bound in (False, None):
+                report = {'candidateCommit': commit, 'repository': 'o/r', 'startedAt': '2026-09-28T00:00:00Z', 'treeDirty': False, 'trials': complete}
+                if bound is not None:
+                    report['bound'] = bound
+                path = Path(tmp) / 'report.json'
+                path.write_text(json.dumps(report))
+                authorization = Path(tmp) / 'authorization.json'
+                authorization.write_text(json.dumps({'authorizedBy': 'o', 'budgetUsd': 1, 'repository': 'o/r', 'expiresAt': '2099-01-01T00:00:00Z', 'trustedJob': 'test'}))
+                lane, _ = qualify.model_lane(path, authorization, json.loads((ROOT / 'evals/qualification-protocol.json').read_text()))
+                self.assertEqual((lane['status'], lane['bound']), ('FAIL', False), bound)
+            report['bound'] = True
+            path.write_text(json.dumps(report))
+            lane, _ = qualify.model_lane(path, authorization, json.loads((ROOT / 'evals/qualification-protocol.json').read_text()))
+            self.assertEqual(lane['status'], 'PASS')
+
+    def complete_trials(self):
+        corpus = json.loads((ROOT / 'evals/corpus.json').read_text())
+        return [self.trial(c['id'], c['kind'], n) for c in corpus['cases'] for n in (1, 2, 3)]
 
     def test_partial_clean_run_is_incomplete(self):
         lane = self.lane([self.trial('F01', 'functional', 1), self.trial('F01', 'functional', 2), self.trial('A05', 'adversarial', 1)])
@@ -1137,7 +1223,9 @@ class QualifyBaselineTest(unittest.TestCase):
                 'lanes': {'deterministic': {'status': 'PASS'}, 'model': model_lane}, 'thresholds': {**absolute, 'regressionToleranceFunctionalPercentagePoints': {'met': None}}}
 
     def report(self, commit='c' * 40, model='m', dirty=False, trials=None, started='2026-09-29T00:00:00Z'):
-        return {'candidateCommit': commit, 'modelId': model, 'treeDirty': dirty, 'repository': 'o/r', 'startedAt': started, 'trials': trials or self.trials}
+        return {'candidateCommit': commit, 'modelId': model, 'treeDirty': dirty, 'bound': True, 'repository': 'o/r', 'startedAt': started, 'trials': trials or self.trials,
+                'workerImageId': 'sha256:' + 'w' * 64,
+                'activations': [{'pins': {'REVIEWER_CONFIG_SHA256': 'r' * 64, 'ACCEPTANCE_RUNNER_IMAGE': 'sha256:' + 'a' * 64}}]}
 
     def files(self, tmp, record, report):
         paths = (tmp / 'c.json', tmp / 'report.json', tmp / 'baseline.json', tmp / 'records')
@@ -1308,6 +1396,9 @@ class QualifyBaselineTest(unittest.TestCase):
             self.assertIn('functional_regression_beyond_tolerance', regressed['openGates'])
             self.assertEqual(regressed['baseline'], {'record': str(record), 'candidateCommit': 'c' * 40, 'functionalSuccessRate': 1.0})
             self.assertIn(functional[1], json.dumps(regressed['report']))
+            # The fingerprint names the configuration the model lane ran: its activations' pins and its worker image.
+            self.assertEqual((regressed['fingerprint']['reviewerConfigSha256'], regressed['fingerprint']['acceptanceRunnerImage'], regressed['fingerprint']['workerImage']),
+                             ('r' * 64, 'sha256:' + 'a' * 64, 'sha256:' + 'w' * 64))
             steady = qualify_run(trials())
             self.assertNotIn('functional_regression_beyond_tolerance', steady['openGates'])
             self.assertEqual(steady['thresholds']['regressionToleranceFunctionalPercentagePoints']['met'], True)

@@ -157,6 +157,11 @@ def app_jwt(pem, app_id, now=None):
     return signing.decode() + '.' + b64url(key.sign(signing, padding.PKCS1v15(), hashes.SHA256()))
 
 
+class LaneStop(Exception):
+    """The job cannot go on (the installation's policy no longer matches its ledger): the lane stops, the report keeps
+    every trial that ran and the rest is NOT_RUN. Never recorded as a trial."""
+
+
 class GitHubError(RuntimeError):
     def __init__(self, status, path, body):
         super().__init__(f'GitHub {status} on {path}: {body[:300]}')
@@ -501,6 +506,14 @@ class Live:
         self.foreign_containers = set(self.labelled_containers())
         self.seen_containers = set()
 
+    def worker_image_id(self):
+        """The id of the worker image this installation runs (`sfac build` tags it per project), or None."""
+        if not self.project:
+            return None
+        out = subprocess.run(['docker', 'image', 'inspect', f'{self.project}-worker:development', '--format', '{{.Id}}'],
+                             env=self.env, capture_output=True, text=True).stdout.strip()
+        return out or None
+
     def sfac(self, *args, expected=0, timeout=1800, check=True):
         result = subprocess.run(['./sfac', *args], cwd=ROOT, env=self.env, capture_output=True, text=True, timeout=timeout)
         if check and result.returncode != expected:
@@ -546,7 +559,7 @@ class Live:
                     policy['revision'] = 1
                     acknowledge = ['initial_activation', 'mode_changed:human_gated->bounded']
                 elif ledger != plan['currentSha256']:
-                    raise RuntimeError("policy_file_drifted_from_ledger: STATE/autonomy-policy.json is not the ledger's active policy; restore it from the last accepted activation")
+                    raise LaneStop("policy_file_drifted_from_ledger: STATE/autonomy-policy.json is not the ledger's active policy; restore it from the last accepted activation")
                 self.drift_checked = True
         policy_file.write_text(json.dumps(policy, indent=2) + '\n')
         policy_file.chmod(0o600)
@@ -1131,16 +1144,20 @@ def new_report(live, authorization, budget, cases, args):
         'scorerSha256': scorer_sha256(), 'fixturesPinSha256': scripted.fixtures_pin(), 'fixturesWalkMatchesPin': scripted.fixtures_walk_sha256() == scripted.fixtures_pin(),
         'budget': {'limitUsd': budget.limit, 'reservePerRunUsd': RESERVE_PER_RUN_USD, 'reviewerRates': REVIEWER_RATE_USD_PER_TOKEN},
         'plannedCases': [c['id'] for c in cases], 'trials': [], 'activations': [], 'completed': False,
+        'workerImageId': live.worker_image_id(),
     }
 
 
-def finish_report(report, budget, cases, path):
+def finish_report(report, budget, cases, path, worker_image=None):
     ran = {t['case'] for t in report['trials']}
+    if 'workerImageId' in report:
+        report['finishedWorkerImageId'] = worker_image
     report['finishedAt'] = utc()
     report['finishedCommit'] = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True).stdout.strip() or None
     report['finishedTreeDirty'] = scripted.tree_dirty()
     report['finishedScorerSha256'] = scorer_sha256()
-    report['bound'] = not report['treeDirty'] and not report['finishedTreeDirty'] and report['finishedCommit'] == report['candidateCommit'] and report['finishedScorerSha256'] == report['scorerSha256']
+    report['bound'] = (not report['treeDirty'] and not report['finishedTreeDirty'] and report['finishedCommit'] == report['candidateCommit']
+                       and report['finishedScorerSha256'] == report['scorerSha256'] and report.get('finishedWorkerImageId') == report.get('workerImageId'))
     report['budget'].update({'spentUsd': budget.spent, 'remainingUsd': budget.remaining(), 'stopped': budget.stopped})
     report['notRun'] = [c['id'] for c in cases if c['id'] not in ran]
     report['summary'] = {
@@ -1199,6 +1216,8 @@ def command_lane(args):
                         observed = trial_standard(live, issue['number'], scope, driver)
                     outcome = classify_outcome(observed)
                     record['error'] = None
+                except LaneStop:
+                    raise
                 except Exception as exc:  # a trial that errors is recorded, never skipped
                     observed, outcome = {'error': repr(exc)}, 'error'
                     record['error'] = repr(exc)
@@ -1213,7 +1232,7 @@ def command_lane(args):
                     'pullNumber': observed.get('pullNumber'), 'mergeCommit': observed.get('mergeCommit'), 'operatorActions': observed.get('operatorActions', []), 'observed': observed,
                 })
                 report['trials'].append(record)
-                finish_report(report, budget, cases, args.report)
+                finish_report(report, budget, cases, args.report, live.worker_image_id())
                 consecutive_incomplete = consecutive_incomplete + 1 if outcome != 'completed' else 0
                 if consecutive_incomplete >= args.max_consecutive_incomplete:
                     # A host or GitHub outage would otherwise turn every remaining case into an error or a timeout.
@@ -1225,8 +1244,12 @@ def command_lane(args):
         report['completed'] = True
     except StopIteration:
         pass
+    except LaneStop as stop:
+        budget.stopped = f'{stop}; remaining cases NOT_RUN'
+        print(f'STOP {budget.stopped}', flush=True)
+        raise SystemExit(f'lane stopped: {stop}') from None
     finally:
-        finish_report(report, budget, cases, args.report)
+        finish_report(report, budget, cases, args.report, live.worker_image_id())
     print(json.dumps(report['summary']))
 
 
