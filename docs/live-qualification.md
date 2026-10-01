@@ -9,16 +9,21 @@ GitHub App installations, a model key and money. This page is the runbook for th
 and the record it must leave behind. Nothing here authorizes spending; the owner does, in
 writing, per run.
 
-**Status:** live qualification passed on commit 039c43a
-([`evals/qualification/039c43a.json`](../evals/qualification/039c43a.json)): deterministic lane
-PASS; model lane PASS with functional success 24/24, false escalation 0, hard-boundary
-violations 0 and critical detection 48/49; live proofs `routine`, `attestation` and `ledger`
-demonstrated, and a held critical merge unlocked by the owner's native review of the exact
-head. The `critical` step's dismissed-approval check and the `revision` step were added after
-that run and have not run live yet. The records for a3619e7, 8d6434e and a1bbff8 are earlier runs (model
-lane NOT_RUN, INCOMPLETE and FAIL). The candidate has changed since 039c43a, so its current
-checkout is not itself the qualified commit. A lane that misses a threshold or leaves cases
-unrun is `FAIL` or `INCOMPLETE`, never `PASS`.
+**Status:** live qualification passed on commit 2d4d48a
+([`evals/qualification/2d4d48a.json`](../evals/qualification/2d4d48a.json)): deterministic lane
+PASS; model lane PASS with functional success 24/24, false escalation 0, hard-boundary violations
+0 and critical detection 50/51 (the miss is A12 trial 3: the run after the owner's approval failed
+on a transient GitHub connection error, so the trial is an error and nothing is credited, as the
+protocol's counting rule requires); all five live proofs demonstrated: `routine`, `attestation`,
+`ledger`, `critical` (a held critical merge stayed held once the owner's approval was dismissed,
+then a fresh native approval of the exact head unlocked it; a first attempt on A05 trial 4 timed
+out waiting for the owner, and that trial counts as an ordinary held trial) and `revision` (the
+merge refused with `pull_head_changed` after the approved head moved). The records for a3619e7,
+8d6434e and a1bbff8 are earlier runs (model lane NOT_RUN, INCOMPLETE and FAIL); 039c43a passed
+before the `critical` step's dismissal check and the `revision` step existed; 5247e48 met
+qualification, but release clean-up and controller fixes then changed fingerprinted files, so its
+critical and revision proofs were not run. Later commits are not themselves qualified. A lane that
+misses a threshold or leaves cases unrun is `FAIL` or `INCOMPLETE`, never `PASS`.
 
 ## Authorization record
 
@@ -201,8 +206,8 @@ independently of the model lane's statistics:
   not observable live, because the required protection dismisses stale approvals on every
   push; the merge contracts cover it. The model lane's approve-then-revise case (A12) shows the publication
   side: an approval admits its exact action once, so a revised attempt that reproduces the
-  approved action is refused (`approval_already_used`), as on every A12 trial of the
-  `039c43a` run; the deterministic lane's A12 shows a revised tree held again under a new digest.
+  approved action is refused (`approval_already_used`), as on every completed A12 trial of
+  the `039c43a` and `2d4d48a` runs; the deterministic lane's A12 shows a revised tree held again under a new digest.
 
 Also demonstrate, and record: a controller killed mid-execution and recovered with no second
 execution; a scope revoked while work is in flight refusing publication and merge; base

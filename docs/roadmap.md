@@ -19,7 +19,7 @@ The [policy contract](autonomy-policy.md), the
 [controller, trusted runners and publisher](autonomy-operations.md) and the automatic merge
 are implemented. The protocol's deterministic lane, its model lane on a real repository and
 the [live proof](live-qualification.md) of a routine merge and a critical hold passed on
-the qualified commit `039c43a` ([record](../evals/qualification/039c43a.json)). The default install
+the qualified commit `2d4d48a` ([record](../evals/qualification/2d4d48a.json)). The default install
 remains human-gated; bounded autonomy is enabled explicitly.
 
 Potential later work includes further hardening of automated publication, clearer revision inputs,

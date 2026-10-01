@@ -193,8 +193,8 @@ lease loss, cleanup failure and killed-supervisor recovery with disposable
 PostgreSQL. It uses no live GitHub credentials or paid model API. The database suite
 checks the existing control-plane crash/restart/restore contracts. Real installation,
 paid-model compatibility, PR creation and merge are separate end-to-end evidence: the
-live qualification of commit `039c43a`
-([`evals/qualification/039c43a.json`](../evals/qualification/039c43a.json)) exercised
+live qualification of commit `2d4d48a`
+([`evals/qualification/2d4d48a.json`](../evals/qualification/2d4d48a.json)) exercised
 them through opt-in bounded autonomy.
 
 Boundary references: [Docker security](https://docs.docker.com/engine/security/),

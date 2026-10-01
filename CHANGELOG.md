@@ -41,7 +41,7 @@ proposal is project source/build instructions, with dependencies obtained separa
   revision, approval holds with re-verification of expired receipts, scopes that bind
   each Task to the intent digest the owner reviewed, a `factory_controller` database
   role and `./sfac autonomy …` commands (`intent`, `pin`, `activate`, `grant`, `run`,
-  `approve`, `reconcile`, …). Not the default; live-qualified on commit `039c43a` as
+  `approve`, `reconcile`, …). Not the default; live-qualified on commit `2d4d48a` as
   recorded in `evals/qualification/`; later commits are not themselves qualified.
 
 - Add the trusted autonomy policy foundation (wired into the opt-in bounded-autonomy
@@ -51,9 +51,10 @@ proposal is project source/build instructions, with dependencies obtained separa
   PostgreSQL ledger for policy activation, pause, scopes, single-use admissions
   and budget reservations. The runtime database role gets read-only access.
 - Freeze the agent-quality qualification protocol and a 24-case corpus with five
-  held-out cases published as digests. Both lanes passed on commit `039c43a`
-  ([record](evals/qualification/039c43a.json)), with a routine merge and a critical merge
-  unlocked by the owner's native review shown live; later commits are not themselves
+  held-out cases published as digests. Both lanes passed on commit `2d4d48a`
+  ([record](evals/qualification/2d4d48a.json)), with a routine merge, a critical merge
+  unlocked by the owner's native review (and still held once that approval was dismissed) and a
+  merge refused after the approved head moved, all shown live; later commits are not themselves
   qualified.
 - Add optional trusted dependency verification to the policy contract: a
   pluggable, digest-pinned scanner adapter plus deterministic lockfile, script,
