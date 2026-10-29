@@ -84,8 +84,8 @@ in [THIRD_PARTY.md](../THIRD_PARTY.md).
 
 Dependency audits are a separate review input, not an automatic `npm audit fix`.
 Record advisory IDs, affected locked versions, runtime/dev scope and exposure;
-choose targeted fixes and rerun relevant checks. The five lockfiles audited clean on
-September 30, 2026; re-audit before each release. Passing CI does not imply a clean
+choose targeted fixes and rerun relevant checks. The latest audit (October 29, 2026) and the
+one advisory it reported are recorded in [security](../SECURITY.md); re-audit before each release. Passing CI does not imply a clean
 dependency audit.
 
 The `container-operator` job runs `runtime/operator/restrictive-test.py`, which runs

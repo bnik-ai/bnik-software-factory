@@ -68,8 +68,8 @@ and model lanes and the live proof of a routine merge and a critical hold passed
 `2d4d48a` (`evals/qualification/2d4d48a.json`; see [live qualification](docs/live-qualification.md)
 and the [roadmap](docs/roadmap.md)); later commits are not themselves qualified.
 
-The five lockfiles audited clean on September 30, 2026; audits are point-in-time and are
-repeated before each release. Passing tests is not a clean security audit. Containers share a host kernel;
+The October 29, 2026 audit of the five lockfiles reported one advisory, evaluated in
+[security](SECURITY.md); audits are point-in-time and are repeated before each release. Passing tests is not a clean security audit. Containers share a host kernel;
 provider requests can include repository content, and local estimates are not bills.
 See [security](SECURITY.md), [worker boundaries](docs/isolated-worker.md) and
 [third-party terms](THIRD_PARTY.md) before using non-synthetic data.

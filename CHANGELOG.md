@@ -13,8 +13,7 @@ proposal is project source/build instructions, with dependencies obtained separa
   control plane, the MCP TypeScript SDK 1.32.2 under the agent SDK in the worker image,
   Vitest 4.1.12 in the four test-running services, and patched transitive packages within
   their ranges. The webhook's 1 MiB body limit is covered by tests, in process and through
-  the Node HTTP adapter. One advisory has no fix inside the Azure SDK's supported range; see
-  [Security](SECURITY.md).
+  the Node HTTP adapter. One advisory remains, evaluated in [Security](SECURITY.md).
 - Move the trusted merge policy to `merge-policy/merge-policy.json` in the state
   directory (native `runtime/merge-policy/merge-policy.json`), mounted as a directory so
   an edited file reaches the running control plane; a `merge-policy.json` in the state

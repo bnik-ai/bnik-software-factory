@@ -46,8 +46,11 @@ GitHub history, provider records, filesystem exports or backups.
 orchestrator and validator. It affects MSAL's authorization-code flow (`acquireTokenByCode`).
 This project constructs only `DefaultAzureCredential`, whose credential chain never runs that
 flow, and only on the legacy Azure paths; the local profile refuses Azure configuration. The
-fix (`@azure/msal-node` 7.1.0) is outside the range every released `@azure/identity`
-supports, so it is not forced. Audits are point-in-time: re-audit before each release; a
+fix (`@azure/msal-node` 7.1.0) is outside the range every current `@azure/identity`
+supports, so it is not forced. Downgrading to `@azure/identity` 4.13.0, whose
+`@azure/msal-node` 3.x is outside the affected range, was evaluated and not chosen: it moves
+the authentication library back a major version and brings GHSA-w5hq-g745-h8pq (moderate) in
+`uuid`. Audits are point-in-time: re-audit before each release; a
 passing build is not evidence of no vulnerabilities.
 Do not expose development test UI servers or experimental entrypoints as services.
 Report vendor vulnerabilities to that vendor's security channel as appropriate;
