@@ -8,10 +8,13 @@ proposal is project source/build instructions, with dependencies obtained separa
 
 ### Changes
 
-- Remediate every dependency advisory `npm audit` reported for the five lockfiles (1 critical,
-  16 high across entries): Hono 4.13.11 and `@hono/node-server` 1.19.17 in the control plane,
-  Vitest 4.1.11 in the four test-running services, and patched transitive packages within
-  their ranges. The webhook's 1 MiB body limit is now covered by a test.
+- Remediate the dependency advisories `npm audit` reported for the five lockfiles on
+  September 30 and October 29, 2026: Hono 4.13.11 and `@hono/node-server` 2.1.5 in the
+  control plane, the MCP TypeScript SDK 1.32.2 under the agent SDK in the worker image,
+  Vitest 4.1.12 in the four test-running services, and patched transitive packages within
+  their ranges. The webhook's 1 MiB body limit is covered by tests, in process and through
+  the Node HTTP adapter. One advisory has no fix inside the Azure SDK's supported range; see
+  [Security](SECURITY.md).
 - Move the trusted merge policy to `merge-policy/merge-policy.json` in the state
   directory (native `runtime/merge-policy/merge-policy.json`), mounted as a directory so
   an edited file reaches the running control plane; a `merge-policy.json` in the state

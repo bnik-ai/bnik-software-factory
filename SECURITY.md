@@ -40,9 +40,15 @@ local result directories can contain sensitive code. Use [retention controls](do
 and [recovery procedures](docs/recovery.md); local content pruning does not erase
 GitHub history, provider records, filesystem exports or backups.
 
-`npm audit` of all five lockfiles reported no advisories on September 30, 2026, after the
-remediation in the [release notes](CHANGELOG.md). Audits are point-in-time: re-audit before
-each release; a passing build is not evidence of no vulnerabilities.
+`npm audit` of all five lockfiles on October 29, 2026, after the remediation in the
+[release notes](CHANGELOG.md), reported one advisory: GHSA-xcx6-jx8p-x3h5 (high) in
+`@azure/msal-node` 5.2.2, which `@azure/identity` 4.13.1 brings into agents, github-app,
+orchestrator and validator. It affects MSAL's authorization-code flow (`acquireTokenByCode`).
+This project constructs only `DefaultAzureCredential`, whose credential chain never runs that
+flow, and only on the legacy Azure paths; the local profile refuses Azure configuration. The
+fix (`@azure/msal-node` 7.1.0) is outside the range every released `@azure/identity`
+supports, so it is not forced. Audits are point-in-time: re-audit before each release; a
+passing build is not evidence of no vulnerabilities.
 Do not expose development test UI servers or experimental entrypoints as services.
 Report vendor vulnerabilities to that vendor's security channel as appropriate;
 project maintainers cannot commit to fixes in a vendor's runtime or service.
