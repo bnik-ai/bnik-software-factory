@@ -1,9 +1,8 @@
 # Contributing
 
-The project is preparing its first alpha, maintained by
-[@bnikanjam](https://github.com/bnikanjam). External contributions open with the public
-release repository. See [support](SUPPORT.md). The process below is the contribution
-workflow from then on.
+This repository is archived at `0.1.0-alpha` and accepts no contributions; fork it to change
+it. See [support](SUPPORT.md). The process below is the workflow this project used, kept for a
+fork that adopts it.
 
 ## Propose and implement a change
 
@@ -20,9 +19,9 @@ credentials, private source, generated operator configuration, installed depende
 or internal preparation records.
 
 Only contribute material you have authority to submit. Identify copied/adapted
-third-party code and preserve its notices. Once contributions open, intentionally submitted contributions are accepted under
+third-party code and preserve its notices. Had contributions opened, intentionally submitted contributions would have been accepted under
 the project's [Apache-2.0 license](LICENSE), unless explicitly stated otherwise and
-agreed before submission. No separate CLA or copyright assignment is required.
+agreed before submission, with no separate CLA or copyright assignment.
 
 ## Local checks
 

@@ -1,33 +1,24 @@
 # Support and compatibility
 
-## Maintainer and reporting
+## Status
 
-This is a private candidate maintained by [@bnikanjam](https://github.com/bnikanjam).
-No public support or private vulnerability-reporting channel exists until the release
-repository is provisioned; a tested reporting route is required before external
-distribution.
-
-The proposed alpha policy is best-effort maintenance of the latest released alpha
-and current development branch only, with no guaranteed response time, fix date,
-backport, uptime or production SLA. Once a release repository exists, use its
-Issues for non-sensitive bugs and questions, and the route in [SECURITY.md](SECURITY.md)
-for security reports. Do not post credentials, private source or customer data.
-
-Include the exact factory commit/version, OS/CPU, Docker/Compose and Node versions,
-mode/profile, minimal synthetic reproduction, expected versus actual behavior,
-and redacted error/receipt codes. Maintainers review reports and contributions;
-provider account, billing, Docker hosting and GitHub plan support remain with their
-respective providers. There is no managed hosting or on-call service.
+`0.1.0-alpha` was released as-is on November 4, 2026 by [@bnikanjam](https://github.com/bnikanjam),
+and the repository is archived. Nothing is maintained: there are no fixes, security updates,
+backports, responses or service levels, and the repository accepts no issues or pull requests.
+Fork it to change or maintain it; a fork's maintainer sets that fork's support terms. Provider
+account, billing, Docker hosting and GitHub plan support remain with their respective providers.
+There is no managed hosting or on-call service. The facts below describe the release as tested;
+they say nothing about later dependency versions.
 
 ## Version and platform matrix
 
 | Component or environment | Alpha boundary |
 | --- | --- |
-| Release | `0.1.0-alpha` is planned, not tagged or published; identify the full candidate SHA. |
+| Release | `0.1.0-alpha`, tag `v0.1.0-alpha`, the only release; identify the full commit SHA. |
 | Node | 24.21.0 is pinned in contributor CI and runtime image; macOS Node 26 is a development check, not the selected runtime. |
 | PostgreSQL | 17.11, Bookworm base pinned by manifest digest; other major versions unqualified. |
 | Claude Agent SDK | 0.3.283 with bundled Claude Code 2.1.283; model ID explicit, never substituted. |
-| Linux x64 | Ubuntu 24.04 hosted contributor CI, database/worker integration and source artifact builds exercised; repeat checks for each release head. |
+| Linux x64 | Ubuntu 24.04 hosted contributor CI, database/worker integration and source artifact builds exercised; not rechecked after this release. |
 | Linux arm64 | Local runtime and worker containers exercised on macOS arm64 Docker Desktop, Engine 28.0.4 / Compose 2.34.0. |
 | Operator | `sfac` uses a POSIX shell and local Docker/Compose; Python 3 and Node 24.21.0 run inside the operator image. The optional native profile needs host Python 3, curl and Node 24.21.0 with installed service dependencies ([prerequisites](docs/local-runtime.md#native-profile-prerequisites)). |
 | GitHub | GitHub.com, one selected repository; full merge profile needs an organization repository with the documented enforceable protection. |
@@ -68,8 +59,8 @@ and model lanes and the live proof of a routine merge and a critical hold passed
 `b42a3c2` (`evals/qualification/b42a3c2.json`; see [live qualification](docs/live-qualification.md)
 and the [roadmap](docs/roadmap.md)); later commits are not themselves qualified.
 
-The October 29, 2026 audit of the five lockfiles reported one advisory, evaluated in
-[security](SECURITY.md); audits are point-in-time and are repeated before each release. Passing tests is not a clean security audit. Containers share a host kernel;
+The November 4, 2026 audit of the five lockfiles reported one advisory, evaluated in
+[security](SECURITY.md); audits are point-in-time, and none follows this release. Passing tests is not a clean security audit. Containers share a host kernel;
 provider requests can include repository content, and local estimates are not bills.
 See [security](SECURITY.md), [worker boundaries](docs/isolated-worker.md) and
 [third-party terms](THIRD_PARTY.md) before using non-synthetic data.

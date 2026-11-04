@@ -47,7 +47,7 @@ The manual `Candidate source artifact` workflow takes a full 40-character commit
 SHA and builds twice, comparing every byte. It stores the tarball, per-file manifest
 and `SHA256SUMS` as a seven-day workflow artifact. This is source packaging, not a
 release approval or publication. No package, image, tag or GitHub Release is pushed.
-The provisional version is `0.1.0-alpha`; the complete commit SHA qualifies every
+The version is `0.1.0-alpha`; the complete commit SHA qualifies every
 artifact name and is recorded in its manifest.
 
 From a checkout, with Python 3 and Git:
@@ -84,8 +84,8 @@ in [THIRD_PARTY.md](../THIRD_PARTY.md).
 
 Dependency audits are a separate review input, not an automatic `npm audit fix`.
 Record advisory IDs, affected locked versions, runtime/dev scope and exposure;
-choose targeted fixes and rerun relevant checks. The latest audit (October 29, 2026) and the
-one advisory it reported are recorded in [security](../SECURITY.md); re-audit before each release. Passing CI does not imply a clean
+choose targeted fixes and rerun relevant checks. The latest audit (November 4, 2026) and the
+one advisory it reported are recorded in [security](../SECURITY.md); re-audit before you deploy or release a fork. Passing CI does not imply a clean
 dependency audit.
 
 The `container-operator` job runs `runtime/operator/restrictive-test.py`, which runs

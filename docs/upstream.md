@@ -1,9 +1,8 @@
 # Upstream and deployment integration
 
-After the first release, the public BNIK Software Factory repository will be the
-canonical home for reusable service code, tests, interfaces, templates and docs.
-This development candidate is the prospective upstream implementation. Continue
-core development here; do not maintain a second core in a deployment repository.
+This repository is archived at `0.1.0-alpha` and receives no upstream development. A team
+that builds on it makes its fork the upstream: keep reusable service code, tests, interfaces,
+templates and docs there, and do not maintain a second core in a deployment repository.
 
 Private deployment repositories own environment identities, secrets references,
 infrastructure state and environment-specific configuration. They consume a pinned
@@ -21,7 +20,6 @@ environment, and pin the accepted revision. Existing deployments remain on their
 current implementation until that migration is verified; a source export does
 not update a live service. The old core becomes an archive once consumers migrate.
 
-Proposed repository slug: `bnik-software-factory`. The GitHub owner is undecided.
-The existing private npm package identifiers `@sfac/*` remain unpublished and
-unchanged for compatibility; any published package or image namespace needs an
-explicit release decision. No remote URL or package registry is assumed here.
+The release is published as the GitHub repository `bnik-ai/bnik-software-factory`. The npm
+package identifiers `@sfac/*` are unpublished and unchanged for compatibility; no package or
+image is published to any registry.

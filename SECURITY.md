@@ -2,29 +2,17 @@
 
 ## Reporting
 
-This private candidate has no public release repository or verified public security
-contact yet. Before external distribution, the maintainer
-([@bnikanjam](https://github.com/bnikanjam)) must enable and test GitHub private
-vulnerability reporting in that repository and identify any fallback private contact
-in this file.
-
-The proposed release reporting route is the repository's **Security → Advisories →
-Report a vulnerability** action. If that action is unavailable, do not post exploit
-details publicly: ask through an existing private maintainer channel, or open a
-non-sensitive issue requesting a private contact. Do not include the vulnerability
-itself, credentials or customer data in that issue. This is not an emergency service.
-
-A private report should include affected commit/version, environment, prerequisites,
-a minimal synthetic reproduction, expected/actual behavior and possible impact.
-Redact keys, tokens, repository content and personal data. Coordinate disclosure
-with the maintainer; acknowledgements and fixes are best effort, with no promised
-response deadline, bounty or service-level agreement.
+This repository is archived and released as-is (see [SUPPORT.md](SUPPORT.md)); it receives no
+security fixes. Do not post exploit details publicly. If the repository offers GitHub's private
+vulnerability reporting (a **Report a vulnerability** button on its security page), a private
+report reaches the repository's administrators, with no promised response, fix, bounty or
+service-level agreement; otherwise there is no private reporting channel. Anyone running or
+forking this code owns its remediation.
 
 ## Supported versions and scope
 
-The proposed policy covers the latest alpha and current development branch, as
-listed in [SUPPORT.md](SUPPORT.md). No released version exists yet. Report problems
-in experimental code too, but its remediation and support are not guaranteed.
+No version is supported. The notes below describe the security-relevant boundaries of
+`0.1.0-alpha` for anyone who runs or forks it.
 
 Security-sensitive boundaries include webhook authentication, human authorization,
 repository scope, archive extraction, worker/proxy isolation, cancellation/recovery,
@@ -40,17 +28,19 @@ local result directories can contain sensitive code. Use [retention controls](do
 and [recovery procedures](docs/recovery.md); local content pruning does not erase
 GitHub history, provider records, filesystem exports or backups.
 
-`npm audit` of all five lockfiles on October 29, 2026, after the remediation in the
+`npm audit` of all five lockfiles on November 4, 2026, after the remediation in the
 [release notes](CHANGELOG.md), reported one advisory: GHSA-xcx6-jx8p-x3h5 (high) in
 `@azure/msal-node` 5.2.2, which `@azure/identity` 4.13.1 brings into agents, github-app,
 orchestrator and validator. It affects MSAL's authorization-code flow (`acquireTokenByCode`).
 This project constructs only `DefaultAzureCredential`, whose credential chain never runs that
 flow, and only on the legacy Azure paths; the local profile refuses Azure configuration. The
-fix (`@azure/msal-node` 7.1.0) is outside the range every current `@azure/identity`
-supports, so it is not forced. Downgrading to `@azure/identity` 4.13.0, whose
+fix arrived in `@azure/identity` 4.14.1, published on October 29, 2026 after this release's
+dependencies were frozen, which accepts the fixed `@azure/msal-node` 7.1.0. It is not applied:
+the agents package's dependencies are part of the qualified worker image, so the change would
+need a new live qualification. A fork that uses the Azure paths should upgrade. Downgrading to `@azure/identity` 4.13.0, whose
 `@azure/msal-node` 3.x is outside the affected range, was evaluated and not chosen: it moves
 the authentication library back a major version and brings GHSA-w5hq-g745-h8pq (moderate) in
-`uuid`. Audits are point-in-time: re-audit before each release; a
+`uuid`. Audits are point-in-time: re-audit before you deploy; a
 passing build is not evidence of no vulnerabilities.
 Do not expose development test UI servers or experimental entrypoints as services.
 Report vendor vulnerabilities to that vendor's security channel as appropriate;

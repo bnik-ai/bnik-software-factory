@@ -1,10 +1,12 @@
 # Release notes
 
-## 0.1.0-alpha — unreleased
+## 0.1.0-alpha — November 4, 2026
 
-This candidate has not been tagged or published yet. Project-owned source uses Apache-2.0.
-Record the exact candidate SHA when reproducing behavior. The initial distribution
-proposal is project source/build instructions, with dependencies obtained separately.
+Released as-is, and the repository archived at this release: no fixes or later releases are
+planned. Source and build instructions only, with dependencies obtained separately; project-owned
+source uses Apache-2.0. Live qualification passed on commit `b42a3c2`
+([record](evals/qualification/b42a3c2.json)); the release differs from it only in documentation
+and that record. Record the exact commit SHA when reproducing behavior.
 
 ### Changes
 
@@ -86,7 +88,7 @@ proposal is project source/build instructions, with dependencies obtained separa
   pruning, quarantines, bounded recovery and database backup/restore guidance.
 - Contributor checks without paid models and deterministic source artifact builds.
 
-### Limits and release prerequisites
+### Limits
 
 In the default profile the runtime does not publish PRs, run AI reviews or merge;
 opt-in bounded autonomy adds publication and AI review, and a further opt-in
@@ -95,9 +97,8 @@ default-branch snapshot. Single repository only; no autonomous deploy or hosted 
 Model access depends on the operator's account and exact SDK/model compatibility;
 there is no model substitution. Cost estimates are not bills or hard spending caps.
 
-Licensing and maintainer are confirmed: Apache-2.0, copyright 2026 Babak Nikanjam,
-maintained by @bnikanjam. Before release, repeat the dependency audit on the release commit,
-complete independent onboarding, review the exact artifact and obtain publication
-approval. Runtime integration and prior human workflow exercises do not replace
-independent onboarding. See [support](SUPPORT.md), [third-party components](THIRD_PARTY.md)
+Licensing: Apache-2.0, copyright 2026 Babak Nikanjam, written by @bnikanjam. Before
+publication approval the dependency audit was repeated on the release's lockfiles and the exact
+source artifact reviewed. Independent onboarding was not completed; runtime integration and
+prior human workflow exercises do not replace it. See [support](SUPPORT.md), [third-party components](THIRD_PARTY.md)
 and [roadmap](docs/roadmap.md). No binary or vendor-containing image is cleared here.

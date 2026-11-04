@@ -1,9 +1,9 @@
 # Maintainer guide
 
 Read [support](../SUPPORT.md), [contributing](../CONTRIBUTING.md) and
-[security](../SECURITY.md) for the public policy. The maintainer is
-[@bnikanjam](https://github.com/bnikanjam); the public reporting route remains unconfirmed until
-the release repository is provisioned.
+[security](../SECURITY.md) for the public policy. The author is
+[@bnikanjam](https://github.com/bnikanjam). The repository is archived at `0.1.0-alpha`, so this
+guide records how the project was maintained, for a fork that resumes maintenance.
 
 ## Triage and review
 

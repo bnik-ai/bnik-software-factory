@@ -5,7 +5,7 @@ The low-level commands below describe the optional native profile; the mapping
 covers configuration, secret paths, worker/recovery commands and sample artifacts.
 Do not mix its `runtime/` state with the launcher's `.factory/` state.
 
-This private development candidate runs authenticated intake, validation, audit and
+The local runtime runs authenticated intake, validation, audit and
 routing with durable PostgreSQL queues. The packaged demo uses synthetic GitHub
 reads and a receipt-only worker. Live mode verifies GitHub installation and human Task activation, storing durable
 authorization receipts. The separate [isolated executor](isolated-worker.md) accepts
