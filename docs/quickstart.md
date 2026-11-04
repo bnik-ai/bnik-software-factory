@@ -1,7 +1,7 @@
 # Quickstart
 
-Use a fresh checkout or extracted candidate source, owned by your non-root user.
-There is no published repository/tag yet. Run these commands from the source root.
+Use a fresh checkout of tag `v0.1.0-alpha` or an extracted source archive, owned by
+your non-root user. Run these commands from the source root.
 
 ## Requirements and costs
 
