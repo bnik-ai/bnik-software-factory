@@ -9,7 +9,7 @@ Do not mix its `runtime/` state with the launcher's `.factory/` state.
 This candidate supports one explicitly configured GitHub.com repository. Start with
 a disposable repository containing synthetic data. Live intake records events and
 human activation receipts; it never automatically invokes a model. In the default human-gated mode, PR publication is an explicit operator step in the
-[end-to-end walkthrough](end-to-end-pilot.md); the opt-in [bounded-autonomy controller](autonomy-operations.md), live-qualified on commit `2d4d48a` ([record](../evals/qualification/2d4d48a.json); later commits are not themselves qualified), publishes under an activated policy instead. The optional [human merge profile](human-merge.md)
+[end-to-end walkthrough](end-to-end-pilot.md); the opt-in [bounded-autonomy controller](autonomy-operations.md), live-qualified on commit `b42a3c2` ([record](../evals/qualification/b42a3c2.json); later commits are not themselves qualified), publishes under an activated policy instead. The optional [human merge profile](human-merge.md)
 adds protected review, CI verification and Task reconciliation for explicitly paired PRs.
 
 ## Register a dedicated App
@@ -77,8 +77,8 @@ and neither is a bypass allowance in branch protection: the merger App is a rest
 pusher, nothing more. Their private keys live at `secrets/publisher_private_key` and
 `secrets/merger_private_key`; the merger key is mounted only into the container that runs
 the merge commands. Both Apps stay unused, and their keys need not exist, until the
-corresponding opt-in is configured. This path passed live qualification on commit `2d4d48a`
-([record](../evals/qualification/2d4d48a.json)). Later commits are not themselves qualified; see
+corresponding opt-in is configured. This path passed live qualification on commit `b42a3c2`
+([record](../evals/qualification/b42a3c2.json)). Later commits are not themselves qualified; see
 [live qualification](live-qualification.md).
 
 ## Configure and verify intake

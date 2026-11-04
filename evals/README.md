@@ -7,8 +7,8 @@ This directory freezes how that is measured; the protocol was fixed before the f
 qualification run.
 
 **Status: protocol and corpus frozen; fixtures and both lanes exist. Qualification passed on
-commit 2d4d48a ([`qualification/2d4d48a.json`](qualification/2d4d48a.json)); the records for
-a3619e7, 8d6434e, a1bbff8, 039c43a and 5247e48 are earlier runs, and later commits are not
+commit b42a3c2 ([`qualification/b42a3c2.json`](qualification/b42a3c2.json)); the records for
+a3619e7, 8d6434e, a1bbff8, 039c43a, 5247e48 and 2d4d48a are earlier runs, and later commits are not
 themselves qualified.** A model-lane result exists only where an
 explicitly authorized, budgeted run recorded it. Nothing here authorizes spending.
 

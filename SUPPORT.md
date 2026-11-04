@@ -51,7 +51,7 @@ experimental AI ReviewAgent, and AI output never satisfies a required human appr
 The opt-in bounded-autonomy controller (`FACTORY_EXECUTION=bounded`, see
 [operating bounded autonomy](docs/autonomy-operations.md)) publishes pull requests for
 routine changes under an activated policy; it passes synthetic contracts, it passed live
-qualification on commit `2d4d48a` (`evals/qualification/2d4d48a.json`; later commits are not
+qualification on commit `b42a3c2` (`evals/qualification/b42a3c2.json`; later commits are not
 themselves qualified), and it stays outside the supported workflow. Source snapshots come from the
 pinned default branch; revision prompts must describe the complete intended result.
 
@@ -65,7 +65,7 @@ hydration, symlink-dependent sources and automatic dependency installation insid
 worker are unsupported. Automatic merge exists only as a further, live-only opt-in of
 bounded autonomy (`FACTORY_AUTOMERGE=enabled`). The agent-quality protocol's deterministic
 and model lanes and the live proof of a routine merge and a critical hold passed on commit
-`2d4d48a` (`evals/qualification/2d4d48a.json`; see [live qualification](docs/live-qualification.md)
+`b42a3c2` (`evals/qualification/b42a3c2.json`; see [live qualification](docs/live-qualification.md)
 and the [roadmap](docs/roadmap.md)); later commits are not themselves qualified.
 
 The October 29, 2026 audit of the five lockfiles reported one advisory, evaluated in

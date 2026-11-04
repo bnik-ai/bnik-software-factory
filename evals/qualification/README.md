@@ -15,7 +15,7 @@ model-lane trial as judged (held-out layouts withheld); it is written only by
 `runtime/evals/qualify.py --register-baseline` (`--replace` re-registers the same run after its
 record gained evidence).
 The registered baseline for `claude-sonnet-5` is [`039c43a.json`](039c43a.json); the latest
-qualified commit is `2d4d48a` ([`2d4d48a.json`](2d4d48a.json)), judged against that baseline.
+qualified commit is `b42a3c2` ([`b42a3c2.json`](b42a3c2.json)), judged against that baseline.
 
 No record here claims a model-lane run or a live merge until one has happened under a
 written owner authorization; see [live qualification](../../docs/live-qualification.md).
