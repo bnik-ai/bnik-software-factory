@@ -1,8 +1,10 @@
 # Contributing
 
-This repository is archived at `0.1.0-alpha` and accepts no contributions; fork it to change
-it. See [support](SUPPORT.md). The process below is the workflow this project used, kept for a
-fork that adopts it.
+`0.1.0-alpha` was released as-is, and review or merge of contributions is not promised. The
+repository stays open until December 31, 2026, then is archived unless a new maintainer takes over:
+if you want to maintain it, say so in an issue before then; otherwise fork it to change it. See
+[support](SUPPORT.md). The process below is the workflow this project used, kept for a maintainer
+or fork that adopts it.
 
 ## Propose and implement a change
 
@@ -19,7 +21,7 @@ credentials, private source, generated operator configuration, installed depende
 or internal preparation records.
 
 Only contribute material you have authority to submit. Identify copied/adapted
-third-party code and preserve its notices. Had contributions opened, intentionally submitted contributions would have been accepted under
+third-party code and preserve its notices. Intentionally submitted contributions are licensed under
 the project's [Apache-2.0 license](LICENSE), unless explicitly stated otherwise and
 agreed before submission, with no separate CLA or copyright assignment.
 
@@ -61,7 +63,7 @@ changes and credential boundaries. Required CI must pass on the current head;
 new commits may need renewed review. Contributors and bots cannot approve their own
 changes to satisfy human review. A maintainer decides whether and when to merge;
 there is no guaranteed review or merge timeline. Keep discussion respectful and
-technical, and report abusive behavior privately to the confirmed maintainer.
+technical, and report abusive behavior to GitHub.
 
 Source CI never receives live model or operator credentials. Paid/live exercises
 are separate explicit operator actions. Do not enable privileged PR workflows,

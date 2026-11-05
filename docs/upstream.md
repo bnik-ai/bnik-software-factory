@@ -1,7 +1,8 @@
 # Upstream and deployment integration
 
-This repository is archived at `0.1.0-alpha` and receives no upstream development. A team
-that builds on it makes its fork the upstream: keep reusable service code, tests, interfaces,
+This repository receives no upstream development; it stays open until December 31, 2026, then is
+archived at `0.1.0-alpha` unless a new maintainer takes over. A team that builds on it makes its
+fork the upstream: keep reusable service code, tests, interfaces,
 templates and docs there, and do not maintain a second core in a deployment repository.
 
 Private deployment repositories own environment identities, secrets references,

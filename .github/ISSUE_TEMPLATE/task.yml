@@ -1,5 +1,5 @@
 name: "Task — unit of buildable work"
-description: "Normally created by PlannerAgent fanning out a ratified Design. Human authorship allowed for v0 bootstrap. One Task ↔ one PR."
+description: "Factory record form; no factory or responder runs on this repository. Normally created by PlannerAgent fanning out a ratified Design. Human authorship allowed for v0 bootstrap. One Task ↔ one PR."
 title: "[Task] "
 labels:
   - "kind:task"

@@ -2,8 +2,9 @@
 
 ## Reporting
 
-This repository is archived and released as-is (see [SUPPORT.md](SUPPORT.md)); it receives no
-security fixes. Do not post exploit details publicly. If the repository offers GitHub's private
+This project is released as-is (see [SUPPORT.md](SUPPORT.md)) and receives no security fixes;
+the repository stays open until December 31, 2026, then is archived unless a new maintainer takes
+over. Do not post exploit details publicly. If the repository offers GitHub's private
 vulnerability reporting (a **Report a vulnerability** button on its security page), a private
 report reaches the repository's administrators, with no promised response, fix, bounty or
 service-level agreement; otherwise there is no private reporting channel. Anyone running or

@@ -1,5 +1,5 @@
 name: "Decision — recorded judgment with rationale"
-description: "An ADR (Architecture Decision Record). Paired with a markdown file at docs/decisions/NNNN-<slug>.md."
+description: "Factory record form; no factory or responder runs on this repository. An ADR (Architecture Decision Record). Paired with a markdown file at docs/decisions/NNNN-<slug>.md."
 title: "[Decision] "
 labels:
   - "kind:decision"

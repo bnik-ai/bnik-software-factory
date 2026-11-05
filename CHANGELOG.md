@@ -2,11 +2,11 @@
 
 ## 0.1.0-alpha — November 4, 2026
 
-Released as-is, and the repository archived at this release: no fixes or later releases are
-planned. Source and build instructions only, with dependencies obtained separately; project-owned
-source uses Apache-2.0. Live qualification passed on commit `b42a3c2`
-([record](evals/qualification/b42a3c2.json)); the release differs from it only in documentation
-and that record. Record the exact commit SHA when reproducing behavior.
+Released as-is: no fixes or later releases are planned, and the repository stays open until December
+31, 2026, then is archived unless a new maintainer takes over. Source and build instructions only,
+with dependencies obtained separately; project-owned source uses Apache-2.0. Live qualification
+passed on commit `b42a3c2` ([record](evals/qualification/b42a3c2.json)); the release differs from it
+only in documentation and that record. Record the exact commit SHA when reproducing behavior.
 
 ### Changes
 

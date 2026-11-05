@@ -6,7 +6,7 @@ The low-level commands below describe the optional native profile; the mapping
 covers configuration, secret paths, worker/recovery commands and sample artifacts.
 Do not mix its `runtime/` state with the launcher's `.factory/` state.
 
-This candidate supports one explicitly configured GitHub.com repository. Start with
+This release supports one explicitly configured GitHub.com repository. Start with
 a disposable repository containing synthetic data. Live intake records events and
 human activation receipts; it never automatically invokes a model. In the default human-gated mode, PR publication is an explicit operator step in the
 [end-to-end walkthrough](end-to-end-pilot.md); the opt-in [bounded-autonomy controller](autonomy-operations.md), live-qualified on commit `b42a3c2` ([record](../evals/qualification/b42a3c2.json); later commits are not themselves qualified), publishes under an activated policy instead. The optional [human merge profile](human-merge.md)

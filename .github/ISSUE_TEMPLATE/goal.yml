@@ -1,5 +1,5 @@
 name: "Goal — what you want to be true"
-description: "A human-authored Goal targeting the factory itself (software-factory substrate, runtime, or factory-produced template). For Goals targeting an application repo, open the Goal in that repo per ADR-0003."
+description: "Factory record form; no factory or responder runs on this repository. A human-authored Goal targeting the factory itself (software-factory substrate, runtime, or factory-produced template). For Goals targeting an application repo, open the Goal in that repo per ADR-0003."
 title: "[Goal] "
 labels:
   - "kind:goal"

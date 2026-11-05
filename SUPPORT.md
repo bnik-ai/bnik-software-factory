@@ -2,10 +2,11 @@
 
 ## Status
 
-`0.1.0-alpha` was released as-is on November 4, 2026 by [@bnikanjam](https://github.com/bnikanjam),
-and the repository is archived. Nothing is maintained: there are no fixes, security updates,
-backports, responses or service levels, and the repository accepts no issues or pull requests.
-Fork it to change or maintain it; a fork's maintainer sets that fork's support terms. Provider
+`0.1.0-alpha` was released as-is on November 4, 2026 by [@bnikanjam](https://github.com/bnikanjam).
+Nothing is maintained: no fixes, security updates, backports, responses or service levels are
+promised. The repository stays open until December 31, 2026, then is archived unless a new
+maintainer takes over; if you want to maintain it, say so in an issue before then. Otherwise fork it to change
+or maintain it; a fork's maintainer sets that fork's support terms. Provider
 account, billing, Docker hosting and GitHub plan support remain with their respective providers.
 There is no managed hosting or on-call service. The facts below describe the release as tested;
 they say nothing about later dependency versions.

@@ -1,5 +1,5 @@
 name: "Incident — production deviation"
-description: "A software-factory production deviation requiring response. Opened by humans or an alerting integration."
+description: "Factory record form; no factory or responder runs on this repository. A software-factory production deviation requiring response. Opened by humans or an alerting integration."
 title: "[Incident] "
 labels:
   - "kind:incident"

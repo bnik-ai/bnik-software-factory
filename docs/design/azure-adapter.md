@@ -2,7 +2,7 @@
 
 These are logical role names used by source diagrams, not deployed resource IDs.
 No subscription, region, tenant, network, or environment is configured by this
-file. Azure deployment automation is outside this candidate's supported path.
+file. Azure deployment automation is outside this release's supported path.
 
 | Role | Source vocabulary |
 | --- | --- |

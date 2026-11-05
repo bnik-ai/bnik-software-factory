@@ -2,8 +2,9 @@
 
 Read [support](../SUPPORT.md), [contributing](../CONTRIBUTING.md) and
 [security](../SECURITY.md) for the public policy. The author is
-[@bnikanjam](https://github.com/bnikanjam). The repository is archived at `0.1.0-alpha`, so this
-guide records how the project was maintained, for a fork that resumes maintenance.
+[@bnikanjam](https://github.com/bnikanjam). The repository stays open until December 31, 2026, then is
+archived at `0.1.0-alpha` unless a new maintainer takes over, so this guide records how the project
+was maintained, for whoever resumes maintenance.
 
 ## Triage and review
 
@@ -59,7 +60,7 @@ Do not edit migration checksums or drop a working database to hide an upgrade er
    destination and known limits before tagging/publishing. Publish only that reviewed
    artifact. Do not upload local dependency trees, secrets, backups or vendor images.
 7. After publication, verify the downloadable bytes and clean setup, and triage
-   reports within the stated best-effort scope. Announcements and external invitations
+   reports within the support scope the maintainer states. Announcements and external invitations
    require their own authorized communication.
 
 The source builder does not grant publication approval. Keep release notes truthful

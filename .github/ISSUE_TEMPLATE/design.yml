@@ -1,5 +1,5 @@
 name: "Design — architecture scope for a Spec"
-description: "Normally created by DesignAgent in response to a ratified Spec. Human authorship allowed for v0 bootstrap. Paired markdown lives at /docs/design/<slug>.md."
+description: "Factory record form; no factory or responder runs on this repository. Normally created by DesignAgent in response to a ratified Spec. Human authorship allowed for v0 bootstrap. Paired markdown lives at /docs/design/<slug>.md."
 title: "[Design] "
 labels:
   - "kind:design"

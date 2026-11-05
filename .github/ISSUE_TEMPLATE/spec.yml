@@ -1,5 +1,5 @@
 name: "Spec — acceptance criteria derived from a Goal"
-description: "Normally created by SpecAgent in response to an accepted Goal. Human authorship is allowed for v0 bootstrap / manual factory operation."
+description: "Factory record form; no factory or responder runs on this repository. Normally created by SpecAgent in response to an accepted Goal. Human authorship is allowed for v0 bootstrap / manual factory operation."
 title: "[Spec] "
 labels:
   - "kind:spec"

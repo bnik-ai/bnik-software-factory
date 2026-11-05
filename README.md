@@ -16,8 +16,10 @@ an explicit opt-in; see [autonomy operations](docs/autonomy-operations.md).
 - **Locally operated:** run the factory through Docker using your own repository
   and credentials. Live work still connects to GitHub and the model provider.
 
-**Released as-is: `0.1.0-alpha`, November 4, 2026. This repository is archived.** It accepts no
-issues or pull requests, and no fixes, security updates or support follow; fork it to build on it.
+**Released as-is: `0.1.0-alpha`, November 4, 2026.** This repository stays open until December 31,
+2026, then is archived unless a new maintainer takes over: if you want to maintain it, say so in an
+[issue](https://github.com/bnik-ai/bnik-software-factory/issues) before then. No fixes, security updates, support
+or pull-request reviews are promised; fork it to build on it.
 Project-owned source is licensed under Apache-2.0, copyright 2026 Babak Nikanjam (see [NOTICE](NOTICE)),
 written by [@bnikanjam](https://github.com/bnikanjam). The release is source only: no installation
 service or prebuilt image exists. See the [license](LICENSE), [support status](SUPPORT.md),

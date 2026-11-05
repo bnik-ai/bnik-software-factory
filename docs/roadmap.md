@@ -5,11 +5,11 @@ Task activation, isolated coding, explicit publication, human review and require
 CI, human merge and verified Task completion. [SUPPORT.md](../SUPPORT.md) defines
 its environment and limitations.
 
-`0.1.0-alpha` was released as-is on November 4, 2026, and the repository archived: the dependency
-audit was repeated on the release's lockfiles, the exact source artifact was verified and the owner
-approved publication. An independent setup and recovery exercise was not completed, and no
-maintenance follows (see [SUPPORT.md](../SUPPORT.md) and [SECURITY.md](../SECURITY.md)). Nothing
-below is scheduled.
+`0.1.0-alpha` was released as-is on November 4, 2026: the dependency audit was repeated on the
+release's lockfiles, the exact source artifact was verified and the owner approved publication. An
+independent setup and recovery exercise was not completed, and no maintenance is planned: the
+repository stays open until December 31, 2026, then is archived unless a new maintainer takes over
+(see [SUPPORT.md](../SUPPORT.md) and [SECURITY.md](../SECURITY.md)). Nothing below is scheduled.
 
 Opt-in bounded autonomy (`FACTORY_EXECUTION=bounded`) automates routine execution,
 publication and AI review inside owner-configured scope and limits; automatic merge is a
